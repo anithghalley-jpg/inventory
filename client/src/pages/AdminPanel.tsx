@@ -122,14 +122,33 @@ export default function AdminPanel() {
     toast.success('User rejected');
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategory) {
       toast.error('Please enter a category name');
       return;
     }
-    setCategories([...categories, newCategory]);
-    setNewCategory('');
-    toast.success('Category added');
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'addCategory',
+          categoryName: newCategory
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Update local state for immediate UI feedback
+        setCategories([...categories, newCategory]);
+        setNewCategory('');
+        toast.success('Category saved to Google Sheets');
+      } else {
+        toast.error('Failed to save category');
+      }
+    } catch (error) {
+      toast.error('Connection error while adding category');
+    }
   };
 
   // 2. Replace the old handleAddItem with this version
@@ -168,6 +187,22 @@ export default function AdminPanel() {
 
     processSyncQueue(); // Trigger the background worker [11]
 
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getCategories' }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        // Update state with categories from the sheet
+        setCategories(result.categories);
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories:', error);
+    }
   };
 
   // Inside AdminPanel function, before the return statement:
@@ -323,6 +358,7 @@ export default function AdminPanel() {
   // 3. Trigger the fetch automatically when the page loads
   React.useEffect(() => {
     fetchInventory();
+    fetchCategories()
   }, []);
 
   return (
@@ -531,6 +567,7 @@ export default function AdminPanel() {
                 </DialogContent>
               </Dialog>
             </div>
+
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {inventory.map((item) => {

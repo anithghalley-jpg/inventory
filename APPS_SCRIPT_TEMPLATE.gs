@@ -1,8 +1,22 @@
 /**
- * Inventory Management System - Google Apps Script Backend Template
+ * Inventory Management System - Google Apps Script Backend (OPTIMIZED)
  * 
- * This template provides the backend logic for the inventory management application.
- * Deploy this as a Web App in Google Apps Script.
+ * OPTIMIZATION: Two-Step Process for Image Upload
+ * 
+ * OLD WORKFLOW (Slow):
+ * 1. User uploads image → Frontend sends to Apps Script
+ * 2. Apps Script uploads to Drive
+ * 3. Apps Script returns image URL to frontend
+ * 4. Frontend sends complete inventory data with image URL
+ * 5. Apps Script adds item to Sheets
+ * Total: 2 API calls, longer wait time
+ * 
+ * NEW WORKFLOW (Fast):
+ * 1. User uploads image → Frontend sends to Apps Script
+ * 2. Apps Script uploads to Drive AND directly updates Sheets with URL
+ * 3. Frontend only needs to send remaining inventory data
+ * 4. Apps Script adds item to Sheets
+ * Total: 2 API calls, but first call does more work, reducing overall time
  * 
  * Setup Instructions:
  * 1. Create a new Google Apps Script project
@@ -18,7 +32,7 @@
  */
 
 // Configuration
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'; // Replace with your Google Sheet ID
+const SPREADSHEET_ID = '1-Ybi9I5P20ss6P1-dsA6UkcHa591o_Tq83jVrfSMaWE'; // Replace with your Google Sheet ID
 const SHEET_NAMES = {
   USERS: 'Users',
   INVENTORY: 'Inventory',
@@ -85,13 +99,24 @@ function doPost(e) {
       case 'getUsageHistory':
         response = handleGetUsageHistory(data);
         break;
+      case 'uploadImage':
+        // OPTIMIZED: This now directly updates Sheets with image URL
+        response = handleUploadImageOptimized(data);
+        break;
+      case 'completeInventoryItem':
+        // NEW: Complete the inventory item after image is uploaded
+        response = handleCompleteInventoryItem(data);
+        break;
+      case 'getCategories':
+        response = handleGetCategories(data);
+        break;
       default:
         response = { success: false, message: 'Unknown action' };
     }
     
-    return setCorsHeaders(output).setMimeType(ContentService.MimeType.JSON)
-      .setContent(JSON.stringify(response));
-      
+  return ContentService.createTextOutput(JSON.stringify(response))
+      .setMimeType(ContentService.MimeType.JSON);
+ 
   } catch (error) {
     const output = ContentService.createTextOutput();
     return setCorsHeaders(output).setMimeType(ContentService.MimeType.JSON)
@@ -226,15 +251,31 @@ function handleGetInventory(data) {
   return { success: true, inventory: inventory };
 }
 
+/**
+ * OPTIMIZED: handleAddInventoryItem
+ * 
+ * Now expects imageUrl to be already set (from image upload step)
+ * This makes the request smaller and faster
+ */
 function handleAddInventoryItem(data) {
   const { name, quantity, category, company, imageUrl, remarks, links } = data;
   const sheet = getSheet(SHEET_NAMES.INVENTORY);
   
-  // Check for duplicates
-  const values = sheet.getDataRange().getValues();
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][1].toLowerCase() === name.toLowerCase()) {
-      return { success: false, message: 'Item already exists' };
+  // // Check for duplicates
+  // const values = sheet.getDataRange().getValues();
+  // for (let i = 1; i < values.length; i++) {
+  //   if (values[i][1].toLowerCase() === name.toLowerCase()) {
+  //     return { success: false, message: 'Item already exists' };
+  //   }
+  // }
+  // Inside your handleCompleteInventoryItem function
+  for (let j = 1; j < values.length; j++) {
+    // Add a safety check: String(values[j][1] || "") 
+    // This converts null or numbers to strings so .toLowerCase() doesn't crash
+    const existingName = String(values[j][1] || "").toLowerCase();
+    
+    if (j !== i && existingName === name.toLowerCase()) {
+      return { success: false, message: 'Item with this name already exists' };
     }
   }
   
@@ -337,14 +378,6 @@ function handleAddCategory(data) {
   const { categoryName } = data;
   const sheet = getSheet(SHEET_NAMES.CATEGORIES);
   
-  // Check for duplicates
-  const values = sheet.getDataRange().getValues();
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0].toLowerCase() === categoryName.toLowerCase()) {
-      return { success: false, message: 'Category already exists' };
-    }
-  }
-  
   sheet.appendRow([categoryName]);
   return { success: true, message: 'Category added' };
 }
@@ -387,15 +420,34 @@ function handleGetUsageHistory(data) {
   return { success: true, history: history };
 }
 
-// ===== IMAGE UPLOAD TO GOOGLE DRIVE =====
+// ===== IMAGE UPLOAD TO GOOGLE DRIVE (OPTIMIZED) =====
 
-function handleUploadImage(data) {
+/**
+ * OPTIMIZED: handleUploadImageOptimized
+ * 
+ * NEW WORKFLOW:
+ * 1. Upload image to Google Drive
+ * 2. Get shareable link
+ * 3. Create a temporary row in Inventory sheet with the image URL
+ * 4. Return itemId and imageUrl to frontend
+ * 5. Frontend sends remaining data (name, quantity, etc.) with the itemId
+ * 6. Backend updates the temporary row with complete data
+ * 
+ * Benefits:
+ * - Image URL is ready immediately after upload
+ * - Frontend can show preview while filling other fields
+ * - Reduces overall wait time
+ * - Smaller payload for second request
+ */
+function handleUploadImageOptimized(data) {
   try {
-    const { fileName, mimeType, content } = data;
-    const folder = DriveApp.getFoldersByName('InventoryImages').next();
+    console.log("🖼️ Starting optimized image upload");
+    const { fileName, mimeType, content, folderId } = data;
     
+    // Step 1: Upload image to Google Drive
+    const folder = DriveApp.getFolderById(folderId);
     const blob = Utilities.newBlob(
-      Utilities.base64Decode(content),
+      Utilities.base64Decode(content), 
       mimeType,
       fileName
     );
@@ -403,10 +455,122 @@ function handleUploadImage(data) {
     const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE, DriveApp.Permission.VIEW);
     
-    const imageUrl = file.getUrl();
+    // Step 2: Create shareable link
+    const fileId = file.getId();
+    const directLink = "https://drive.google.com/thumbnail?id=" + fileId;
     
-    return { success: true, imageUrl: imageUrl };
+    console.log("✅ Image uploaded successfully");
+    console.log("📸 Image URL: " + directLink);
+    
+    // Step 3: Create temporary inventory entry with image URL
+    const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
+    const itemId = Utilities.getUuid();
+    
+    // Create a temporary row with just the image URL
+    // Other fields will be updated in the next step
+    const tempRow = [
+      itemId,
+      '[PENDING]',  // Placeholder name
+      0,            // Placeholder quantity
+      '[PENDING]',  // Placeholder category
+      '[PENDING]',  // Placeholder company
+      directLink,   // IMAGE URL (filled immediately)
+      '',           // Remarks
+      ''            // Links
+    ];
+    
+    inventorySheet.appendRow(tempRow);
+    console.log("📝 Temporary inventory entry created with itemId: " + itemId);
+    
+    // Step 4: Return immediately with image URL and itemId
+    return {
+      success: true,
+      itemId: itemId,
+      imageUrl: directLink,
+      message: 'Image uploaded successfully. Complete the inventory item details.'
+    };
+    
   } catch (error) {
+    console.error("❌ Image upload error: " + error.toString());
     return { success: false, message: error.toString() };
   }
+}
+
+/**
+ * NEW: handleCompleteInventoryItem
+ * 
+ * Completes the inventory item after image upload
+ * Updates the temporary row with actual data
+ * 
+ * @param data {
+ *   itemId: string,           // From image upload response
+ *   name: string,
+ *   quantity: number,
+ *   category: string,
+ *   company: string,
+ *   remarks: string (optional),
+ *   links: string (optional)
+ * }
+ */
+function handleCompleteInventoryItem(data) {
+  try {
+    const { itemId, name, quantity, category, company, remarks, links } = data;
+    const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
+    const values = inventorySheet.getDataRange().getValues();
+    
+    // 1. Get a list of all IDs from Column A
+    const ids = values.map(r => r[0]);
+    
+    // 2. Find where our itemId is
+    const rowIndex = ids.indexOf(itemId);
+    
+    // 3. If found (index is not -1)
+    if (rowIndex !== -1) {
+       // Note: Spreadsheet rows start at 1, so we add 1 to the index
+       const range = inventorySheet.getRange(rowIndex + 1, 1, 1, 8);
+       
+       range.setValues([[
+          itemId,
+          name,
+          quantity,
+          category,
+          company,
+          values[rowIndex][5], // The image URL already in the sheet
+          remarks || '',
+          links || ''
+        ]]);
+
+        return { success: true, message: 'Updated successfully!' };
+    }
+    
+    return { success: false, message: 'Item ID not found' };
+  } catch (e) {
+    return { success: false, message: e.toString() };
+  }
+}
+
+// ===== UTILITY FUNCTIONS =====
+
+/**
+ * Test function to verify Apps Script is working
+ * Call this from browser console: fetch('YOUR_APPS_SCRIPT_URL', {
+ *   method: 'POST',
+ *   body: JSON.stringify({action: 'test'})
+ * }).then(r => r.json()).then(console.log)
+ */
+function handleTest(data) {
+  return {
+    success: true,
+    message: 'Apps Script is working correctly',
+    timestamp: new Date().toISOString()
+  };
+}
+
+
+function handleGetCategories(data) {
+  const sheet = getSheet(SHEET_NAMES.CATEGORIES);
+  const values = sheet.getDataRange().getValues();
+  // Map the rows to a simple array, skipping the header row if it exists
+  const categories = values.slice(1).map(row => row); 
+  return { success: true, categories: categories };
 }

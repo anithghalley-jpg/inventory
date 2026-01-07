@@ -64,7 +64,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        redirect: 'follow', // 1. Handle Google Redirects
         body: JSON.stringify({
           action: 'login',
           email: email.trim(),
@@ -95,6 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('active_session_email', email); // For persistence
 
         console.log(`Logged in as ${userData.role}`);
+
       } else {
         throw new Error(data.message || 'Unauthorized access');
       }
@@ -186,4 +186,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

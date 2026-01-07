@@ -33,6 +33,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const [, navigate] = useLocation();
+  const [role, setRole] = useState(''); // Default is 'USER'
+  const [status, setStatus] = useState(''); // Default is 'PENDING'
 
 
   const handleGoogleSignIn = async () => {
@@ -44,8 +46,28 @@ export default function Login() {
     setIsLoading(true);
     try {
       await login(email, name);
-      toast.success('Login successful! Awaiting admin approval.');
-      navigate('/dashboard');
+      setRole(role);
+      setStatus(status);
+      if (status === 'PENDING') {
+        toast.info('Your account is awaiting approval.');
+        navigate('/dashboard'); // Or a "Pending" page
+        return;
+      }
+
+      if (status === 'REJECTED') {
+        toast.error('Access denied by admin.');
+        return;
+      }
+
+      // 3. Check the Role for Redirection
+      if (role === 'ADMIN') {
+        toast.success(`Welcome back, Admin ${name}`);
+        navigate('/admin');
+      } else {
+        toast.success('Login successful!');
+        navigate('/dashboard');
+      }
+
     } catch (error) {
       toast.error('Login failed. Please try again.');
     } finally {
