@@ -39,6 +39,7 @@ interface InventoryItem {
   imageUrl: string;
   remarks?: string;
   links?: string;
+  isPending?: boolean;
 }
 
 interface UsageRecord {
@@ -133,56 +134,39 @@ export default function AdminPanel() {
 
   // 2. Replace the old handleAddItem with this version
   const handleAddItem = async () => {
-
-
     // Validation (Existing logic) [1]
     if (!newItemName || !newItemQuantity || !newItemCompany || !newItemCategory) {
       toast.error('Please fill all required fields');
       return;
     }
-    // Update the local UI state so the user sees the item immediately [2]
-    const newItem: InventoryItem = {
+
+    // Create the object exactly as the 'completeInventoryItem' backend expects [7]
+    const pendingItem = {
       id: Math.random().toString(36).substr(2, 9), // Temporary ID for UI
       name: newItemName,
       quantity: parseInt(newItemQuantity),
       category: newItemCategory,
       company: newItemCompany,
-      imageUrl: capturedImage || '', // Pass the base64 image string
-      remarks: '', // Optional fields recognized by the backend [5]
-      links: ''
+      imageUrl: capturedImage || '',
+      remarks: '',
+      links: '',
+      isPending: true
     };
 
-    setInventory([...inventory, newItem]);
-    // 2. Create a "Pending Item" object
-    const pendingItem = {
-      id: Math.random().toString(36).substr(2, 9), // Temp ID [1]
-      name: newItemName,
-      quantity: parseInt(newItemQuantity),
-      category: newItemCategory,
-      company: newItemCompany,
-      imageUrl: capturedImage || '', // Temporary local base64 preview [2]
-      isPending: true // Flag to show it's still syncing
-    };
-
-    // 3. Update UI state instantly [2]
+    // Add to local UI state for instant feedback [9]
     setInventory([pendingItem, ...inventory]);
 
-    // 4. Save to Browser Storage (The Sync Queue)
+    // Push to local storage queue [11]
     const currentQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
     localStorage.setItem('syncQueue', JSON.stringify([...currentQueue, pendingItem]));
-    let finalImageUrl = '';
-    let base64Content = '';
 
-    // Clear input fields [2]
+    // Reset inputs immediately [11]
     setNewItemName('');
     setNewItemQuantity('');
     setNewItemCompany('');
-    setNewItemCategory('');
+    setCapturedImage(null);
 
-    setIsLoading(false);
-    processSyncQueue();
-
-    toast.success(`${newItemName} added to local queue!`);
+    processSyncQueue(); // Trigger the background worker [11]
 
   };
 
@@ -215,61 +199,79 @@ export default function AdminPanel() {
   };
 
   const processSyncQueue = async () => {
+    // 1. Get latest queue from storage
     const queue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
     if (queue.length === 0) return;
 
-    const itemToSync = queue; // Process the first item in the sequence
+    const itemToSync = queue[0]; // FIX: Get the first item object
+    setIsSyncing(true);
+    let syncedItemId = '';
 
     try {
-      let finalImageUrl = '';
-
-      // A. Background Upload to Google Drive [4, 6]
+      // STEP 1: Upload Image
       if (itemToSync.imageUrl && itemToSync.imageUrl.startsWith('data:')) {
-        const base64Content = itemToSync.imageUrl.split(',')[7];
+        const base64Content = itemToSync.imageUrl.split(',')[1];
         const uploadResponse = await fetch(SCRIPT_URL, {
           method: 'POST',
+          // mode: 'no-cors' REMOVED to allow reading the JSON response
           body: JSON.stringify({
             action: 'uploadImage',
-            fileName: `${itemToSync.name}_${Date.now()}.png`,
+            fileName: `${itemToSync.name.replace(/\s+/g, '_')}_${Date.now()}.png`,
             mimeType: 'image/png',
             content: base64Content,
             folderId: DRIVE_FOLDER_ID
           }),
         });
+
         const uploadResult = await uploadResponse.json();
-        if (uploadResult.success) finalImageUrl = uploadResult.imageUrl;
+        if (uploadResult.success) {
+          syncedItemId = uploadResult.itemId; // Real UUID from backend
+        } else {
+          throw new Error("Image upload failed: " + uploadResult.message);
+        }
       }
 
-      // B. Background Update to Google Sheets [8, 9]
-      await fetch(SCRIPT_URL, {
+      // ONLY PROCEED if we have a valid ID to update
+      if (!syncedItemId) throw new Error("No Item ID received from server");
+      // Inside processSyncQueue Step 2
+      const completeResponse = await fetch(SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors', // Use no-cors for speed and to bypass preflight [1]
         body: JSON.stringify({
-          action: 'addInventoryItem',
+          action: 'completeInventoryItem',
+          itemId: syncedItemId,
           name: itemToSync.name,
           quantity: itemToSync.quantity,
           category: itemToSync.category,
           company: itemToSync.company,
-          imageUrl: finalImageUrl,
           remarks: itemToSync.remarks || '',
           links: itemToSync.links || ''
         }),
       });
 
-      // C. Success: Remove from Queue and repeat
+      const completeResult = await completeResponse.json();
+
+      if (completeResult.success) {
+        // SUCCESS: Move to next
+        const updatedQueue = queue.slice(1);
+        localStorage.setItem('syncQueue', JSON.stringify(updatedQueue));
+        setSyncQueue(updatedQueue);
+        toast.success(`${itemToSync.name} synced!`);
+      } else {
+        // SERVER REJECTED (e.g. Duplicate name)
+        throw new Error(completeResult.message);
+      }
+
+    } catch (error) {
+      console.error("CRITICAL SYNC ERROR:", error);
+      toast.error(`Sync failed for ${itemToSync.name}. Skipping to prevent loop.`);
+
+      // FIX: Remove the failing item from the queue so it doesn't loop
       const updatedQueue = queue.slice(1);
       localStorage.setItem('syncQueue', JSON.stringify(updatedQueue));
+      setSyncQueue(updatedQueue);
 
-      // Refresh the real inventory list from the sheet [10]
-      if (updatedQueue.length === 0) {
-        fetchInventory();
-        toast.success('All items synced with Google Sheets!');
-      } else {
-        processSyncQueue(); // Move to the next item in sequence
-      }
-    } catch (error) {
-      console.error('Background sync failed:', error);
-      // Keep it in the queue to try again later
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -517,28 +519,50 @@ export default function AdminPanel() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {inventory.map((item) => (
-                <Card key={item.id} className="card-soft p-4">
-                  <h3 className="font-semibold text-foreground mb-2">{item.name}</h3>
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-auto rounded-lg"
-                  />
-                  <div className="space-y-2 text-sm">
-                    <p className="text-muted-foreground">
-                      <span className="font-medium">Company:</span> {item.company}
-                    </p>
-                    <p className="text-muted-foreground">
-                      <span className="font-medium">Category:</span> {item.category}
-                    </p>
-                    <p className="text-emerald-600 font-semibold">
-                      Stock: {item.quantity}
-                    </p>
-                  </div>
-                </Card>
-              ))}
+              {inventory.map((item) => {
+                // Check if the item is locally syncing or marked as [PENDING] by the backend
+                const isSyncing = item.isPending || item.name === '[PENDING]';
+
+                if (isSyncing) {
+                  return (
+                    <Card key={item.id} className="p-4 border-dashed bg-muted/20 opacity-70">
+                      <div className="flex flex-col items-center justify-center h-48 space-y-4 text-muted-foreground">
+                        {/* Using a Lucide icon as a spinner (ensure Loader2 is imported) */}
+                        <div className="animate-spin text-emerald-600">
+                          <Package size={32} />
+                        </div>
+                        <div className="text-center">
+                          <p className="font-medium">Syncing Item...</p>
+                          <p className="text-xs italic">Uploading to Drive & Sheets</p>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                }
+
+                // Normal rendering for completed items
+                return (
+                  <Card key={item.id} className="p-4 hover:shadow-md transition-shadow">
+                    <h3 className="font-bold text-lg mb-2 text-emerald-900">{item.name}</h3>
+                    <div className="relative aspect-video mb-4 overflow-hidden rounded-lg bg-muted">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <p className="text-muted-foreground">Company:</p>
+                      <p className="font-medium">{item.company}</p>
+                      <p className="text-muted-foreground">Category:</p>
+                      <p className="font-medium">{item.category}</p>
+                      <p className="text-muted-foreground">Stock:</p>
+                      <p className="font-bold text-emerald-700">{item.quantity}</p>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           </TabsContent>
 

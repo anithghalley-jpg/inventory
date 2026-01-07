@@ -62,10 +62,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (email: string, name: string) => {
     setIsLoading(true);
     try {
-      console.log('🔐 Attempting login for:', email);
-
       const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
+        redirect: 'follow', // 1. Handle Google Redirects
         body: JSON.stringify({
           action: 'login',
           email: email.trim(),
@@ -73,28 +72,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
       });
 
+      // 2. Check for network errors
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Google Server Error: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('✅ Login response:', data);
 
+      // 3. Logic check (Did handleLogin return success?)
       if (data.success && data.user) {
         const userData: User = {
-          id: data.user.email || data.user.id,
+          id: data.user.id || data.user.email,
           email: data.user.email,
           name: data.user.name,
-          role: data.user.role || 'USER',
+          role: data.user.role?.toUpperCase() || 'USER', // Normalize to uppercase
           status: data.user.status || 'PENDING',
           createdDate: data.user.createdDate || new Date().toISOString()
         };
 
         setUser(userData);
         localStorage.setItem(`user_${email}`, JSON.stringify(userData));
-        console.log('✅ User authenticated:', userData);
+        localStorage.setItem('active_session_email', email); // For persistence
+
+        console.log(`Logged in as ${userData.role}`);
       } else {
-        throw new Error(data.message || 'Login failed');
+        throw new Error(data.message || 'Unauthorized access');
       }
     } catch (error) {
       console.error('❌ Login error:', error);
