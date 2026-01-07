@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, LogOut, Users, Package, CheckCircle, XCircle, Camera } from 'lucide-react';
+import { Plus, LogOut, Users as UsersIcon, Package, CheckCircle, XCircle, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
@@ -28,6 +28,15 @@ interface PendingUser {
   name: string;
   createdDate: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  role: string;
+  createdDate: string;
 }
 
 interface InventoryItem {
@@ -81,6 +90,7 @@ export default function AdminPanel() {
   const [newItemQuantity, setNewItemQuantity] = useState('');
   const [newItemCompany, setNewItemCompany] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
+  const [allUsers, setAllUsers] = useState<User[]>([]);
 
   if (user?.role !== 'ADMIN') {
     return (
@@ -148,6 +158,58 @@ export default function AdminPanel() {
       }
     } catch (error) {
       toast.error('Connection error while adding category');
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getAllUsers' }),
+      });
+      const result = await response.json();
+      console.log("Data from Google:", result.users); // <--- ADD THIS LINE
+
+      if (result.success) {
+        // Priority: 1 for Pending (Needs attention), 2 for Approved, 3 for Rejected
+        const priority = { 'PENDING': 1, 'APPROVED': 2, 'REJECTED': 3 };
+
+        const sorted = result.users.sort((a: User, b: User) => {
+          // We cast the status to "keyof typeof priority"
+          const aStatus = a.status as keyof typeof priority;
+          const bStatus = b.status as keyof typeof priority;
+
+          return (priority[aStatus] || 99) - (priority[bStatus] || 99);
+        });
+
+        setAllUsers(sorted);
+      }
+    } catch (error) {
+      toast.error('Failed to load users');
+    }
+  };
+
+  const approveUser = async (userId: string) => {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'approveUser', userId }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("User approved!");
+
+        // OPTIMIZATION: Update the local state so the UI changes instantly
+        setAllUsers(prevUsers =>
+          prevUsers.map((u) =>
+            u.id === userId ? { ...u, status: 'APPROVED' } : u
+          )
+        );
+      }
+      toast.success("User approved!");
+    } catch (error) {
+      toast.error("Approval failed");
     }
   };
 
@@ -358,7 +420,8 @@ export default function AdminPanel() {
   // 3. Trigger the fetch automatically when the page loads
   React.useEffect(() => {
     fetchInventory();
-    fetchCategories()
+    fetchCategories();
+    fetchUsers();
   }, []);
 
   return (
@@ -403,7 +466,7 @@ export default function AdminPanel() {
         <Tabs defaultValue="users" className="space-y-6">
           <TabsList className="grid w-full max-w-md grid-cols-4 bg-muted">
             <TabsTrigger value="users" className="flex items-center gap-2">
-              <Users className="w-4 h-4" />
+              <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
             </TabsTrigger>
             <TabsTrigger value="inventory" className="flex items-center gap-2">
@@ -422,58 +485,66 @@ export default function AdminPanel() {
 
           {/* Users Tab */}
           <TabsContent value="users" className="space-y-4">
-            <div>
-              <h2 className="text-2xl font-display font-bold text-foreground mb-4">User Approvals</h2>
-              <p className="text-muted-foreground mb-6">Review and approve pending user registrations</p>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-2xl font-bold">User Approvals</h2>
+                <p className="text-muted-foreground">Review and approve pending registrations</p>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {pendingUsers.map((user) => (
-                <Card key={user.id} className="card-soft p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-foreground">{user.name}</h3>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Registered: {new Date(user.createdDate).toLocaleDateString()}
-                      </p>
+            <div className="grid gap-4">
+              {allUsers.map((u) => (
+                <Card key={u.id || u.email} className="p-4 flex items-center justify-between">
+                  {/* 1. Left Side: User Info */}
+                  <div className="flex items-center space-x-4">
+                    <div className="h-10 w-10 rounded-full bg-sage-100 flex items-center justify-center">
+                      {/* Using the renamed Icon to avoid name collision */}
+                      <UsersIcon className="h-5 w-5 text-sage-600" />
                     </div>
+                    <div>
+                      <h3 className="font-bold leading-none">{u.name || "Unknown Name"}</h3>
+                      <p className="text-sm text-muted-foreground">{u.email || "No Email"}</p>
+                    </div>
+                  </div>
 
-                    <div className="flex items-center gap-2">
-                      {user.status === 'PENDING' ? (
-                        <>
-                          <Button
-                            onClick={() => handleApproveUser(user.id)}
-                            size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                          >
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Approve
-                          </Button>
-                          <Button
-                            onClick={() => handleRejectUser(user.id)}
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 border-red-200 hover:bg-red-50"
-                          >
-                            <XCircle className="w-4 h-4 mr-2" />
-                            Reject
-                          </Button>
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {user.status === 'APPROVED' ? (
-                            <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-                              Approved
-                            </span>
-                          ) : (
-                            <span className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1 rounded-full">
-                              Rejected
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                  {/* 2. Right Side: Actions/Status */}
+                  <div className="flex items-center space-x-2">
+                    {u.status === 'PENDING' ? (
+                      <div className="flex space-x-2">
+                        <Button
+                          onClick={() => handleApproveUser(u.id)}
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          onClick={() => handleRejectUser(u.id)}
+                          size="sm"
+                          variant="outline"
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className={`flex items-center space-x-1 px-3 py-1 rounded-full border ${u.status === 'APPROVED'
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-red-50 border-red-200'
+                        }`}>
+                        {u.status === 'APPROVED' ? (
+                          <>
+                            <CheckCircle className="h-4 w-4 text-emerald-600" />
+                            <span className="text-emerald-600 text-sm font-bold">Approved</span>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-4 w-4 text-red-600" />
+                            <span className="text-red-600 text-sm font-bold">Rejected</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </Card>
               ))}
