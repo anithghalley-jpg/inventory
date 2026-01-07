@@ -256,19 +256,33 @@ export default function AdminPanel() {
         localStorage.setItem('syncQueue', JSON.stringify(updatedQueue));
         setSyncQueue(updatedQueue);
         toast.success(`${itemToSync.name} synced!`);
+        // 2. UPDATE THE UI: Find the item in 'inventory' and mark it finished
+        setInventory(prevInventory =>
+          prevInventory.map(invItem =>
+            // We match by name or temporary ID
+            invItem.name === itemToSync.name ?
+              { ...invItem, isPending: false, imageUrl: itemToSync.imageUrl } :
+              invItem
+          )
+        );
+        if (updatedQueue.length === 0) {
+          // Optional: Only fetch if you want a total refresh
+          // fetchInventory(); 
+          toast.success(`All items synced!`);
+        } else {
+          processSyncQueue();
+        }
       } else {
         // SERVER REJECTED (e.g. Duplicate name)
         throw new Error(completeResult.message);
       }
 
+      // AdminPanel.tsx approx line 261
     } catch (error) {
       console.error("CRITICAL SYNC ERROR:", error);
-      toast.error(`Sync failed for ${itemToSync.name}. Skipping to prevent loop.`);
-
-      // FIX: Remove the failing item from the queue so it doesn't loop
-      const updatedQueue = queue.slice(1);
-      localStorage.setItem('syncQueue', JSON.stringify(updatedQueue));
-      setSyncQueue(updatedQueue);
+      // Remove the problematic item from the queue so the loop STOPS
+      setSyncQueue(prev => prev.slice(1));
+      toast.error("Sync failed due to data error. Check Google Sheet for empty rows.");
 
     } finally {
       setIsSyncing(false);
