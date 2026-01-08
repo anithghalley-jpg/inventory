@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, LogOut, Users as UsersIcon, Package, CheckCircle, XCircle, Camera } from 'lucide-react';
+import { Plus, LogOut, Users as UsersIcon, Package, CheckCircle, Camera, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
@@ -91,6 +91,7 @@ export default function AdminPanel() {
   const [newItemCompany, setNewItemCompany] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   if (user?.role !== 'ADMIN') {
     return (
@@ -113,6 +114,30 @@ export default function AdminPanel() {
       </div>
     );
   }
+
+  const approveUser = async (userId: string) => {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'approveUser', userId }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("User approved!");
+
+        // OPTIMIZATION: Update the local state so the UI changes instantly
+        setAllUsers(prevUsers =>
+          prevUsers.map((u) =>
+            u.id === userId ? { ...u, status: 'APPROVED' } : u
+          )
+        );
+      }
+      toast.success("User approved!");
+    } catch (error) {
+      toast.error("Approval failed");
+    }
+  };
 
   const handleApproveUser = (userId: string) => {
     setPendingUsers(
@@ -182,34 +207,17 @@ export default function AdminPanel() {
           return (priority[aStatus] || 99) - (priority[bStatus] || 99);
         });
 
-        setAllUsers(sorted);
+        // Normalize data to ensure case-insensitive rendering
+        const normalizedUsers = result.users.map((u: User) => ({
+          ...u,
+          status: u.status?.toUpperCase() || 'PENDING',
+          role: u.role?.toUpperCase() || 'USER'
+        }));
+
+        setAllUsers(normalizedUsers);
       }
     } catch (error) {
       toast.error('Failed to load users');
-    }
-  };
-
-  const approveUser = async (userId: string) => {
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'approveUser', userId }),
-      });
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success("User approved!");
-
-        // OPTIMIZATION: Update the local state so the UI changes instantly
-        setAllUsers(prevUsers =>
-          prevUsers.map((u) =>
-            u.id === userId ? { ...u, status: 'APPROVED' } : u
-          )
-        );
-      }
-      toast.success("User approved!");
-    } catch (error) {
-      toast.error("Approval failed");
     }
   };
 
@@ -488,67 +496,61 @@ export default function AdminPanel() {
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-2xl font-bold">User Approvals</h2>
-                <p className="text-muted-foreground">Review and approve pending registrations</p>
+                <p className="text-muted-foreground">
+                  Review and approve pending registrations
+                </p>
               </div>
             </div>
 
             <div className="grid gap-4">
-              {allUsers.map((u) => (
-                <Card key={u.id || u.email} className="p-4 flex items-center justify-between">
-                  {/* 1. Left Side: User Info */}
-                  <div className="flex items-center space-x-4">
-                    <div className="h-10 w-10 rounded-full bg-sage-100 flex items-center justify-center">
-                      {/* Using the renamed Icon to avoid name collision */}
-                      <UsersIcon className="h-5 w-5 text-sage-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold leading-none">{u.name || "Unknown Name"}</h3>
-                      <p className="text-sm text-muted-foreground">{u.email || "No Email"}</p>
-                    </div>
-                  </div>
+              {allUsers
+                .filter((u) => u.status !== 'REJECTED') // ❌ hide rejected users
+                .map((u) => (
+                  <Card
+                    key={u.id || u.email}
+                    className="p-4 hover:shadow-lg transition-all cursor-pointer transform hover:scale-[1.02]"
+                  >
+                    {/* Left: User Info */}
+                    <div className="flex items-center space-x-4">
+                      <div className="h-10 w-10 rounded-full bg-sage-100 flex items-center justify-center">
+                        <UsersIcon className="h-5 w-5 text-sage-600" />
+                      </div>
 
-                  {/* 2. Right Side: Actions/Status */}
-                  <div className="flex items-center space-x-2">
-                    {u.status === 'PENDING' ? (
-                      <div className="flex space-x-2">
-                        <Button
-                          onClick={() => handleApproveUser(u.id)}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          onClick={() => handleRejectUser(u.id)}
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 border-red-200 hover:bg-red-50"
-                        >
-                          Reject
-                        </Button>
+                      <div>
+                        <h3 className="font-semibold leading-none">
+                          {u.name || 'Unknown Name'}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          {u.email || 'No Email'}
+                        </p>
+
+                        {/* Role badge */}
+                        <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-muted border">
+                          {u.role || 'USER'}
+                        </span>
                       </div>
-                    ) : (
-                      <div className={`flex items-center space-x-1 px-3 py-1 rounded-full border ${u.status === 'APPROVED'
-                        ? 'bg-emerald-50 border-emerald-200'
-                        : 'bg-red-50 border-red-200'
-                        }`}>
-                        {u.status === 'APPROVED' ? (
-                          <>
-                            <CheckCircle className="h-4 w-4 text-emerald-600" />
-                            <span className="text-emerald-600 text-sm font-bold">Approved</span>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="h-4 w-4 text-red-600" />
-                            <span className="text-red-600 text-sm font-bold">Rejected</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                    </div>
+
+                    <div className="flex items-center">
+                      {u.status === 'APPROVED' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Approved
+                        </span>
+                      )}
+
+                      {u.status === 'PENDING' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200">
+                          <Clock className="h-3.5 w-3.5" />
+                          Pending
+                        </span>
+                      )}
+                    </div>
+
+                  </Card>
+                ))}
             </div>
+
           </TabsContent>
 
           {/* Inventory Tab */}
@@ -664,7 +666,11 @@ export default function AdminPanel() {
 
                 // Normal rendering for completed items
                 return (
-                  <Card key={item.id} className="p-4 hover:shadow-md transition-shadow">
+                  <Card
+                    key={item.id}
+                    className="p-4 hover:shadow-lg transition-all cursor-pointer transform hover:scale-[1.02]"
+                    onClick={() => setSelectedItem(item)}
+                  >
                     <h3 className="font-bold text-lg mb-2 text-emerald-900">{item.name}</h3>
                     <div className="relative aspect-video mb-4 overflow-hidden rounded-lg bg-muted">
                       <img
@@ -686,6 +692,105 @@ export default function AdminPanel() {
                 );
               })}
             </div>
+
+            {/* Selected Item Modal */}
+            <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+              <DialogContent className="max-w-4xl p-0 overflow-hidden">
+                {/* Header */}
+                <DialogHeader className="px-6 pt-6">
+                  <DialogTitle className="text-2xl font-display font-bold text-emerald-900 text-center">
+                    {selectedItem?.name}
+                  </DialogTitle>
+                </DialogHeader>
+
+                {/* Main Content */}
+                <div className="px-6 pb-6 space-y-6">
+                  {/* Image – Center Focus */}
+                  <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-muted border">
+                    {selectedItem?.imageUrl ? (
+                      <img
+                        src={selectedItem.imageUrl}
+                        alt={selectedItem.name}
+                        className="w-full h-full object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground">
+                        No image available
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Item Details */}
+                  <div className="grid md:grid-cols-3 gap-4">
+                    {/* Stock */}
+                    <div className="rounded-xl border bg-emerald-50 p-4 text-center">
+                      <p className="text-sm font-medium text-emerald-600">Stock Level</p>
+                      <p className="text-3xl font-bold text-emerald-900">
+                        {selectedItem?.quantity}
+                      </p>
+                    </div>
+
+                    {/* Category */}
+                    <div className="rounded-xl border bg-blue-50 p-4 text-center">
+                      <p className="text-sm font-medium text-blue-600">Category</p>
+                      <p className="text-lg font-semibold text-blue-900">
+                        {selectedItem?.category}
+                      </p>
+                    </div>
+
+                    {/* Company */}
+                    <div className="rounded-xl border bg-purple-50 p-4 text-center">
+                      <p className="text-sm font-medium text-purple-600">Company / Brand</p>
+                      <p className="text-lg font-semibold text-purple-900">
+                        {selectedItem?.company}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Additional Info */}
+                  <div className="space-y-4">
+                    {selectedItem?.remarks && (
+                      <div className="rounded-xl border bg-muted p-4">
+                        <h4 className="font-medium text-foreground mb-1">Remarks</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedItem.remarks}
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedItem?.links && (
+                      <div className="rounded-xl border p-4">
+                        <h4 className="font-medium text-foreground mb-1">Important Link</h4>
+                        <a
+                          href={selectedItem.links}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:underline break-all"
+                        >
+                          {selectedItem.links}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-3 pt-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setSelectedItem(null)}
+                    >
+                      Close
+                    </Button>
+                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700">
+                      Edit Details
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
           </TabsContent>
 
           {/* Categories Tab */}

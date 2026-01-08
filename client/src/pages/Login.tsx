@@ -45,23 +45,22 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      await login(email, name);
-      setRole(role);
-      setStatus(status);
-      if (status === 'PENDING') {
+      const user = await login(email, name);
+
+      if (user.status === 'PENDING') {
         toast.info('Your account is awaiting approval.');
         navigate('/dashboard'); // Or a "Pending" page
         return;
       }
 
-      if (status === 'REJECTED') {
+      if (user.status === 'REJECTED') {
         toast.error('Access denied by admin.');
         return;
       }
 
       // 3. Check the Role for Redirection
-      if (role === 'ADMIN') {
-        toast.success(`Welcome back, Admin ${name}`);
+      if (user.role === 'ADMIN') {
+        toast.success(`Welcome back, Admin ${user.name}`);
         navigate('/admin');
       } else {
         toast.success('Login successful!');
@@ -164,11 +163,16 @@ export default function Login() {
               <GoogleLogin
 
                 onSuccess={(credentialResponse) => {
-                  const decoded = jwtDecode(credentialResponse.credential!);
+                  const decoded = jwtDecode(credentialResponse.credential!) as any;
                   login(decoded.email, decoded.name)
-                    .then(() => {
-                      toast.success('Login successful! Awaiting admin approval.');
-                      navigate('/dashboard');
+                    .then((user) => {
+                      if (user.role === 'ADMIN') {
+                        toast.success('Welcome back Admin!');
+                        navigate('/admin');
+                      } else {
+                        toast.success('Login successful!');
+                        navigate('/dashboard');
+                      }
                     })
                     .catch(() => {
                       toast.error('Login failed. Please try again.');

@@ -20,7 +20,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, name: string) => Promise<void>;
+  login: (email: string, name: string) => Promise<User>;
   logout: () => void;
   updateUserRole: (userId: string, role: 'ADMIN' | 'USER') => Promise<void>;
   updateUserStatus: (userId: string, status: 'APPROVED' | 'REJECTED') => Promise<void>;
@@ -44,7 +44,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
  */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   /**
    * login - Authenticates user with Google Apps Script backend
@@ -59,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * 4. If new user: add to sheet with PENDING status
    * 5. Store user data in state and localStorage
    */
-  const login = useCallback(async (email: string, name: string) => {
+  const login = useCallback(async (email: string, name: string): Promise<User> => {
     setIsLoading(true);
     try {
       const response = await fetch(APPS_SCRIPT_URL, {
@@ -85,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: data.user.email,
           name: data.user.name,
           role: data.user.role?.toUpperCase() || 'USER', // Normalize to uppercase
-          status: data.user.status || 'PENDING',
+          status: data.user.status?.toUpperCase() || 'PENDING', // Normalize to uppercase
           createdDate: data.user.createdDate || new Date().toISOString()
         };
 
@@ -94,6 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('active_session_email', email); // For persistence
 
         console.log(`Logged in as ${userData.role}`);
+        return userData;
 
       } else {
         throw new Error(data.message || 'Unauthorized access');
@@ -119,6 +120,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     localStorage.clear();
   }, []);
+
+
+  // 2. Auto-Logout on Inactivity
+  React.useEffect(() => {
+    if (!user) return;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 Minutes
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        console.log('⏰ Session expired due to inactivity');
+        logout();
+        // Optional: toast.info('Logged out due to inactivity');
+      }, INACTIVITY_LIMIT);
+    };
+
+    // Events to track activity
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(event => document.addEventListener(event, resetTimer));
+
+    // Initialize timer
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach(event => document.removeEventListener(event, resetTimer));
+    };
+  }, [user, logout]);
+
+  // 1. Session Restoration on Mount
+  React.useEffect(() => {
+    const activeEmail = localStorage.getItem('active_session_email');
+    if (activeEmail) {
+      const storedUser = localStorage.getItem(`user_${activeEmail}`);
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          // Optional: Verify token validity here if you had an expiry
+          setUser(parsedUser);
+          console.log('🔄 Session restored for:', parsedUser.email);
+        } catch (e) {
+          console.error('Failed to parse stored user session');
+          localStorage.removeItem(`user_${activeEmail}`);
+        }
+      }
+    }
+    setIsLoading(false);
+  }, []);
+
+
 
   /**
    * updateUserRole - Updates user role (Admin only)
