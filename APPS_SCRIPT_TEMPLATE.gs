@@ -38,7 +38,8 @@ const SHEET_NAMES = {
   INVENTORY: 'Inventory',
   USAGE_HISTORY: 'UsageHistory',
   CATEGORIES: 'Categories',
-  ITEM_REQUESTS: 'ItemRequests'
+  ITEM_REQUESTS: 'ItemRequests',
+  REQUESTS: 'Requests'
 };
 
 // Initialize spreadsheet
@@ -85,10 +86,10 @@ function doPost(e) {
         response = handleGetPendingUsers(data);
         break;
       case 'approveUser':
-        response = handleApproveUser(data);
+        response = handleUpdateUserStatus(data);
         break;
       case 'rejectUser':
-        response = handleRejectUser(data);
+        response = handleUpdateUserStatus(data);
         break;
       case 'addInventoryItem':
         response = handleAddInventoryItem(data);
@@ -109,6 +110,15 @@ function doPost(e) {
         break;
       case 'getCategories':
         response = handleGetCategories(data);
+        break;
+      case 'getAllUsers':
+        response = handleGetAllUsers(data);
+        break;
+      case 'checkoutRequest':
+        response = handleCheckoutRequest(data);
+        break;
+      case 'getRequests': // NEW
+        response = handleGetRequests(data);
         break;
       default:
         response = { success: false, message: 'Unknown action' };
@@ -574,3 +584,92 @@ function handleGetCategories(data) {
   const categories = values.slice(1).map(row => row); 
   return { success: true, categories: categories };
 }
+
+// 1. Fetch all users from the Sheet
+function handleGetAllUsers() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Users");
+  const values = sheet.getDataRange().getValues();
+  
+  // Skip the header row (index 0)
+  const users = values.slice(1).map(row => ({
+    email: row[0],           // Column B: Email
+    name: row[1],            // Column C: Name
+    role: row[2] || 'USER',  // Column D: Role
+    status: row[3] || 'PENDING', // Column E: Status
+    createdDate: row[4]      // Column F: CreatedDate
+  }));
+
+  return { success: true, users: users };
+}
+
+// 2. Update a user's status (Approve or Reject)
+function handleUpdateUserStatus(userId, newStatus) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Users");
+  const data = sheet.getDataRange().getValues();
+  
+  // Find the row where the ID matches
+  let rowIndex = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0].toString() === userId.toString()) {
+      rowIndex = i + 1; // +1 because Sheets is 1-indexed
+      break;
+    }
+  }
+
+  if (rowIndex !== -1) {
+    // Column E is index 5 (1-indexed for getRange)
+    sheet.getRange(rowIndex, 5).setValue(newStatus);
+    return { success: true, message: `User status updated to ${newStatus}` };
+  } else {
+    return { success: false, message: "User not found" };
+  }
+}
+
+// Handle Checkout Request
+function handleCheckoutRequest(data) {
+  const { userEmail, userName, itemId, itemName, quantity } = data;
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  
+  sheet.appendRow([
+    new Date().toISOString(),
+    userEmail,
+    userName,
+    itemId,
+    itemName,
+    quantity,
+    'PENDING',
+    ''
+  ]);
+  
+  return { success: true, message: 'Request submitted successfully' };
+}
+
+// NEW: Get all requests for Admin/Dashboard
+function handleGetRequests(data) {
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  const values = sheet.getDataRange().getValues();
+  const requests = [];
+  
+  // Skip header row
+  for (let i = 1; i < values.length; i++) {
+    requests.push({
+      date: values[i][0],
+      userEmail: values[i][1],
+      userName: values[i][2],
+      itemId: values[i][3],
+      itemName: values[i][4],
+      quantity: values[i][5],
+      status: values[i][6],        // PENDING / APPROVED / REJECTED
+      actionBy: values[i][7],      // Admin Name
+      returnStatus: values[i][8]   // YES / NO (or empty)
+    });
+  }
+  
+  return { success: true, requests: requests };
+}
+
+
+
+

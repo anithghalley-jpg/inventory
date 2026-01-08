@@ -91,6 +91,7 @@ export default function AdminPanel() {
   const [newItemCompany, setNewItemCompany] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [activeLoans, setActiveLoans] = useState<any[]>([]); // New State for Loans
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   if (user?.role !== 'ADMIN') {
@@ -215,6 +216,24 @@ export default function AdminPanel() {
         }));
 
         setAllUsers(normalizedUsers);
+
+        // Fetch Requests for Active Loans
+        const reqResponse = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'getRequests' }),
+        });
+        const reqResult = await reqResponse.json();
+
+        if (reqResult.success) {
+          // Filter for active approved loans (Return Status != YES)
+          const validLoans = reqResult.requests.filter((r: any) =>
+            r.status === 'APPROVED' && (r.returnStatus || '').toLowerCase() !== 'yes'
+          );
+          setActiveLoans(validLoans);
+        }
+
+      } else {
+        toast.error('Failed to fetch users');
       }
     } catch (error) {
       toast.error('Failed to load users');
@@ -529,6 +548,26 @@ export default function AdminPanel() {
                           {u.role || 'USER'}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Active Loans Display */}
+                    <div className="flex-1 px-4">
+                      {(() => {
+                        const userLoans = activeLoans.filter(l => l.userEmail === u.email);
+                        if (userLoans.length > 0) {
+                          return (
+                            <div className="flex flex-wrap gap-2">
+                              {userLoans.map((loan, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs border border-blue-100">
+                                  <Package className="w-3 h-3" />
+                                  {loan.itemName} <span className="font-bold">x{loan.quantity}</span>
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return <span className="text-xs text-muted-foreground italic">No active items</span>;
+                      })()}
                     </div>
 
                     <div className="flex items-center">

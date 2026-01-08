@@ -81,20 +81,35 @@ export default function Dashboard() {
         setCategories(['all', ...uniqueCats as string[]]);
       }
 
-      // Fetch Usage History (for My Items)
-      const histResponse = await fetch(SCRIPT_URL, {
+      // Fetch Requests (New Logic for My Items)
+      const reqResponse = await fetch(SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'getUsageHistory' }),
+        body: JSON.stringify({ action: 'getRequests' }),
       });
-      const histResult = await histResponse.json();
+      const reqResult = await reqResponse.json();
 
-      if (histResult.success) {
-        // Filter for ONLY this user's CHECKOUT actions
-        // In a real app, backend should filter, but here we filter client-side per requirement
-        const myHistory = histResult.history.filter((r: UsageRecord) =>
-          r.userEmail === user?.email && r.action === 'CHECKOUT'
+      if (reqResult.success) {
+        /*
+         * Filter Logic:
+         * 1. Must match current user email
+         * 2. Must be APPROVED by admin
+         * 3. Return Status must NOT be 'YES' (case-insensitive)
+         */
+        const myActiveItems = reqResult.requests.filter((r: any) =>
+          r.userEmail === user?.email &&
+          r.status === 'APPROVED' &&
+          (r.returnStatus || '').toLowerCase() !== 'yes'
         );
-        setMyItems(myHistory);
+
+        // Map request data to UsageRecord format for compatibility
+        const formattedItems = myActiveItems.map((r: any) => ({
+          id: r.date, // Using date as ID since row ID isn't explicit
+          itemName: r.itemName,
+          quantity: r.quantity,
+          timestamp: r.date
+        }));
+
+        setMyItems(formattedItems);
       }
 
     } catch (error) {
@@ -105,19 +120,39 @@ export default function Dashboard() {
     }
   };
 
-  const handleCheckout = () => {
-    /* 
-      NOTE: This currently purely simulates a checkout on the UI 
-      because the backend 'handleCheckout' endpoint wasn't explicitly detailed 
-      in the previous context, but we will send a request if it exists 
-      or just show success for now as per "Request New Item" flow.
-    */
+  const handleCheckout = async () => {
     if (!selectedItem || !checkoutQuantity) return;
 
-    toast.success(`Request for ${checkoutQuantity} ${selectedItem.name}(s) sent to Admin`);
-    setSelectedItem(null);
-    setCheckoutQuantity('1');
-    // Ideally: await fetch(SCRIPT_URL, { action: 'checkoutItem', ... })
+    setIsLoading(true);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'checkoutRequest',
+          userEmail: user?.email,
+          userName: user?.name,
+          itemId: selectedItem.id,
+          itemName: selectedItem.name,
+          quantity: parseInt(checkoutQuantity),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(`Request for ${checkoutQuantity} ${selectedItem.name}(s) sent to Admin`);
+        setSelectedItem(null);
+        setCheckoutQuantity('1');
+        // Refresh history to show the new pending request (logic to be added to backend to show pending methods if needed, or just let users wait)
+        fetchData();
+      } else {
+        toast.error("Failed to submit request: " + result.message);
+      }
+    } catch (error) {
+      toast.error("Network error submitting request");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRequestNewItem = () => {
