@@ -13,7 +13,10 @@ export interface User {
   name: string;
   role: 'ADMIN' | 'USER';
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
   createdDate: string;
+  laptopStatus?: 'Online' | 'Offline';
+  totalTime?: number;
 }
 
 interface AuthContextType {
@@ -86,7 +89,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           name: data.user.name,
           role: data.user.role?.toUpperCase() || 'USER', // Normalize to uppercase
           status: data.user.status?.toUpperCase() || 'PENDING', // Normalize to uppercase
-          createdDate: data.user.createdDate || new Date().toISOString()
+          createdDate: data.user.createdDate || new Date().toISOString(),
+          laptopStatus: data.user.laptopStatus || 'Offline',
+          totalTime: data.user.totalTime || 0
         };
 
         setUser(userData);

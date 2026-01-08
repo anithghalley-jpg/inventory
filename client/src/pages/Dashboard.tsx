@@ -4,6 +4,7 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -56,6 +57,18 @@ export default function Dashboard() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [checkoutQuantity, setCheckoutQuantity] = useState('1');
+
+  // Laptop Tracking State
+  const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
+  const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
+
+  // Sync state with user context updates
+  useEffect(() => {
+    if (user) {
+      setLaptopStatus(user.laptopStatus || 'Offline');
+      setTotalScreenTime(user.totalTime || 0);
+    }
+  }, [user]);
 
   // 1. Fetch Data on Mount
   useEffect(() => {
@@ -159,6 +172,44 @@ export default function Dashboard() {
     toast.success('New item request submitted successfully');
   };
 
+  const handleLaptopToggle = async (checked: boolean) => {
+    const newStatus = checked ? 'Online' : 'Offline';
+    // Optimistic Update
+    setLaptopStatus(newStatus);
+
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'toggleLaptop',
+          email: user?.email,
+          status: newStatus
+        }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        if (newStatus === 'Offline' && result.totalTime) {
+          setTotalScreenTime(result.totalTime);
+          toast.success(`Session Ended. Total time: ${formatTime(result.totalTime)}`);
+        } else {
+          toast.success('Lab Session Started');
+        }
+      }
+    } catch (error) {
+      console.error("Failed to toggle laptop", error);
+      toast.error("Failed to update status");
+      // Revert on error
+      setLaptopStatus(checked ? 'Offline' : 'Online');
+    }
+  };
+
+  const formatTime = (minutes: number) => {
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hrs}h ${mins}m`;
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -211,6 +262,26 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-foreground">{user?.name}</p>
               <p className="text-xs text-muted-foreground">{user?.email}</p>
             </div>
+
+            {/* Laptop Toggle */}
+            <div className="flex items-center gap-3 bg-muted/50 px-3 py-1.5 rounded-full border border-border">
+              <div className="flex flex-col items-end mr-1">
+                <span className={`text-xs font-bold ${laptopStatus === 'Online' ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+                  {laptopStatus === 'Online' ? 'Online' : 'Offline'}
+                </span>
+                {laptopStatus === 'Offline' && (
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    Time: {formatTime(totalScreenTime)}
+                  </span>
+                )}
+              </div>
+              <Switch
+                checked={laptopStatus === 'Online'}
+                onCheckedChange={handleLaptopToggle}
+                className="data-[state=checked]:bg-emerald-500"
+              />
+            </div>
+
             <Button
               onClick={() => { logout(); navigate('/'); }}
               variant="ghost"

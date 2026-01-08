@@ -117,8 +117,11 @@ function doPost(e) {
       case 'checkoutRequest':
         response = handleCheckoutRequest(data);
         break;
-      case 'getRequests': // NEW
+      case 'getRequests':
         response = handleGetRequests(data);
+        break;
+      case 'toggleLaptop': // NEW
+        response = handleToggleLaptop(data);
         break;
       default:
         response = { success: false, message: 'Unknown action' };
@@ -158,7 +161,9 @@ function handleLogin(data) {
           name: values[i][1],
           role: values[i][2],
           status: values[i][3],
-          createdDate: values[i][4]
+          createdDate: values[i][4],
+          laptopStatus: values[i][5] || 'Offline',
+          totalTime: values[i][8] || 0
         }
       };
     }
@@ -593,11 +598,15 @@ function handleGetAllUsers() {
   
   // Skip the header row (index 0)
   const users = values.slice(1).map(row => ({
-    email: row[0],           // Column B: Email
-    name: row[1],            // Column C: Name
-    role: row[2] || 'USER',  // Column D: Role
-    status: row[3] || 'PENDING', // Column E: Status
-    createdDate: row[4]      // Column F: CreatedDate
+    email: row[0],
+    name: row[1],
+    role: row[2] || 'USER',
+    status: row[3] || 'PENDING',
+    createdDate: row[4],
+    laptopStatus: row[5] || 'Offline', // Col F: Status
+    // sessionStart: row[6],           // Col G: Start
+    // sessionEnd: row[7],             // Col H: End
+    totalTime: row[8] || 0             // Col I: Total Time (mins)
   }));
 
   return { success: true, users: users };
@@ -668,6 +677,59 @@ function handleGetRequests(data) {
   }
   
   return { success: true, requests: requests };
+}
+
+/**
+ * Handle Laptop Toggle
+ * 
+ * Logic:
+ * - On 'Online': Set Status=Online, StartTime=Now
+ * - On 'Offline': Set Status=Offline, EndTime=Now, Calculate Duration, Add to Total
+ */
+function handleToggleLaptop(data) {
+  const { email, status } = data; // status is 'Online' or 'Offline'
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  const values = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === email) {
+      const rowIndex = i + 1;
+      const now = new Date();
+      
+      // Update Status (Col F / Index 6)
+      sheet.getRange(rowIndex, 6).setValue(status);
+      
+      if (status === 'Online') {
+        // Set Start Time (Col G / Index 7)
+        sheet.getRange(rowIndex, 7).setValue(now.toISOString());
+        return { success: true, status: 'Online', message: 'Session started' };
+      } 
+      else {
+        // Set End Time (Col H / Index 8)
+        sheet.getRange(rowIndex, 8).setValue(now.toISOString());
+        
+        // Calculate Duration
+        const startTimeStr = values[i][6]; // Col G
+        let addedMinutes = 0;
+        
+        if (startTimeStr) {
+           const startTime = new Date(startTimeStr);
+           const diffMs = now - startTime;
+           // Convert to minutes (round down to 2 decimals)
+           addedMinutes = Math.floor(diffMs / 60000); 
+        }
+        
+        // Update Total Time (Col I / Index 9)
+        const currentTotal = Number(values[i][8]) || 0;
+        const newTotal = currentTotal + addedMinutes;
+        
+        sheet.getRange(rowIndex, 9).setValue(newTotal);
+        
+        return { success: true, status: 'Offline', totalTime: newTotal, message: 'Session ended' };
+      }
+    }
+  }
+  return { success: false, message: 'User not found' };
 }
 
 

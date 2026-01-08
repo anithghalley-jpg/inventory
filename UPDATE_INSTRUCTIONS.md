@@ -1,19 +1,21 @@
 # ⚠️ ACTION REQUIRED: Update Google Apps Script & Sheet
 
-To enable the "Return Status" and "Active Loans" features:
+## 1. Update Apps Script
+1.  Copy the **new** code from `APPS_SCRIPT_TEMPLATE.gs`.
+2.  Paste it into your Google Apps Script project.
+3.  **Save** and **Deploy** as a **New Version**.
 
-1.  **UPDATE APPS SCRIPT**:
-    *   Copy the *new* code from `APPS_SCRIPT_TEMPLATE.gs`.
-    *   Paste it into your Google Apps Script project.
-    *   **Save** and **Deploy** as a **New Version**.
+## 2. Update 'Users' Sheet Headers
+You need to add 4 new columns to the **Users** sheet for the laptop tracking to work.
 
-2.  **UPDATE GOOGLE SHEET**:
-    *   Go to your `Requests` sheet tab.
-    *   **Add a new Header** in **Column I** (column 9) named: `Return Status`.
-    *   *(Alternatively, you can delete the 'Requests' tab and run `initialSetup` again, but this will delete existing history)*.
+1.  Open the **Users** tab in your Google Sheet.
+2.  Add the following headers in the first row:
+    *   **Column F**: `Laptop Status`
+    *   **Column G**: `Session Start`
+    *   **Column H**: `Session End`
+    *   **Column I**: `Total Time (mins)`
 
-## How to Manage Returns
-1.  Open your Google Sheet `Requests` tab.
-2.  Find the row for the item request.
-3.  In the **Return Status** column (Column I), type `YES`.
-4.  This will remove the item from the user's dashboard and the admin panel's active loan list.
+## 3. Update 'Requests' Sheet Headers (If not done already)
+    *   **Column I**: `Return Status`
+
+Once these columns are added, the toggle feature and leaderboard will function correctly.

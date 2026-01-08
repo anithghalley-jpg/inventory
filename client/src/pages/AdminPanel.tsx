@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, LogOut, Users as UsersIcon, Package, CheckCircle, Camera, Clock } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
@@ -491,7 +491,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-4 bg-muted">
+          <TabsList className="grid w-full max-w-md grid-cols-5 bg-muted">
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -507,6 +507,10 @@ export default function AdminPanel() {
             <TabsTrigger value="history" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               <span className="hidden sm:inline">History</span>
+            </TabsTrigger>
+            <TabsTrigger value="monitor" className="flex items-center gap-2">
+              <Monitor className="w-4 h-4" />
+              <span className="hidden sm:inline">Monitor</span>
             </TabsTrigger>
           </TabsList>
 
@@ -899,6 +903,100 @@ export default function AdminPanel() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* TAB 4: LAPTOP MONITOR */}
+          <TabsContent value="monitor" className="space-y-6">
+            {/* Section 1: Online Students */}
+            <div>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                Online Students
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {allUsers.filter((u: any) => u.laptopStatus === 'Online').length > 0 ? (
+                  allUsers.filter((u: any) => u.laptopStatus === 'Online').map(u => (
+                    <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 flex flex-col gap-1 shadow-sm">
+                      <p className="font-bold text-sm truncate" title={u.name}>{u.name}</p>
+                      <p className="text-xs text-muted-foreground truncate" title={u.email}>{u.email}</p>
+                      <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit mt-1">
+                        Online
+                      </span>
+                    </Card>
+                  ))
+                ) : (
+                  <div className="col-span-full text-center py-8 bg-muted/30 rounded-lg text-muted-foreground">
+                    No students currently online
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 2: Top 10 Leaderboard */}
+            <div>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <BarChart2 className="w-5 h-5" />
+                Top 10 Usage Leaderboard
+              </h3>
+              <Card className="overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-muted text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      <tr>
+                        <th className="px-6 py-3 text-left">Rank</th>
+                        <th className="px-6 py-3 text-left">Student</th>
+                        <th className="px-6 py-3 text-left">Total Screen Time</th>
+                        <th className="px-6 py-3 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {allUsers
+                        .filter((u: any) => (u.totalTime || 0) > 0)
+                        .sort((a: any, b: any) => (b.totalTime || 0) - (a.totalTime || 0))
+                        .slice(0, 10)
+                        .map((user: any, index) => {
+                          const hrs = Math.floor((user.totalTime || 0) / 60);
+                          const mins = (user.totalTime || 0) % 60;
+                          return (
+                            <tr key={user.id} className="hover:bg-muted/50">
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${index === 0 ? 'bg-yellow-100 text-yellow-700' :
+                                    index === 1 ? 'bg-gray-100 text-gray-700' :
+                                      index === 2 ? 'bg-orange-100 text-orange-700' : 'text-muted-foreground'
+                                  }`}>
+                                  {index + 1}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="font-medium text-sm">{user.name}</p>
+                                <p className="text-xs text-muted-foreground">{user.email}</p>
+                              </td>
+                              <td className="px-6 py-4 text-sm font-mono">
+                                {hrs}h {mins}m
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`text-xs px-2 py-1 rounded-full ${user.laptopStatus === 'Online'
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-muted text-muted-foreground'
+                                  }`}>
+                                  {user.laptopStatus || 'Offline'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      {allUsers.filter((u: any) => (u.totalTime || 0) > 0).length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
+                            No usage data recorded yet
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
