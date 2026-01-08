@@ -360,3 +360,10 @@ For issues:
 
 **Last Updated:** January 2026
 **Version:** 1.0.0
+
+{allUsers.map((u) => (
+  // Use u.id or u.email here. NEVER use the index if you plan to sort the list.
+  <Card key={u.id || u.email} className="p-4 flex items-center justify-between">
+     {/* ... contents ... */}
+  </Card>
+))}
