@@ -18,7 +18,7 @@ import { toast } from 'sonner';
  * - Category-based grouping
  */
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXHLzLob0rScK6t0AaxZeKyi7HxG5NG8HEWNm0_Vs2Hkt4yd_pg81AqCPucjwpJ7o6/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyh31R3tc8neHROJrhtojKppa83o_BpBSCYsC1_1w3f_JZ52aMNCwOJNnUXGgT7ERFo/exec';
 
 interface InventoryItem {
   id: string;
@@ -370,6 +370,7 @@ export default function Dashboard() {
             <TabsTrigger value="my-items" className="flex items-center gap-2">
               <History className="w-4 h-4" />
               My Items
+              {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
             </TabsTrigger>
           </TabsList>
 

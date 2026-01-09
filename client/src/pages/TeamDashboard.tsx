@@ -4,14 +4,17 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, History } from 'lucide-react';
+import {
+    Search, Package, LogOut, Users as UsersIcon,
+    LayoutDashboard, ShoppingBag, History, Monitor
+} from 'lucide-react';
 import { toast } from 'sonner';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXHLzLob0rScK6t0AaxZeKyi7HxG5NG8HEWNm0_Vs2Hkt4yd_pg81AqCPucjwpJ7o6/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyh31R3tc8neHROJrhtojKppa83o_BpBSCYsC1_1w3f_JZ52aMNCwOJNnUXGgT7ERFo/exec';
 
 // Types
 interface InventoryItem {
@@ -57,33 +60,37 @@ export default function TeamDashboard() {
     const { user, logout, isAuthenticated } = useAuth();
     const [, navigate] = useLocation();
 
-    // State
-    const [activeTab, setActiveTab] = useState('store');
+    // Data State
     const [isLoading, setIsLoading] = useState(true);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [myItems, setMyItems] = useState<UsageRecord[]>([]);
     const [allUsers, setAllUsers] = useState<User[]>([]);
-    const [activeLoans, setActiveLoans] = useState<any[]>([]);
-    const [activeRequests, setActiveRequests] = useState<any[]>([]); // Current holdings for Admin View
-    const [pendingReturns, setPendingReturns] = useState<any[]>([]); // Incoming returns
+    const [activeRequests, setActiveRequests] = useState<any[]>([]);
+    const [pendingReturns, setPendingReturns] = useState<any[]>([]);
     const [approvers, setApprovers] = useState<User[]>([]);
+
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const PAGE_SIZE = 50;
 
     // Actions State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('all');
-    const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null); // For Checkout
+    const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
     const [checkoutQuantity, setCheckoutQuantity] = useState('1');
-    const [viewItem, setViewItem] = useState<InventoryItem | null>(null); // For Details
-    const [returnItem, setReturnItem] = useState<UsageRecord | null>(null); // For User Return Dialog
-    const [returnTarget, setReturnTarget] = useState(''); // For User Return Dropdown
-    const [selectedReturn, setSelectedReturn] = useState<any | null>(null); // For Team Receive Dialog
+    const [viewItem, setViewItem] = useState<InventoryItem | null>(null);
+    const [returnItem, setReturnItem] = useState<UsageRecord | null>(null);
+    const [returnTarget, setReturnTarget] = useState('');
+    const [selectedReturn, setSelectedReturn] = useState<any | null>(null);
     const [returnRemarks, setReturnRemarks] = useState('');
 
     // Laptop State
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
     const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
 
+    // Initial Side Effects
     useEffect(() => {
         if (user) {
             setLaptopStatus(user.laptopStatus || 'Offline');
@@ -91,19 +98,20 @@ export default function TeamDashboard() {
         }
     }, [user]);
 
-    if (!isAuthenticated || (user?.role !== 'TEAM' && user?.role !== 'ADMIN')) {
-        return <div className="p-8 text-center">Access Denied</div>;
-    }
-
-    // Initial Fetch
     useEffect(() => {
-        fetchAllData();
-    }, []);
+        if (isAuthenticated && (user?.role === 'TEAM' || user?.role === 'ADMIN')) {
+            // Reset pagination on initial load
+            fetchInventory(1, true);
+            fetchUsers();
+        }
+    }, [isAuthenticated, user]);
 
+    // Data Fetching Logic
     const fetchAllData = async () => {
+        // Wrapper for manual refreshes
         setIsLoading(true);
         try {
-            await Promise.all([fetchInventory(), fetchUsers()]);
+            await Promise.all([fetchInventory(1, true), fetchUsers()]);
         } catch (e) {
             toast.error("Failed to load data");
         } finally {
@@ -111,78 +119,100 @@ export default function TeamDashboard() {
         }
     };
 
-    const fetchInventory = async () => {
-        const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'getInventory' }),
-        });
-        const result = await response.json();
-        if (result.success) {
-            setInventory(result.inventory);
-            const uniqueCats = Array.from(new Set(result.inventory.map((i: any) => i.category)));
-            setCategories(['all', ...uniqueCats as string[]]);
+    const fetchInventory = async (pageNum = 1, reset = false) => {
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'getInventory',
+                    page: pageNum,
+                    pageSize: PAGE_SIZE
+                }),
+            });
+            const result = await response.json();
+            if (result.success) {
+                setInventory(prev => {
+                    const newItems = result.inventory;
+                    if (reset) return newItems;
+                    const existingIds = new Set(prev.map(i => i.id));
+                    const uniqueNewItems = newItems.filter((i: any) => !existingIds.has(i.id));
+                    return [...prev, ...uniqueNewItems];
+                });
+
+                if (result.inventory.length < PAGE_SIZE) {
+                    setHasMore(false);
+                } else {
+                    setHasMore(true);
+                }
+                setPage(pageNum);
+
+                if (reset) {
+                    const uniqueCats = Array.from(new Set(result.inventory.map((i: any) => i.category)));
+                    setCategories(['all', ...uniqueCats as string[]]);
+                }
+            }
+        } catch (error) {
+            console.error("Fetch inventory error", error);
         }
     };
 
+    const loadMoreInventory = () => {
+        fetchInventory(page + 1);
+    };
+
     const fetchUsers = async () => {
+        // SECURED: Pass requesterRole
         const response = await fetch(SCRIPT_URL, {
             method: 'POST',
-            body: JSON.stringify({ action: 'getAllUsers' })
+            body: JSON.stringify({
+                action: 'getAllUsers',
+                requesterRole: user?.role
+            })
         });
         const result = await response.json();
         if (result.success) {
             setAllUsers(result.users);
 
-            // Set Approvers for Dropdown
-            const qualified = result.users.filter((u: any) =>
+            // Set Approvers (Admins + Approved Team)
+            setApprovers(result.users.filter((u: any) =>
                 (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
-            );
-            setApprovers(qualified);
+            ));
 
-            // Fetch Requests (Used for My Items + Admin Views)
+            // Fetch Transaction History (Secured)
             const reqResponse = await fetch(SCRIPT_URL, {
                 method: 'POST',
-                body: JSON.stringify({ action: 'getRequests' }) // Fetch ALL requests
+                body: JSON.stringify({
+                    action: 'getRequests',
+                    requesterEmail: user?.email,
+                    requesterRole: user?.role
+                })
             });
             const reqResult = await reqResponse.json();
 
             if (reqResult.success) {
-                // 1. Process "My Items" for the Team Member themselves
-                const myActiveItems = reqResult.requests.filter((r: any) =>
+                // 1. My Active Checkouts
+                setMyItems(reqResult.requests.filter((r: any) =>
                     r.userEmail === user?.email &&
                     r.status === 'APPROVED' &&
                     (r.returnStatus || '').toLowerCase() !== 'yes'
-                );
+                ).map((r: any) => ({ ...r, id: r.date })));
 
-                // Need inventory for images
-                // Note: fetchInventory creates state, but here we might run parallel. 
-                // It's safer to rely on re-render or wait. For now, we assume simple mapping.
-
-                setMyItems(myActiveItems.map((r: any) => ({
-                    ...r,
-                    id: r.date,
-                    imageUrl: '' // Will need lookup if inventory not ready, but OK for now
-                })));
-
-                // 2. Process "Incoming Returns" (Where Team member is the Target)
-                const returns = reqResult.requests.filter((r: any) =>
+                // 2. Incoming Returns (For Team/Admin to Process)
+                setPendingReturns(reqResult.requests.filter((r: any) =>
                     r.status === 'APPROVED' &&
                     r.returnRequestStatus === 'PENDING' &&
                     (user?.role === 'ADMIN' || r.returnTarget === user?.name)
-                );
-                setPendingReturns(returns);
+                ));
 
-                // 3. Process "Current Holdings" (All Users)
-                const validLoans = reqResult.requests.filter((r: any) =>
+                // 3. All Active Loans (For Monitor)
+                setActiveRequests(reqResult.requests.filter((r: any) =>
                     r.status === 'APPROVED' && (r.returnStatus || '').toLowerCase() !== 'yes'
-                );
-                setActiveRequests(validLoans);
+                ));
             }
         }
     };
 
-    // --- ACTIONS: USER SIDE ---
-
+    // Actions Handlers
     const handleCheckout = async () => {
         if (!selectedItem) return;
         try {
@@ -199,13 +229,17 @@ export default function TeamDashboard() {
             });
             toast.success("Request sent");
             setSelectedItem(null);
-            fetchUsers(); // Refresh "My items"
-        } catch (e) { toast.error("Error"); }
+            fetchUsers();
+        } catch (e) { toast.error("Error sending request"); }
     };
 
     const handleReturnSubmit = async () => {
         if (!returnItem || !returnTarget) return;
         try {
+            // OPTIMISTIC UPDATE: Remove from My Items
+            setMyItems(prev => prev.filter(i => i.id !== returnItem.id));
+            const submittedItem = { ...returnItem }; // Capture for potential rollback
+
             await fetch(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
@@ -216,28 +250,29 @@ export default function TeamDashboard() {
             });
             toast.success("Return initiated");
             setReturnItem(null);
+
+            // Allow background refresh to sync eventually
+            // fetchAllData(); 
+        } catch (e) {
+            toast.error("Error initiating return");
+            // Rollback (simplified, ideally we add it back)
             fetchAllData();
-        } catch (e) { toast.error("Error"); }
+        }
     };
 
-    const handleLaptopToggle = async (checked: boolean) => {
-        const newStatus = checked ? 'Online' : 'Offline';
-        setLaptopStatus(newStatus);
-        const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'toggleLaptop',
-                email: user?.email,
-                status: newStatus
-            })
-        });
-        const res = await response.json();
-        if (res.success && newStatus === 'Offline') setTotalScreenTime(res.totalTime);
-    };
-
-    // --- ACTIONS: ADMIN SIDE ---
     const handleProcessReturn = async () => {
         if (!selectedReturn) return;
+
+        // OPTIMISTIC UPDATE
+        const previousReturns = [...pendingReturns];
+        const previousActive = [...activeRequests];
+
+        setPendingReturns(prev => prev.filter(r => r.date !== selectedReturn.date));
+        setActiveRequests(prev => prev.filter(r => r.date !== selectedReturn.date));
+
+        toast.success("Item Received (Optimistic Update)");
+        setSelectedReturn(null);
+
         try {
             await fetch(SCRIPT_URL, {
                 method: 'POST',
@@ -251,13 +286,50 @@ export default function TeamDashboard() {
                     userEmail: selectedReturn.userEmail
                 })
             });
-            toast.success("Item Received");
-            setSelectedReturn(null);
-            fetchAllData();
-        } catch (e) { toast.error("Error"); }
+            // Background refresh to ensure consistency
+            fetchUsers();
+            fetchInventory(1, true);
+        } catch (e) {
+            toast.error("Error processing return");
+            // Rollback
+            setPendingReturns(previousReturns);
+            setActiveRequests(previousActive);
+        }
     };
 
-    // --- UI HELPERS ---
+    const handleLaptopToggle = async (checked: boolean) => {
+        const newStatus = checked ? 'Online' : 'Offline';
+        setLaptopStatus(newStatus);
+        const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'toggleLaptop', email: user?.email, status: newStatus })
+        });
+        const res = await response.json();
+        if (res.success && newStatus === 'Offline') setTotalScreenTime(res.totalTime);
+    };
+
+    // Helpers
+    const formatTime = (minutes: number) => {
+        const hrs = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${hrs}h ${mins}m`;
+    };
+
+    const getItemImage = (itemName: string) => {
+        const found = inventory.find(i => i.name === itemName);
+        return found?.imageUrl || '';
+    };
+
+    const getItemObject = (itemName: string) => {
+        return inventory.find(i => i.name === itemName);
+    };
+
+    // Access Check
+    if (!isAuthenticated || (user?.role !== 'TEAM' && user?.role !== 'ADMIN')) {
+        return <div className="h-screen flex items-center justify-center text-muted-foreground">Access Denied</div>;
+    }
+
+    /* --- FILTER LOGIC (Inlined) --- */
     const filteredItems = inventory.filter(item =>
         (selectedCategory === 'all' || item.category === selectedCategory) &&
         (item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.tags || '').includes(searchQuery))
@@ -269,334 +341,530 @@ export default function TeamDashboard() {
         return acc;
     }, {} as Record<string, InventoryItem[]>);
 
-    const formatTime = (minutes: number) => {
-        const hrs = Math.floor(minutes / 60);
-        const mins = minutes % 60;
-        return `${hrs}h ${mins}m`;
-    };
-
+    // --- MAIN RENDER ---
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <header className="sticky top-0 z-50 bg-card border-b border-border shadow-sm">
-                <div className="container flex items-center justify-between h-16">
+        <div className="min-h-screen bg-slate-50">
+            {/* TOP BAR */}
+            <header className="bg-white border-b border-border sticky top-0 z-30 shadow-sm">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center">
-                            <Package className="w-6 h-6 text-white" />
+                        <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center">
+                            <Package className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold text-foreground">Inventory Manager</h1>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">Team Dashboard</span>
-                                {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing...</span>}
-                            </div>
+                            <span className="font-bold text-lg leading-tight block">Team Dashboard</span>
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded-sm">
+                                {user?.role} View
+                            </span>
                         </div>
                     </div>
+
                     <div className="flex items-center gap-4">
-                        <div className="text-right hidden sm:block">
-                            <p className="text-sm font-medium text-foreground">{user?.name}</p>
-                            <p className="text-xs text-muted-foreground">{user?.role}</p>
-                        </div>
-                        {/* Laptop Toggle */}
-                        <div className="flex items-center gap-3 bg-muted/50 px-3 py-1.5 rounded-full border border-border">
-                            <div className="flex flex-col items-end mr-1">
-                                <span className={`text-xs font-bold ${laptopStatus === 'Online' ? 'text-emerald-500' : 'text-muted-foreground'}`}>
+                        <div className="flex items-center gap-3 bg-slate-100/50 px-3 py-1.5 rounded-full border border-border/50">
+                            <div className="text-right mr-1 hidden sm:block">
+                                <span className={`block text-xs font-bold ${laptopStatus === 'Online' ? 'text-emerald-500' : 'text-slate-500'}`}>
                                     {laptopStatus === 'Online' ? 'Online' : 'Offline'}
                                 </span>
-                                {laptopStatus === 'Offline' && (
-                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                        Time: {formatTime(totalScreenTime)}
-                                    </span>
-                                )}
+                                {laptopStatus === 'Offline' && <span className="block text-[10px] text-muted-foreground">{formatTime(totalScreenTime)}</span>}
                             </div>
                             <Switch checked={laptopStatus === 'Online'} onCheckedChange={handleLaptopToggle} className="data-[state=checked]:bg-emerald-500" />
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => { logout(); navigate('/'); }} className="text-muted-foreground hover:text-foreground">
-                            <LogOut className="w-4 h-4" />
+
+                        <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => logout()}>
+                            <LogOut className="w-5 h-5 text-red-400 hover:text-red-600" />
                         </Button>
                     </div>
                 </div>
             </header>
 
-            <main className="container py-8">
+            {/* MAIN CONTENT WITH TABS */}
+            <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
                 <Tabs defaultValue="store" className="space-y-6">
-                    <TabsList className="grid w-full max-w-4xl grid-cols-5 bg-muted">
-                        <TabsTrigger value="store">Store</TabsTrigger>
-                        <TabsTrigger value="my-items">My Items</TabsTrigger>
-                        <TabsTrigger value="users">Users</TabsTrigger>
-                        <TabsTrigger value="history">Return Requests</TabsTrigger>
-                        <TabsTrigger value="monitor">Monitor</TabsTrigger>
-                    </TabsList>
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <TabsList className="bg-white border border-slate-200 p-1 h-auto shadow-sm gap-1 self-start sm:self-auto overflow-x-auto max-w-full">
+                            <TabsTrigger value="store" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <ShoppingBag className="w-4 h-4 mr-2" /> Store
+                            </TabsTrigger>
+                            <TabsTrigger value="my-items" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <History className="w-4 h-4 mr-2" /> My Items
+                                {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
+                            </TabsTrigger>
+                            <TabsTrigger value="users" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <UsersIcon className="w-4 h-4 mr-2" /> Users
+                            </TabsTrigger>
+                            <TabsTrigger value="returns" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <History className="w-4 h-4 mr-2" /> Returns
+                                {pendingReturns.length > 0 && <span className="ml-2 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 rounded-full">{pendingReturns.length}</span>}
+                            </TabsTrigger>
+                            <TabsTrigger value="monitor" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <Monitor className="w-4 h-4 mr-2" /> Monitor
+                            </TabsTrigger>
+                        </TabsList>
+                    </div>
 
-                    {/* 1. STORE TAB */}
-                    <TabsContent value="store" className="space-y-6">
-                        {/* Actions Bar */}
-                        <div className="flex flex-col sm:flex-row gap-4 justify-between">
-                            <div className="flex gap-4 flex-1">
-                                <div className="relative flex-1 max-w-sm">
+                    {/* --- STORE TAB --- */}
+                    <TabsContent value="store" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
+                        <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 flex items-center gap-4 mb-6">
+                            <div className="bg-white p-2 rounded-lg shadow-sm border border-emerald-100">
+                                <LayoutDashboard className="w-5 h-5 text-emerald-600" />
+                            </div>
+                            <div>
+                                <h2 className="font-bold text-emerald-900">Inventory Overview</h2>
+                                <p className="text-sm text-emerald-700">Browse items, check availability, and request equipment.</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-xl border border-border shadow-sm">
+                                <div className="relative flex-1 w-full max-w-md">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                     <Input
-                                        placeholder="Search items..."
-                                        className="pl-10"
+                                        placeholder="Search inventory..."
+                                        className="pl-10 bg-slate-50 border-slate-200"
                                         value={searchQuery}
                                         onChange={e => setSearchQuery(e.target.value)}
                                     />
                                 </div>
-                                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                                    <SelectTrigger className="w-40"><SelectValue placeholder="Category" /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Categories</SelectItem>
-                                        {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
+                                <div className="flex gap-2 w-full sm:w-auto">
+                                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                                        <SelectTrigger className="w-40 bg-slate-50 border-slate-200"><SelectValue placeholder="Category" /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All Categories</SelectItem>
+                                            {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="space-y-8">
+                                {Object.keys(groupedItems).sort().map(cat => (
+                                    <div key={cat} className="space-y-4">
+                                        <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                                            <span className="w-1 h-6 bg-emerald-500 rounded-full"></span>
+                                            {cat}
+                                            <span className="text-xs font-normal text-muted-foreground bg-slate-100 px-2 py-0.5 rounded-full">{groupedItems[cat].length}</span>
+                                        </h3>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                            {groupedItems[cat].map(item => (
+                                                <div
+                                                    key={item.id}
+                                                    className="group bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer"
+                                                    onClick={() => setViewItem(item)}
+                                                >
+                                                    <div className="relative h-40 bg-slate-100 overflow-hidden text-center">
+                                                        {item.imageUrl ? (
+                                                            <img src={item.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-full text-slate-300"><Package className="w-8 h-8" /></div>
+                                                        )}
+                                                        <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm">
+                                                            {item.quantity} Left
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4">
+                                                        <h4 className="font-bold text-slate-900 truncate" title={item.name}>{item.name}</h4>
+                                                        <p className="text-xs text-slate-500 mb-3">{item.company}</p>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="w-full border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200"
+                                                            onClick={(e) => { e.stopPropagation(); setSelectedItem(item); }}
+                                                        >
+                                                            Request
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* Load More Button */}
+                                {hasMore && !isLoading && !searchQuery && (
+                                    <div className="flex justify-center mt-6">
+                                        <Button
+                                            onClick={loadMoreInventory}
+                                            variant="outline"
+                                            className="w-full max-w-xs border-slate-300 hover:bg-slate-50"
+                                        >
+                                            Load More Items
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         </div>
+                    </TabsContent>
 
-                        {/* Content Grid */}
-                        <div className="space-y-8">
-                            {Object.keys(groupedItems).sort().map(cat => (
-                                <div key={cat} className="space-y-4">
-                                    <div className="flex items-center gap-2 pb-2 border-b border-border">
-                                        <h2 className="text-xl font-display font-bold text-foreground capitalize">{cat}</h2>
-                                        <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">
-                                            {groupedItems[cat].length} items
-                                        </span>
+                    {/* --- MY ITEMS TAB (GRID VIEW) --- */}
+                    <TabsContent value="my-items" className="focus-visible:outline-none focus-visible:ring-0">
+                        <div className="space-y-6">
+                            <div className="bg-white p-6 rounded-xl border border-border shadow-sm">
+                                <div className="flex items-center justify-between mb-6">
+                                    <div>
+                                        <h2 className="text-xl font-bold">Item Usage History</h2>
+                                        <p className="text-sm text-muted-foreground">Track your checkouts and returns.</p>
                                     </div>
+                                </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {groupedItems[cat].map(item => (
+                                {myItems.length === 0 ? (
+                                    <div className="text-center py-12 text-muted-foreground">No items found.</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        {myItems.map(item => (
                                             <Card
                                                 key={item.id}
-                                                className="group overflow-hidden hover:shadow-lg transition-all border-border/50 cursor-pointer"
-                                                onClick={() => setViewItem(item)}
+                                                className="group p-4 flex flex-col gap-3 hover:shadow-md transition-all cursor-pointer border-slate-200"
+                                                onClick={() => {
+                                                    const fullItem = getItemObject(item.itemName);
+                                                    if (fullItem) setViewItem(fullItem);
+                                                }}
                                             >
-                                                <div className="relative h-48 bg-muted overflow-hidden">
-                                                    {item.imageUrl ? (
-                                                        <img
-                                                            src={item.imageUrl}
-                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                                        />
+                                                <div className="relative aspect-video bg-slate-100 rounded-lg overflow-hidden">
+                                                    {getItemImage(item.itemName) ? (
+                                                        <img src={getItemImage(item.itemName)} className="w-full h-full object-cover" />
                                                     ) : (
-                                                        <div className="flex items-center justify-center h-full text-muted-foreground">No Image</div>
+                                                        <div className="flex items-center justify-center h-full text-slate-300"><Package /></div>
                                                     )}
-                                                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-foreground px-3 py-1 rounded-full text-xs font-bold shadow-sm">
-                                                        {item.quantity} in stock
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-bold text-slate-900 truncate">{item.itemName}</h4>
+                                                    <div className="flex justify-between items-center mt-1">
+                                                        <span className="text-xs bg-slate-100 px-2 py-0.5 rounded font-medium text-slate-600">x{item.quantity}</span>
+                                                        <span className="text-xs text-slate-400">{new Date(item.timestamp).toLocaleDateString()}</span>
                                                     </div>
                                                 </div>
 
-                                                <div className="p-4 space-y-3">
-                                                    <div>
-                                                        <h3 className="font-bold text-lg leading-tight">{item.name}</h3>
-                                                        <p className="text-xs text-muted-foreground">{item.company}</p>
-                                                        {item.tags && (
-                                                            <div className="flex flex-wrap gap-1 mt-2">
-                                                                {item.tags.split(',').map((tag: string, i: number) => (
-                                                                    tag.trim() && (
-                                                                        <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
-                                                                            {tag.trim()}
-                                                                        </span>
-                                                                    )
-                                                                ))}
-                                                            </div>
-                                                        )}
+                                                {item.returnRequestStatus === 'PENDING' ? (
+                                                    <div className="mt-auto pt-2 text-center bg-yellow-50 text-yellow-700 text-xs py-1.5 rounded font-bold border border-yellow-100">
+                                                        Return Pending...
                                                     </div>
+                                                ) : (
                                                     <Button
-                                                        className="w-full mt-2"
+                                                        size="sm"
                                                         variant="outline"
-                                                        onClick={(e) => { e.stopPropagation(); setSelectedItem(item); }}
+                                                        className="mt-auto w-full text-xs hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setReturnItem(item);
+                                                        }}
                                                     >
-                                                        Checkout
+                                                        Return Item
                                                     </Button>
-                                                </div>
+                                                )}
                                             </Card>
                                         ))}
                                     </div>
-                                </div>
-                            ))}
+                                )}
+                            </div>
                         </div>
                     </TabsContent>
 
-                    {/* 2. MY ITEMS TAB */}
-                    <TabsContent value="my-items">
-                        <Card className="card-soft p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold">My Checked Out Items</h2>
-                                    <p className="text-muted-foreground">History of items you have requested and received.</p>
-                                </div>
-                            </div>
+                    {/* --- USERS TAB (WITH HOLDINGS) --- */}
+                    <TabsContent value="users" className="focus-visible:outline-none focus-visible:ring-0">
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold tracking-tight">Team Directory</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {allUsers.map(u => {
+                                    const userHoldings = activeRequests.filter(r => r.userEmail === u.email);
 
-                            {myItems.length > 0 ? (
-                                <div className="space-y-4">
-                                    {myItems.map((item, idx) => (
-                                        <div key={item.id || idx} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-background border border-border rounded-lg hover:border-emerald-200 transition-colors gap-4">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-16 h-16 rounded-md bg-muted overflow-hidden shrink-0 border border-border">
-                                                    {item.imageUrl ?
-                                                        <img src={item.imageUrl} className="w-full h-full object-cover" /> :
-                                                        <div className="flex items-center justify-center h-full text-xs text-muted-foreground">No Img</div>
-                                                    }
+                                    return (
+                                        <Card key={u.id} className="flex flex-col p-0 overflow-hidden hover:shadow-md transition-all border-slate-200">
+                                            <div className="p-5 flex items-start space-x-4 border-b border-slate-50">
+                                                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                                                    <UsersIcon className="h-6 w-6 text-slate-400" />
                                                 </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h4 className="font-bold text-foreground text-lg">{item.itemName}</h4>
-                                                        <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                                                            x{item.quantity}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between items-start">
+                                                        <p className="font-bold text-slate-900 truncate">{u.name}</p>
+                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${u.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                            {u.status}
                                                         </span>
                                                     </div>
-                                                    <p className="text-xs text-muted-foreground mt-1">
-                                                        {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : 'Date N/A'}
-                                                    </p>
+                                                    <p className="text-sm text-slate-500 truncate">{u.email}</p>
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        <span className="text-[10px] font-medium bg-slate-100 px-2 py-1 rounded text-slate-600 uppercase tracking-wide">
+                                                            {u.role}
+                                                        </span>
+                                                        {u.laptopStatus === 'Online' && (
+                                                            <span className="text-[10px] font-medium text-emerald-600 flex items-center gap-1">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            {item.returnRequestStatus === 'PENDING' ? (
-                                                <div className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-md border border-yellow-200">
-                                                    Return Pending...
-                                                </div>
-                                            ) : (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => setReturnItem(item)}
-                                                    className="text-xs w-full sm:w-auto hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                                                >
-                                                    Return Item
-                                                </Button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
-                                    <History className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                                    <h3 className="font-medium text-lg">No history yet</h3>
-                                    <p className="text-muted-foreground">Items you checkout will appear here.</p>
-                                </div>
-                            )}
-                        </Card>
-                    </TabsContent>
-
-                    {/* 3. USERS TAB */}
-                    <TabsContent value="users">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {allUsers.map(u => (
-                                <Card key={u.id} className="p-4 flex items-center space-x-4 hover:shadow transition-all">
-                                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                                        <UsersIcon className="h-5 w-5 text-muted-foreground" />
-                                    </div>
-                                    <div className="flex-1 overflow-hidden">
-                                        <div className="flex justify-between items-start">
-                                            <p className="font-bold truncate">{u.name}</p>
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white ${u.status === 'APPROVED' ? 'bg-emerald-500' : 'bg-yellow-500'}`}>
-                                                {u.status}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                                        <span className="inline-block mt-1 text-[10px] bg-muted px-1.5 py-0.5 rounded border uppercase tracking-wider">
-                                            {u.role}
-                                        </span>
-                                    </div>
-                                </Card>
-                            ))}
-                        </div>
-                    </TabsContent>
-
-                    {/* 4. HISTORY (RETURNS) TAB */}
-                    <TabsContent value="history">
-                        <h2 className="text-xl font-bold mb-4">Incoming Returns</h2>
-                        {pendingReturns.length === 0 && <p className="text-muted-foreground">No pending returns.</p>}
-                        {pendingReturns.map(req => (
-                            <Card key={req.date} className="p-4 flex justify-between items-center mb-2 border-l-4 border-l-yellow-400">
-                                <div>
-                                    <p className="font-bold">{req.itemName} (x{req.quantity})</p>
-                                    <p className="text-sm">From: {req.userName}</p>
-                                </div>
-                                <Button onClick={() => setSelectedReturn(req)}>Receive</Button>
-                            </Card>
-                        ))}
-
-                        <h2 className="text-xl font-bold mt-8 mb-4">Current User Holdings</h2>
-                        {/* Simplified Holdings View */}
-                        <div className="grid gap-4">
-                            {activeRequests.map(req => (
-                                <div key={req.date} className="p-2 border rounded flex justify-between">
-                                    <span>{req.userName} has {req.itemName}</span>
-                                    <span className="font-bold">x{req.quantity}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </TabsContent>
-
-                    {/* 5. MONITOR TAB */}
-                    <TabsContent value="monitor">
-                        <h2 className="text-xl font-bold mb-4">Online Users</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {allUsers.filter(u => u.laptopStatus === 'Online').map(u => (
-                                <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 hover:shadow-md transition-all">
-                                    <div className="flex items-center gap-3">
-                                        <div className="relative">
-                                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold">
-                                                {u.name.charAt(0)}
+                                            {/* Holdings Section */}
+                                            <div className="bg-slate-50/50 p-4 flex-1">
+                                                <p className="text-xs font-bold text-slate-400 uppercase mb-2">Active Holdings</p>
+                                                {userHoldings.length > 0 ? (
+                                                    <div className="space-y-1">
+                                                        {userHoldings.map((h, idx) => (
+                                                            <div key={idx} className="flex justify-between text-xs text-slate-600 bg-white px-2 py-1.5 rounded border border-slate-100">
+                                                                <span className="truncate pr-2">{h.itemName}</span>
+                                                                <span className="font-bold text-slate-900 shrink-0">x{h.quantity}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-slate-400 italic">No active items.</p>
+                                                )}
                                             </div>
-                                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></div>
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-sm">{u.name}</p>
-                                            <p className="text-xs text-muted-foreground">Active Now</p>
-                                        </div>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </TabsContent>
+
+                    {/* --- RETURNS TAB (WITH IMAGES) --- */}
+                    <TabsContent value="returns" className="focus-visible:outline-none focus-visible:ring-0">
+                        <div className="space-y-8">
+                            <div className="space-y-4">
+                                <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+                                    Incoming Returns
+                                    {pendingReturns.length > 0 && <span className="bg-yellow-100 text-yellow-800 text-sm px-2 py-0.5 rounded-full">{pendingReturns.length}</span>}
+                                </h2>
+
+                                {pendingReturns.length === 0 ? (
+                                    <Card className="p-8 text-center text-muted-foreground border-dashed">
+                                        No pending returns at the moment.
+                                    </Card>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {pendingReturns.map(req => {
+                                            const img = getItemImage(req.itemName);
+                                            return (
+                                                <Card key={req.date} className="p-0 flex overflow-hidden border-l-4 border-l-yellow-400 shadow-sm">
+                                                    <div className="w-24 bg-slate-100 shrink-0">
+                                                        {img ? <img src={img} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><Package className="text-slate-300" /></div>}
+                                                    </div>
+                                                    <div className="p-4 flex-1 flex justify-between items-center">
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <h4 className="font-bold text-slate-900">{req.itemName}</h4>
+                                                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">x{req.quantity}</span>
+                                                            </div>
+                                                            <p className="text-sm text-slate-500">Returned by <span className="font-medium text-slate-900">{req.userName}</span></p>
+                                                            <p className="text-xs text-slate-400 mt-1">{new Date(req.date).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <Button onClick={() => setSelectedReturn(req)} className="shrink-0 bg-slate-900 hover:bg-slate-800 ml-4">
+                                                            Receive
+                                                        </Button>
+                                                    </div>
+                                                </Card>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-4">
+                                <h2 className="text-xl font-bold tracking-tight text-slate-700">All Active Holdings</h2>
+                                <Card className="overflow-hidden border-slate-200">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                                                <tr>
+                                                    <th className="px-4 py-3">User</th>
+                                                    <th className="px-4 py-3">Item</th>
+                                                    <th className="px-4 py-3">Qty</th>
+                                                    <th className="px-4 py-3">Date Borrowed</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {activeRequests.map((req, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50/50">
+                                                        <td className="px-4 py-3 font-medium text-slate-900">{req.userName}</td>
+                                                        <td className="px-4 py-3">{req.itemName}</td>
+                                                        <td className="px-4 py-3 text-slate-500">x{req.quantity}</td>
+                                                        <td className="px-4 py-3 text-slate-400">{new Date(req.date).toLocaleDateString()}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </Card>
-                            ))}
-                            {allUsers.filter(u => u.laptopStatus === 'Online').length === 0 && (
-                                <div className="col-span-full text-center py-8 text-muted-foreground bg-muted/30 rounded-lg">
-                                    No users currently online.
-                                </div>
-                            )}
+                            </div>
+                        </div>
+                    </TabsContent>
+
+                    {/* --- MONITOR TAB --- */}
+                    <TabsContent value="monitor" className="focus-visible:outline-none focus-visible:ring-0">
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-bold tracking-tight">Live Monitor</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {allUsers.filter(u => u.laptopStatus === 'Online').map(u => (
+                                    <Card key={u.id} className="group p-5 border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-all">
+                                        <div className="flex items-center gap-4">
+                                            <div className="relative">
+                                                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-700 font-bold text-lg group-hover:bg-emerald-100 transition-colors">
+                                                    {u.name.charAt(0)}
+                                                </div>
+                                                <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-slate-900">{u.name}</p>
+                                                <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
+                                            </div>
+                                        </div>
+                                    </Card>
+                                ))}
+                                {allUsers.filter(u => u.laptopStatus === 'Online').length === 0 && (
+                                    <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500">
+                                        <Monitor className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                                        <p>No team members are currently online.</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </TabsContent>
                 </Tabs>
             </main>
 
-            {/* DIALOGS */}
-            <Dialog open={!!selectedItem} onOpenChange={(o) => !o && setSelectedItem(null)}>
-                <DialogContent>
-                    <DialogHeader><DialogTitle>Checkout {selectedItem?.name}</DialogTitle></DialogHeader>
-                    <Input type="number" value={checkoutQuantity} onChange={e => setCheckoutQuantity(e.target.value)} />
-                    <Button onClick={handleCheckout}>Confirm</Button>
+            {/* --- DIALOGS --- */}
+
+            {/* ITEM DETAILS DIALOG (New) */}
+            <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
+                <DialogContent className="max-w-4xl overflow-hidden p-0 gap-0 border-0 rounded-2xl h-[80vh] flex flex-col md:flex-row">
+                    {/* Left: Image (Larger) */}
+                    <div className="bg-slate-100 h-64 md:h-auto md:w-1/2 relative flex items-center justify-center p-8">
+                        {viewItem?.imageUrl ? (
+                            <img src={viewItem.imageUrl} className="max-w-full max-h-full object-contain drop-shadow-md" />
+                        ) : (
+                            <Package className="w-32 h-32 text-slate-300" />
+                        )}
+                        <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-md text-sm font-bold shadow-sm border border-slate-200 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            {viewItem?.category}
+                        </div>
+                    </div>
+
+                    {/* Right: Info */}
+                    <div className="p-8 md:w-1/2 flex flex-col h-full bg-white overflow-y-auto">
+                        <DialogHeader className="mb-6">
+                            <DialogTitle className="text-3xl font-bold text-slate-900 leading-tight">{viewItem?.name}</DialogTitle>
+                            <p className="text-lg text-slate-500 font-medium">{viewItem?.company}</p>
+                        </DialogHeader>
+
+                        <div className="flex-1 space-y-6">
+                            {/* Stock Indicator */}
+                            <div className="flex items-center gap-3">
+                                <span className={`px-3 py-1 rounded-full text-sm font-bold border ${viewItem && viewItem.quantity > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                    {viewItem && viewItem.quantity > 0 ? 'In Stock' : 'Out of Stock'}
+                                </span>
+                                <span className="text-sm text-muted-foreground font-medium">
+                                    {viewItem?.quantity} units available
+                                </span>
+                            </div>
+
+                            {/* Remarks */}
+                            {viewItem?.remarks && (
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Description & Remarks</h4>
+                                    <div className="text-sm text-slate-600 bg-slate-50 p-4 rounded-lg border border-slate-100 leading-relaxed">
+                                        {viewItem.remarks}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Links (NEW) */}
+                            {viewItem?.links && (
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Useful Links</h4>
+                                    <a href={viewItem.links} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 bg-blue-50 p-4 rounded-lg border border-blue-100 hover:underline break-all">
+                                        {viewItem.links}
+                                    </a>
+                                </div>
+                            )}
+
+                            {/* Tags */}
+                            {viewItem?.tags && (
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Tags</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {viewItem.tags.split(',').map(tag => (
+                                            <span key={tag} className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded border border-slate-200">
+                                                {tag.trim()}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="mt-8 pt-6 border-t border-slate-100">
+                            <Button
+                                className="w-full bg-slate-900 hover:bg-slate-800 h-12 text-base font-medium shadow-lg shadow-slate-200"
+                                onClick={() => {
+                                    if (viewItem) {
+                                        if (viewItem.quantity > 0) {
+                                            setSelectedItem(viewItem);
+                                            setViewItem(null);
+                                        } else {
+                                            toast.error('Item is out of stock');
+                                        }
+                                    }
+                                }}
+                                disabled={!viewItem || viewItem.quantity === 0}
+                            >
+                                {viewItem && viewItem.quantity > 0 ? 'Request This Item' : 'Currently Out of Stock'}
+                            </Button>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
 
+            {/* CHECKOUT CONFIRM DIALOG */}
+            <Dialog open={!!selectedItem && !viewItem} onOpenChange={(o) => !o && setSelectedItem(null)}>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>Checkout {selectedItem?.name}</DialogTitle></DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <label className="text-right text-sm">Quantity</label>
+                            <Input
+                                type="number"
+                                min="1"
+                                max={selectedItem?.quantity}
+                                value={checkoutQuantity}
+                                onChange={e => setCheckoutQuantity(e.target.value)}
+                                className="col-span-3"
+                            />
+                        </div>
+                    </div>
+                    <Button onClick={handleCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700">Confirm Request</Button>
+                </DialogContent>
+            </Dialog>
+
+            {/* RETURN CONFIRM DIALOG - Missing in previous code, essential for 'Return Item' action */}
             <Dialog open={!!returnItem} onOpenChange={(o) => !o && setReturnItem(null)}>
                 <DialogContent>
                     <DialogHeader><DialogTitle>Return {returnItem?.itemName}</DialogTitle></DialogHeader>
-                    <Select value={returnTarget} onValueChange={setReturnTarget}>
-                        <SelectTrigger><SelectValue placeholder="Return to..." /></SelectTrigger>
-                        <SelectContent>{approvers.map(a => <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Button onClick={handleReturnSubmit}>Confirm</Button>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={!!selectedReturn} onOpenChange={(o) => !o && setSelectedReturn(null)}>
-                <DialogContent>
-                    <DialogHeader><DialogTitle>Receive {selectedReturn?.itemName}</DialogTitle></DialogHeader>
-                    <Input placeholder="Remarks" value={returnRemarks} onChange={e => setReturnRemarks(e.target.value)} />
-                    <Button onClick={handleProcessReturn}>Confirm Receipt</Button>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
-                <DialogContent>
-                    <DialogHeader><DialogTitle>{viewItem?.name}</DialogTitle></DialogHeader>
-                    {viewItem?.imageUrl && <img src={viewItem.imageUrl} className="w-full h-64 object-contain mb-4" />}
-                    <p>Stock: {viewItem?.quantity}</p>
-                    <p>Category: {viewItem?.category}</p>
-                    <p>Company: {viewItem?.company}</p>
-                    <p>Tags: {viewItem?.tags}</p>
-                    <div className="flex gap-2 mt-4">
-                        <Button variant="outline" onClick={() => setViewItem(null)}>Close</Button>
-                        <Button onClick={() => { setSelectedItem(viewItem); setViewItem(null); }}>Request This Item</Button>
+                    <div className="py-4 space-y-4">
+                        <p className="text-sm text-slate-600">
+                            Who should approve this return? Select a Team Member or Admin locally available to verify.
+                        </p>
+                        <Select value={returnTarget} onValueChange={setReturnTarget}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select approver..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {approvers.map(u => (
+                                    <SelectItem key={u.email} value={u.name}>
+                                        {u.name} ({u.role})
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            className="w-full bg-slate-900"
+                            disabled={!returnTarget}
+                            onClick={handleReturnSubmit}
+                        >
+                            Initiate Return
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>

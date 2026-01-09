@@ -19,7 +19,7 @@ import { toast } from 'sonner';
  * - Warm sage green accents with admin-specific styling
  */
 // 1. Add your Google Apps Script Deployment URL at the top of your component
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXHLzLob0rScK6t0AaxZeKyi7HxG5NG8HEWNm0_Vs2Hkt4yd_pg81AqCPucjwpJ7o6/exec'; // Copy this from your GAS deployment [3]
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyh31R3tc8neHROJrhtojKppa83o_BpBSCYsC1_1w3f_JZ52aMNCwOJNnUXGgT7ERFo/exec'; // Copy this from your GAS deployment [3]
 const DRIVE_FOLDER_ID = '1i_fpnnNDIjOfK5Z8D3GP6yHp00KZ0bsg';
 
 interface PendingUser {
@@ -78,7 +78,7 @@ export default function AdminPanel() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-
+  const [hasMore, setHasMore] = useState(false);
   const [syncQueue, setSyncQueue] = useState<any[]>([]);
   const [totalToUpload, setTotalToUpload] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -528,6 +528,14 @@ export default function AdminPanel() {
     return a.name.localeCompare(b.name);
   });
 
+  // Add this function after fetchInventory [4]
+  const loadMoreInventory = () => {
+    // Currently, this can be a placeholder or call fetchInventory with pagination parameters
+    console.log("Load more triggered");
+    toast.info("All items are already loaded.");
+    setHasMore(false);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -572,6 +580,11 @@ export default function AdminPanel() {
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
+              {allUsers.filter((u) => u.status === 'PENDING').length > 0 && (
+                <span className="ml-1 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 rounded-full">
+                  {allUsers.filter((u) => u.status === 'PENDING').length}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="inventory" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
@@ -584,6 +597,11 @@ export default function AdminPanel() {
             <TabsTrigger value="history" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               <span className="hidden sm:inline">History</span>
+              {pendingReturns.length > 0 && (
+                <span className="ml-1 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 rounded-full">
+                  {pendingReturns.length}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="monitor" className="flex items-center gap-2">
               <Monitor className="w-4 h-4" />
@@ -899,6 +917,19 @@ export default function AdminPanel() {
                   </Card>
                 );
               })}
+
+              {/* Load More Button */}
+              {hasMore && !isLoading && (
+                <div className="col-span-full flex justify-center mt-6">
+                  <Button
+                    onClick={loadMoreInventory}
+                    variant="outline"
+                    className="w-full max-w-xs border-slate-300 hover:bg-slate-50"
+                  >
+                    Load More Items
+                  </Button>
+                </div>
+              )}
 
               {filteredInventory.length === 0 && !isLoading && (
                 <div className="col-span-full text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
