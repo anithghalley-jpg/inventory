@@ -29,6 +29,7 @@ interface InventoryItem {
   imageUrl: string;
   remarks?: string;
   links?: string;
+  tags?: string;
 }
 
 interface UsageRecord {
@@ -55,7 +56,9 @@ export default function Dashboard() {
   // Filters & Actions
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null); // For Checkout
+  const [viewItem, setViewItem] = useState<InventoryItem | null>(null); // For Details Modal
   const [checkoutQuantity, setCheckoutQuantity] = useState('1');
 
   // Laptop Tracking State
@@ -223,7 +226,8 @@ export default function Dashboard() {
 
   // Filter Logic
   const filteredItems = inventory.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.tags && item.tags.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -364,7 +368,11 @@ export default function Dashboard() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {groupedItems[category].map(item => (
-                      <Card key={item.id} className="group overflow-hidden hover:shadow-lg transition-all border-border/50">
+                      <Card
+                        key={item.id}
+                        className="group overflow-hidden hover:shadow-lg transition-all border-border/50 cursor-pointer"
+                        onClick={() => setViewItem(item)}
+                      >
                         <div className="relative h-48 bg-muted overflow-hidden">
                           {item.imageUrl ? (
                             <img
@@ -384,6 +392,18 @@ export default function Dashboard() {
                           <div>
                             <h3 className="font-bold text-lg leading-tight">{item.name}</h3>
                             <p className="text-xs text-muted-foreground">{item.company}</p>
+                            {/* Tags Display */}
+                            {item.tags && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {item.tags.split(',').map((tag: string, i: number) => (
+                                  tag.trim() && (
+                                    <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
+                                      {tag.trim()}
+                                    </span>
+                                  )
+                                ))}
+                              </div>
+                            )}
                           </div>
 
                           {item.remarks && (
@@ -392,44 +412,16 @@ export default function Dashboard() {
                             </p>
                           )}
 
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button
-                                onClick={() => setSelectedItem(item)}
-                                className="w-full mt-2"
-                                variant="outline"
-                              >
-                                Checkout
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader><DialogTitle>Checkout {item.name}</DialogTitle></DialogHeader>
-                              <div className="space-y-4 pt-4">
-                                <div className="p-4 bg-muted rounded-lg flex gap-4">
-                                  <div className="w-16 h-16 bg-background rounded-md overflow-hidden">
-                                    <img src={item.imageUrl} className="w-full h-full object-cover" />
-                                  </div>
-                                  <div>
-                                    <p className="font-bold">{item.name}</p>
-                                    <p className="text-sm text-muted-foreground">{item.category} • {item.quantity} Available</p>
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="text-sm font-medium mb-1 block">Quantity Required</label>
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    max={item.quantity}
-                                    value={checkoutQuantity}
-                                    onChange={(e) => setCheckoutQuantity(e.target.value)}
-                                  />
-                                </div>
-                                <Button onClick={handleCheckout} className="w-full bg-emerald-600">
-                                  Confirm Request
-                                </Button>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
+                          <Button
+                            className="w-full mt-2"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedItem(item);
+                            }}
+                          >
+                            Checkout
+                          </Button>
                         </div>
                       </Card>
                     ))}
@@ -481,6 +473,118 @@ export default function Dashboard() {
               )}
             </Card>
           </TabsContent>
+
+          {/* View Details Modal */}
+          <Dialog open={!!viewItem} onOpenChange={(open) => !open && setViewItem(null)}>
+            <DialogContent className="max-w-2xl overflow-y-auto max-h-[90vh]">
+              <DialogHeader>
+                <DialogTitle>{viewItem?.name}</DialogTitle>
+              </DialogHeader>
+              {viewItem && (
+                <div className="space-y-6">
+                  <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
+                    <img
+                      src={viewItem.imageUrl}
+                      alt={viewItem.name}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-muted/30 rounded-lg">
+                      <p className="text-xs text-muted-foreground uppercase font-bold">Category</p>
+                      <p className="font-medium">{viewItem.category}</p>
+                    </div>
+                    <div className="p-3 bg-muted/30 rounded-lg">
+                      <p className="text-xs text-muted-foreground uppercase font-bold">Company</p>
+                      <p className="font-medium">{viewItem.company}</p>
+                    </div>
+                  </div>
+
+                  {viewItem.tags && (
+                    <div>
+                      <p className="text-sm font-medium mb-2">Tags</p>
+                      <div className="flex flex-wrap gap-2">
+                        {viewItem.tags.split(',').map((tag, i) => (
+                          <span key={i} className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full font-medium border border-emerald-200">
+                            {tag.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {viewItem.remarks && (
+                    <div className="p-4 bg-yellow-50/50 border border-yellow-100 rounded-lg">
+                      <p className="text-sm font-medium text-yellow-800 mb-1">Remarks</p>
+                      <p className="text-sm text-yellow-900/80">{viewItem.remarks}</p>
+                    </div>
+                  )}
+
+                  {viewItem.links && (
+                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-lg">
+                      <p className="text-sm font-medium text-blue-800 mb-1">Useful Links</p>
+                      <a href={viewItem.links} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline break-all">
+                        {viewItem.links}
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="pt-4 flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setViewItem(null)}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => {
+                        setSelectedItem(viewItem); // Set for checkout
+                        setViewItem(null); // Close details
+                      }}
+                    >
+                      Request Item
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Checkout Modal */}
+          <Dialog open={!!selectedItem} onOpenChange={(open) => !open && setSelectedItem(null)}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Checkout {selectedItem?.name}</DialogTitle></DialogHeader>
+              {selectedItem && (
+                <div className="space-y-4 pt-4">
+                  <div className="p-4 bg-muted rounded-lg flex gap-4">
+                    <div className="w-16 h-16 bg-background rounded-md overflow-hidden shrink-0">
+                      <img src={selectedItem.imageUrl} className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <p className="font-bold">{selectedItem.name}</p>
+                      <p className="text-sm text-muted-foreground">{selectedItem.category} • {selectedItem.quantity} Available</p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Quantity Required</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={selectedItem.quantity}
+                      value={checkoutQuantity}
+                      onChange={(e) => setCheckoutQuantity(e.target.value)}
+                    />
+                  </div>
+                  <Button onClick={handleCheckout} className="w-full bg-emerald-600">
+                    Confirm Request
+                  </Button>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
         </Tabs>
       </main>

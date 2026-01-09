@@ -83,16 +83,22 @@ export default function AdminPanel() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [categories, setCategories] = useState(['Electronics', 'Furniture', 'Office Supplies']);
+  const [categories, setCategories] = useState<string[]>([]);
   const [usageHistory, setUsageHistory] = useState<UsageRecord[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const [newItemName, setNewItemName] = useState('');
   const [newItemQuantity, setNewItemQuantity] = useState('');
   const [newItemCompany, setNewItemCompany] = useState('');
+  const [newItemTags, setNewItemTags] = useState<string[]>([]);
+  const [currentTagInput, setCurrentTagInput] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [activeLoans, setActiveLoans] = useState<any[]>([]); // New State for Loans
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
 
   if (user?.role !== 'ADMIN') {
     return (
@@ -163,7 +169,15 @@ export default function AdminPanel() {
       toast.error('Please enter a category name');
       return;
     }
+
+    // 1. Optimistic Update: Update UI immediately
+    const previousCategories = [...categories]; // Backup for rollback
+    setCategories([...categories, newCategory]);
+    setNewCategory(''); // Reset input immediately for next entry
+    toast.success('Category saved to background queue');
+
     try {
+      // 2. Send to backend in background
       const response = await fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({
@@ -174,16 +188,15 @@ export default function AdminPanel() {
 
       const result = await response.json();
 
-      if (result.success) {
-        // Update local state for immediate UI feedback
-        setCategories([...categories, newCategory]);
-        setNewCategory('');
-        toast.success('Category saved to Google Sheets');
-      } else {
-        toast.error('Failed to save category');
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to save');
       }
+      // Success: Do nothing, UI is already correct
     } catch (error) {
-      toast.error('Connection error while adding category');
+      // 3. Rollback on failure
+      console.error("Add category failed:", error);
+      setCategories(previousCategories); // Revert state
+      toast.error('Failed to save category. Rolled back.');
     }
   };
 
@@ -242,9 +255,9 @@ export default function AdminPanel() {
 
   // 2. Replace the old handleAddItem with this version
   const handleAddItem = async () => {
-    // Validation (Existing logic) [1]
+    // Validation (Checks required fields - tags are optional)
     if (!newItemName || !newItemQuantity || !newItemCompany || !newItemCategory) {
-      toast.error('Please fill all required fields');
+      toast.error('Please fill required fields (Name, Qty, Company, Category)');
       return;
     }
 
@@ -258,11 +271,13 @@ export default function AdminPanel() {
       imageUrl: capturedImage || '',
       remarks: '',
       links: '',
+      tags: newItemTags.join(','), // Store as comma-separated for local pending state
+      tagsArray: newItemTags, // Keep array for backend
       isPending: true
     };
 
     // Add to local UI state for instant feedback [9]
-    setInventory([pendingItem, ...inventory]);
+    setInventory([pendingItem as any, ...inventory]);
 
     // Push to local storage queue [11]
     const currentQueue = JSON.parse(localStorage.getItem('syncQueue') || '[]');
@@ -272,6 +287,8 @@ export default function AdminPanel() {
     setNewItemName('');
     setNewItemQuantity('');
     setNewItemCompany('');
+    setNewItemTags([]);
+    setCurrentTagInput('');
     setCapturedImage(null);
 
     processSyncQueue(); // Trigger the background worker [11]
@@ -368,7 +385,8 @@ export default function AdminPanel() {
           category: itemToSync.category,
           company: itemToSync.company,
           remarks: itemToSync.remarks || '',
-          links: itemToSync.links || ''
+          links: itemToSync.links || '',
+          tags: itemToSync.tagsArray || (itemToSync.tags ? itemToSync.tags.split(',') : [])
         }),
       });
 
@@ -449,7 +467,20 @@ export default function AdminPanel() {
     fetchInventory();
     fetchCategories();
     fetchUsers();
+
   }, []);
+
+  // Filter & Sort Logic
+  const filteredInventory = inventory.filter((item) => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.tags && item.tags.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  }).sort((a, b) => {
+    // Sort by Category then Name
+    if (a.category !== b.category) return a.category.localeCompare(b.category);
+    return a.name.localeCompare(b.name);
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -599,9 +630,34 @@ export default function AdminPanel() {
           {/* Inventory Tab */}
           <TabsContent value="inventory" className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-display font-bold text-foreground">Inventory Management</h2>
-                <p className="text-muted-foreground">Add and manage inventory items</p>
+              <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                <div>
+                  <h2 className="text-2xl font-display font-bold text-foreground">Inventory Management</h2>
+                  <p className="text-muted-foreground">Add and manage inventory items</p>
+                </div>
+
+                {/* Search & Filter Controls */}
+                <div className="flex gap-2 flex-1 sm:max-w-md items-center">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                    <Input
+                      placeholder="Search by name or tag..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 bg-background"
+                    />
+                  </div>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    <option value="all">All Categories</option>
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <Dialog>
                 <DialogTrigger asChild>
@@ -661,6 +717,41 @@ export default function AdminPanel() {
                       value={newItemQuantity}
                       onChange={(e) => setNewItemQuantity(e.target.value)}
                     />
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Tags</label>
+                      <div className="min-h-[2.5rem] p-2 border border-border rounded-lg flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-ring focus-within:border-primary bg-background">
+                        {newItemTags.map((tag, index) => (
+                          <span key={index} className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full font-medium animate-in fade-in zoom-in duration-200">
+                            {tag}
+                            <button
+                              onClick={() => setNewItemTags(newItemTags.filter((_, i) => i !== index))}
+                              className="hover:bg-emerald-200 rounded-full p-0.5"
+                            >
+                              <XCircle className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <input
+                          placeholder={newItemTags.length === 0 ? "Type tag & replace Enter..." : ""}
+                          value={currentTagInput}
+                          onChange={(e) => setCurrentTagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (currentTagInput.trim()) {
+                                setNewItemTags([...newItemTags, currentTagInput.trim()]);
+                                setCurrentTagInput('');
+                              }
+                            }
+                            if (e.key === 'Backspace' && !currentTagInput && newItemTags.length > 0) {
+                              setNewItemTags(newItemTags.slice(0, -1));
+                            }
+                          }}
+                          className="flex-1 bg-transparent border-none outline-none text-sm min-w-[120px]"
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Press Enter to add a tag. Backspace to delete.</p>
+                    </div>
                     <select
                       value={newItemCategory}
                       onChange={(e) => setNewItemCategory(e.target.value)}
@@ -686,7 +777,7 @@ export default function AdminPanel() {
 
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {inventory.map((item) => {
+              {filteredInventory.map((item) => {
                 // Check if the item is locally syncing or marked as [PENDING] by the backend
                 const isSyncing = item.isPending || item.name === '[PENDING]';
 
@@ -714,7 +805,13 @@ export default function AdminPanel() {
                     className="p-4 hover:shadow-lg transition-all cursor-pointer transform hover:scale-[1.02]"
                     onClick={() => setSelectedItem(item)}
                   >
-                    <h3 className="font-bold text-lg mb-2 text-emerald-900">{item.name}</h3>
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-lg text-emerald-900 leading-tight">{item.name}</h3>
+                      <span className="text-[10px] px-2 py-0.5 bg-muted rounded-full text-muted-foreground whitespace-nowrap">
+                        {item.category}
+                      </span>
+                    </div>
+
                     <div className="relative aspect-video mb-4 overflow-hidden rounded-lg bg-muted">
                       <img
                         src={item.imageUrl}
@@ -723,17 +820,45 @@ export default function AdminPanel() {
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <p className="text-muted-foreground">Company:</p>
-                      <p className="font-medium">{item.company}</p>
-                      <p className="text-muted-foreground">Category:</p>
-                      <p className="font-medium">{item.category}</p>
-                      <p className="text-muted-foreground">Stock:</p>
-                      <p className="font-bold text-emerald-700">{item.quantity}</p>
+                    {/* Tags Display */}
+                    {(item as any).tags && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {(item as any).tags.split(',').map((tag: string, i: number) => (
+                          tag.trim() && (
+                            <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
+                              {tag.trim()}
+                            </span>
+                          )
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Remarks Display */}
+                    {item.remarks && (
+                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded mb-3 line-clamp-2">
+                        {item.remarks}
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
+                      <div>
+                        <p className="text-muted-foreground text-xs">Company</p>
+                        <p className="font-medium truncate">{item.company}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-muted-foreground text-xs">Stock</p>
+                        <p className="font-bold text-emerald-700">{item.quantity}</p>
+                      </div>
                     </div>
                   </Card>
                 );
               })}
+
+              {filteredInventory.length === 0 && !isLoading && (
+                <div className="col-span-full text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
+                  <p>No items found matching "{searchQuery}"</p>
+                </div>
+              )}
             </div>
 
             {/* Selected Item Modal */}
@@ -961,8 +1086,8 @@ export default function AdminPanel() {
                             <tr key={user.id} className="hover:bg-muted/50">
                               <td className="px-6 py-4">
                                 <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                                    index === 1 ? 'bg-gray-100 text-gray-700' :
-                                      index === 2 ? 'bg-orange-100 text-orange-700' : 'text-muted-foreground'
+                                  index === 1 ? 'bg-gray-100 text-gray-700' :
+                                    index === 2 ? 'bg-orange-100 text-orange-700' : 'text-muted-foreground'
                                   }`}>
                                   {index + 1}
                                 </span>
@@ -976,8 +1101,8 @@ export default function AdminPanel() {
                               </td>
                               <td className="px-6 py-4">
                                 <span className={`text-xs px-2 py-1 rounded-full ${user.laptopStatus === 'Online'
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-muted text-muted-foreground'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-muted text-muted-foreground'
                                   }`}>
                                   {user.laptopStatus || 'Offline'}
                                 </span>

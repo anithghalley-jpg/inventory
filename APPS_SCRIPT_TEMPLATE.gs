@@ -259,7 +259,9 @@ function handleGetInventory(data) {
       company: values[i][4],
       imageUrl: values[i][5],
       remarks: values[i][6],
-      links: values[i][7]
+      links: values[i][7],
+      // Collect tags from Column J (Index 9) onwards
+      tags: values[i].slice(9).filter(t => t !== '').join(',') 
     });
   }
   
@@ -273,7 +275,7 @@ function handleGetInventory(data) {
  * This makes the request smaller and faster
  */
 function handleAddInventoryItem(data) {
-  const { name, quantity, category, company, imageUrl, remarks, links } = data;
+  const { name, quantity, category, company, imageUrl, remarks, links, tags } = data;
   const sheet = getSheet(SHEET_NAMES.INVENTORY);
   
   // // Check for duplicates
@@ -284,6 +286,7 @@ function handleAddInventoryItem(data) {
   //   }
   // }
   // Inside your handleCompleteInventoryItem function
+  const values = sheet.getDataRange().getValues();
   for (let j = 1; j < values.length; j++) {
     // Add a safety check: String(values[j][1] || "") 
     // This converts null or numbers to strings so .toLowerCase() doesn't crash
@@ -303,7 +306,9 @@ function handleAddInventoryItem(data) {
     company,
     imageUrl || '',
     remarks || '',
-    links || ''
+    links || '',
+    '', // Column I (Index 8) - Padding/Reserved
+    ...(Array.isArray(tags) ? tags : []) // Spread tags starting from Column J (Index 9)
   ];
   
   sheet.appendRow(newRow);
@@ -491,7 +496,8 @@ function handleUploadImageOptimized(data) {
       '[PENDING]',  // Placeholder company
       directLink,   // IMAGE URL (filled immediately)
       '',           // Remarks
-      ''            // Links
+      '',           // Links
+      ''            // Tags
     ];
     
     inventorySheet.appendRow(tempRow);
@@ -529,7 +535,7 @@ function handleUploadImageOptimized(data) {
  */
 function handleCompleteInventoryItem(data) {
   try {
-    const { itemId, name, quantity, category, company, remarks, links } = data;
+    const { itemId, name, quantity, category, company, remarks, links, tags } = data;
     const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
     const values = inventorySheet.getDataRange().getValues();
     
@@ -539,23 +545,31 @@ function handleCompleteInventoryItem(data) {
     // 2. Find where our itemId is
     const rowIndex = ids.indexOf(itemId);
     
+    const tagsArray = Array.isArray(tags) ? tags : [];
+    
     // 3. If found (index is not -1)
     if (rowIndex !== -1) {
-       // Note: Spreadsheet rows start at 1, so we add 1 to the index
-       const range = inventorySheet.getRange(rowIndex + 1, 1, 1, 8);
+       // Spread tags: [id, name, qty, cat, comp, img, rem, link, '', tag1, tag2, tag3...]
+       // Standard cols: 8 (A-H). Pad: 1 (I). Total standard: 9.
+       // Total width needed: 9 + tagsArray.length
        
-       range.setValues([[
+       const rowData = [
           itemId,
           name,
           quantity,
           category,
           company,
-          values[rowIndex][5], // The image URL already in the sheet
+          values[rowIndex][5], // Keep image URL
           remarks || '',
-          links || ''
-        ]]);
+          links || '',
+          '', // Column I
+          ...tagsArray
+       ];
 
-        return { success: true, message: 'Updated successfully!' };
+       const range = inventorySheet.getRange(rowIndex + 1, 1, 1, rowData.length);
+       range.setValues([rowData]);
+
+       return { success: true, message: 'Updated successfully!' };
     }
     
     return { success: false, message: 'Item ID not found' };
@@ -586,7 +600,7 @@ function handleGetCategories(data) {
   const sheet = getSheet(SHEET_NAMES.CATEGORIES);
   const values = sheet.getDataRange().getValues();
   // Map the rows to a simple array, skipping the header row if it exists
-  const categories = values.slice(1).map(row => row); 
+  const categories = values.slice(1).map(row => row[0]); 
   return { success: true, categories: categories };
 }
 
