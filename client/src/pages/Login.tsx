@@ -120,10 +120,10 @@ export default function Login() {
               </svg>
             </div>
             <h1 className="text-3xl font-display font-bold text-foreground mb-2">
-              Inventory Manager
+              Aesthetic Centre
             </h1>
             <p className="text-muted-foreground">
-              Manage your inventory with ease
+              Ease of Access
             </p>
           </div>
 

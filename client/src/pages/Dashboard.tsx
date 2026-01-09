@@ -314,7 +314,7 @@ export default function Dashboard() {
               <Package className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Inventory Manager</h1>
+              <h1 className="text-lg font-bold text-foreground">Aesthetic Centre</h1>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">User Dashboard</span>
                 {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing...</span>}

@@ -548,8 +548,11 @@ export default function AdminPanel() {
               </svg>
             </div>
             <div>
-              <h1 className="text-lg font-display font-bold text-foreground">Inventory Manager</h1>
-              <p className="text-xs text-muted-foreground">Admin Panel</p>
+              <h1 className="text-lg font-display font-bold text-foreground">Aesthetic Centre</h1>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Admin Panel</span>
+                {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing...</span>}
+              </div>
             </div>
           </div>
 
@@ -575,8 +578,8 @@ export default function AdminPanel() {
 
       {/* Main Content */}
       <main className="container py-8">
-        <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-5 bg-muted">
+        <Tabs defaultValue="users" className="space-y-20">
+          <TabsList className="grid w-full max-w-2xl grid-cols-5 bg-muted">
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -696,8 +699,8 @@ export default function AdminPanel() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex flex-col sm:flex-row gap-4 flex-1">
                 <div>
-                  <h2 className="text-2xl font-display font-bold text-foreground">Inventory Management</h2>
-                  <p className="text-muted-foreground">Add and manage inventory items</p>
+                  <h2 className="text-2xl font-display font-bold text-foreground">Aesthetic Centre</h2>
+                  <p className="text-muted-foreground">Ease of Access</p>
                 </div>
 
                 {/* Search & Filter Controls */}

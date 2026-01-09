@@ -353,9 +353,10 @@ export default function TeamDashboard() {
                         </div>
                         <div>
                             <span className="font-bold text-lg leading-tight block">Team Dashboard</span>
-                            <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded-sm">
-                                {user?.role} View
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">Team View</span>
+                                {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing...</span>}
+                            </div>
                         </div>
                     </div>
 
