@@ -96,7 +96,7 @@ export default function Login() {
     }
   };
   // Replace YOUR_GOOGLE_CLIENT_ID with your actual ID from Google Console
-  const GOOGLE_CLIENT_ID = "468694106636-m2dcdipajdq0044h1eprca0egsab600a.apps.googleusercontent.com";
+  const GOOGLE_CLIENT_ID = "631532726702-n5v60fv80jgri9u370fv1qo26m8aab04.apps.googleusercontent.com";
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>

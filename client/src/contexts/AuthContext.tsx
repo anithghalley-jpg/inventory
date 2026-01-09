@@ -13,7 +13,6 @@ export interface User {
   name: string;
   role: 'ADMIN' | 'USER';
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
   createdDate: string;
   laptopStatus?: 'Online' | 'Offline';
   totalTime?: number;
