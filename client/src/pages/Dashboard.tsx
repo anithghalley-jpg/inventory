@@ -40,6 +40,17 @@ interface UsageRecord {
   action: 'CHECKOUT' | 'RETURN';
   quantity: number;
   timestamp: string;
+  // New Fields
+  actionBy?: string;
+  imageUrl?: string;
+  returnStatus?: string;
+  returnRequestStatus?: string;
+}
+
+interface ItemUser {
+  name: string;
+  email: string;
+  role: string;
 }
 
 export default function Dashboard() {
@@ -51,6 +62,7 @@ export default function Dashboard() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [myItems, setMyItems] = useState<UsageRecord[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [approvers, setApprovers] = useState<ItemUser[]>([]); // Admins & Team
   const [isLoading, setIsLoading] = useState(true);
 
   // Filters & Actions
@@ -59,6 +71,8 @@ export default function Dashboard() {
 
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null); // For Checkout
   const [viewItem, setViewItem] = useState<InventoryItem | null>(null); // For Details Modal
+  const [returnItem, setReturnItem] = useState<UsageRecord | null>(null); // For Return Modal
+  const [returnTarget, setReturnTarget] = useState(''); // Selected Approver
   const [checkoutQuantity, setCheckoutQuantity] = useState('1');
 
   // Laptop Tracking State
@@ -104,7 +118,20 @@ export default function Dashboard() {
       });
       const reqResult = await reqResponse.json();
 
-      if (reqResult.success) {
+      // Fetch Users for Approver List (Admin + Team)
+      const usersResponse = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getAllUsers' })
+      });
+      const usersResult = await usersResponse.json();
+      if (usersResult.success) {
+        const qualifiedApprovers = usersResult.users.filter((u: any) =>
+          (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
+        );
+        setApprovers(qualifiedApprovers);
+      }
+
+      if (reqResult.success && invResult.success) {
         /*
          * Filter Logic:
          * 1. Must match current user email
@@ -118,12 +145,20 @@ export default function Dashboard() {
         );
 
         // Map request data to UsageRecord format for compatibility
-        const formattedItems = myActiveItems.map((r: any) => ({
-          id: r.date, // Using date as ID since row ID isn't explicit
-          itemName: r.itemName,
-          quantity: r.quantity,
-          timestamp: r.date
-        }));
+        const formattedItems = myActiveItems.map((r: any) => {
+          // Find image from inventory
+          const invItem = invResult.inventory.find((i: any) => i.id === r.itemId);
+          return {
+            id: r.date, // Using date as ID since row ID isn't explicit
+            itemId: r.itemId,
+            itemName: r.itemName,
+            quantity: r.quantity,
+            timestamp: r.date,
+            actionBy: r.actionBy, // New: Who approved it
+            imageUrl: invItem?.imageUrl || '',
+            returnRequestStatus: r.returnRequestStatus
+          };
+        });
 
         setMyItems(formattedItems);
       }
@@ -133,6 +168,32 @@ export default function Dashboard() {
       toast.error("Failed to load dashboard data");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleReturnSubmit = async () => {
+    if (!returnItem || !returnTarget) return;
+
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'initiateReturn',
+          date: returnItem.id, // ID
+          returnTarget: returnTarget
+        })
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast.success(`Return request submitted to ${returnTarget}`);
+        setReturnItem(null);
+        setReturnTarget('');
+        fetchData(); // Refresh to show pending status
+      } else {
+        toast.error("Failed: " + result.message);
+      }
+    } catch (e) {
+      toast.error("Network error");
     }
   };
 
@@ -446,21 +507,47 @@ export default function Dashboard() {
               </div>
 
               {myItems.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {myItems.map((record, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-background border border-border rounded-lg hover:border-emerald-200 transition-colors">
+                    <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-background border border-border rounded-lg hover:border-emerald-200 transition-colors gap-4">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold">
-                          {record.quantity}
+                        <div className="w-16 h-16 rounded-md bg-muted overflow-hidden shrink-0 border border-border">
+                          {record.imageUrl ?
+                            <img src={record.imageUrl} className="w-full h-full object-cover" /> :
+                            <div className="flex items-center justify-center h-full text-xs text-muted-foreground">No Img</div>
+                          }
                         </div>
                         <div>
-                          <h4 className="font-bold text-foreground">{record.itemName}</h4>
-                          <p className="text-xs text-muted-foreground">Checked out on {new Date(record.timestamp).toLocaleDateString()}</p>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-foreground text-lg">{record.itemName}</h4>
+                            <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                              x{record.quantity}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Approved by <span className="font-medium text-foreground">{record.actionBy || 'Admin'}</span>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(record.timestamp).toLocaleDateString()}
+                          </p>
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" className="text-xs">
-                        Return Item
-                      </Button>
+
+                      {record.returnRequestStatus === 'PENDING' ? (
+                        <div className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-md border border-yellow-200">
+                          Return Pending...
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs w-full sm:w-auto hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                          onClick={() => setReturnItem(record)}
+                        >
+                          Return Item
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -473,6 +560,45 @@ export default function Dashboard() {
               )}
             </Card>
           </TabsContent>
+
+          {/* Return Item Modal */}
+          <Dialog open={!!returnItem} onOpenChange={(open) => !open && setReturnItem(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Return {returnItem?.itemName}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="p-3 bg-muted rounded-lg text-sm">
+                  <p>You are requesting to return <strong>{returnItem?.quantity} unit(s)</strong>.</p>
+                  <p className="text-muted-foreground mt-1">Once approved by a team member, it will be removed from your list.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Select who to return to:</label>
+                  <Select value={returnTarget} onValueChange={setReturnTarget}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Team Member / Admin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approvers.map((u, i) => (
+                        <SelectItem key={i} value={u.name}>
+                          {u.name} ({u.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                  disabled={!returnTarget}
+                  onClick={handleReturnSubmit}
+                >
+                  Confirm Return Request
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* View Details Modal */}
           <Dialog open={!!viewItem} onOpenChange={(open) => !open && setViewItem(null)}>

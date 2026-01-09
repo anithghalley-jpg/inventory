@@ -9,6 +9,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
+import TeamDashboard from "./pages/TeamDashboard";
 
 /**
  * Design Philosophy: Modern Minimalist with Warm Accents
@@ -27,7 +28,10 @@ function Router() {
         <ProtectedRoute component={Dashboard} allowedRoles={['USER', 'ADMIN']} />
       </Route>
       <Route path="/admin">
-        <ProtectedRoute component={AdminPanel} allowedRoles={['ADMIN']} />
+        <ProtectedRoute component={AdminPanel} allowedRoles={['ADMIN', 'TEAM']} />
+      </Route>
+      <Route path="/team">
+        <ProtectedRoute component={TeamDashboard} allowedRoles={['TEAM', 'ADMIN']} />
       </Route>
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

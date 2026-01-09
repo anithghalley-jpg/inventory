@@ -11,7 +11,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'USER';
+  role: 'ADMIN' | 'USER' | 'TEAM';
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   createdDate: string;
   laptopStatus?: 'Online' | 'Offline';
@@ -24,7 +24,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, name: string) => Promise<User>;
   logout: () => void;
-  updateUserRole: (userId: string, role: 'ADMIN' | 'USER') => Promise<void>;
+  updateUserRole: (userId: string, role: 'ADMIN' | 'USER' | 'TEAM') => Promise<void>;
   updateUserStatus: (userId: string, status: 'APPROVED' | 'REJECTED') => Promise<void>;
 }
 
@@ -183,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * @param userId - Email of user to update
    * @param role - New role (ADMIN or USER)
    */
-  const updateUserRole = useCallback(async (userId: string, role: 'ADMIN' | 'USER') => {
+  const updateUserRole = useCallback(async (userId: string, role: 'ADMIN' | 'USER' | 'TEAM') => {
     if (user) {
       const updatedUser = { ...user, role };
       setUser(updatedUser);

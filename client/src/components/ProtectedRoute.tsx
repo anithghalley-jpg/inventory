@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
     component: React.ComponentType<any>;
-    allowedRoles?: ('ADMIN' | 'USER')[];
+    allowedRoles?: ('ADMIN' | 'USER' | 'TEAM')[];
     path?: string;
 }
 
@@ -57,7 +57,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ component: Component, a
                         You do not have permission to view this page. Required role: {allowedRoles.join(' or ')}.
                     </p>
                     <button
-                        onClick={() => setLocation(user.role === 'ADMIN' ? '/admin' : '/dashboard')}
+                        onClick={() => setLocation(user.role === 'ADMIN' ? '/admin' : user.role === 'TEAM' ? '/team' : '/dashboard')}
                         className="text-emerald-600 hover:underline"
                     >
                         Go to My Dashboard

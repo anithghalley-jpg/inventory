@@ -62,6 +62,9 @@ export default function Login() {
       if (user.role === 'ADMIN') {
         toast.success(`Welcome back, Admin ${user.name}`);
         navigate('/admin');
+      } else if (user.role === 'TEAM') {
+        toast.success(`Welcome, Team Member ${user.name}`);
+        navigate('/team');
       } else {
         toast.success('Login successful!');
         navigate('/dashboard');
@@ -169,6 +172,9 @@ export default function Login() {
                       if (user.role === 'ADMIN') {
                         toast.success('Welcome back Admin!');
                         navigate('/admin');
+                      } else if (user.role === 'TEAM') {
+                        toast.success('Welcome Team Member!');
+                        navigate('/team');
                       } else {
                         toast.success('Login successful!');
                         navigate('/dashboard');

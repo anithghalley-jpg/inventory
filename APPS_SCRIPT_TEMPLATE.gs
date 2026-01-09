@@ -123,6 +123,12 @@ function doPost(e) {
       case 'toggleLaptop': // NEW
         response = handleToggleLaptop(data);
         break;
+      case 'initiateReturn':
+        response = handleReturnRequest(data);
+        break;
+      case 'processReturn':
+        response = handleProcessReturn(data);
+        break;
       default:
         response = { success: false, message: 'Unknown action' };
     }
@@ -685,12 +691,90 @@ function handleGetRequests(data) {
       itemName: values[i][4],
       quantity: values[i][5],
       status: values[i][6],        // PENDING / APPROVED / REJECTED
-      actionBy: values[i][7],      // Admin Name
-      returnStatus: values[i][8]   // YES / NO (or empty)
+      actionBy: values[i][7],      // Admin Name who approved checkout
+      returnStatus: values[i][8],  // YES / NO (or empty)
+      // New Columns for Return Workflow
+      returnRequestStatus: values[i][9] || '', // PENDING (when user requests return)
+      returnTarget: values[i][10] || '',       // Who the user wants to return to
+      returnReceiver: values[i][11] || '',     // Who actually received it
+      returnRemarks: values[i][12] || ''       // Remarks upon receiving
     });
   }
   
   return { success: true, requests: requests };
+}
+
+// User initiates a return request
+function handleReturnRequest(data) {
+  const { date, returnTarget } = data; // date is used as ID here
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  const values = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]) === String(date)) {
+      // Col J (Index 9): Return Request Status -> PENDING
+      sheet.getRange(i + 1, 10).setValue('PENDING');
+      // Col K (Index 10): Return Target
+      sheet.getRange(i + 1, 11).setValue(returnTarget);
+      
+      return { success: true, message: 'Return request submitted' };
+    }
+  }
+  return { success: false, message: 'Request not found' };
+}
+
+// Admin/Team processes the return (Receive Item)
+function handleProcessReturn(data) {
+  const { date, receiverName, remarks, quantity, itemId, userEmail } = data;
+  const reqSheet = getSheet(SHEET_NAMES.REQUESTS);
+  const reqValues = reqSheet.getDataRange().getValues();
+  const invSheet = getSheet(SHEET_NAMES.INVENTORY);
+  const invValues = invSheet.getDataRange().getValues();
+  const histSheet = getSheet(SHEET_NAMES.USAGE_HISTORY);
+  
+  // 1. Update Request Sheet
+  let reqFound = false;
+  for (let i = 1; i < reqValues.length; i++) {
+    if (String(reqValues[i][0]) === String(date)) {
+      const row = i + 1;
+      // Col I (Index 8): Return Status -> YES
+      reqSheet.getRange(row, 9).setValue('YES');
+      // Col J (Index 9): Return Request Status -> APPROVED
+      reqSheet.getRange(row, 10).setValue('APPROVED');
+      // Col L (Index 11): Return Receiver
+      reqSheet.getRange(row, 12).setValue(receiverName);
+      // Col M (Index 12): Return Remarks
+      reqSheet.getRange(row, 13).setValue(remarks || '');
+      reqFound = true;
+      break;
+    }
+  }
+  
+  if (!reqFound) return { success: false, message: 'Request not found' };
+  
+  // 2. Update Inventory (Increase Stock)
+  let itemFound = false;
+  for (let i = 1; i < invValues.length; i++) {
+    if (String(invValues[i][0]) === String(itemId)) {
+      const currentQty = Number(invValues[i][2]);
+      invSheet.getRange(i + 1, 3).setValue(currentQty + Number(quantity));
+      itemFound = true;
+      break;
+    }
+  }
+  
+  // 3. Log Usage History
+  histSheet.appendRow([
+    Utilities.getUuid(),
+    itemId,
+    userEmail,
+    'RETURN_RECEIVED',
+    quantity,
+    new Date().toISOString(),
+    `Received by ${receiverName}: ${remarks || ''}`
+  ]);
+  
+  return { success: true, message: 'Return processed successfully' };
 }
 
 /**

@@ -49,6 +49,7 @@ interface InventoryItem {
   remarks?: string;
   links?: string;
   isPending?: boolean;
+  tags?: string;
 }
 
 interface UsageRecord {
@@ -94,13 +95,17 @@ export default function AdminPanel() {
   const [newItemCategory, setNewItemCategory] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [activeLoans, setActiveLoans] = useState<any[]>([]); // New State for Loans
+  const [activeRequests, setActiveRequests] = useState<any[]>([]); // All active holdings
+  const [pendingReturns, setPendingReturns] = useState<any[]>([]); // Returns waiting for approval
+  const [selectedReturn, setSelectedReturn] = useState<any | null>(null); // For Receive Modal
+  const [returnRemarks, setReturnRemarks] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
-  if (user?.role !== 'ADMIN') {
+  if (user?.role !== 'ADMIN' && user?.role !== 'TEAM') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Card className="card-soft p-8 max-w-md text-center">
@@ -243,6 +248,16 @@ export default function AdminPanel() {
             r.status === 'APPROVED' && (r.returnStatus || '').toLowerCase() !== 'yes'
           );
           setActiveLoans(validLoans);
+          setActiveRequests(validLoans); // Use for Current Holdings
+
+          // Filter for Pending Returns
+          // If TEAM, only show returns targeted to them. If ADMIN, show all.
+          const returns = reqResult.requests.filter((r: any) =>
+            r.status === 'APPROVED' &&
+            r.returnRequestStatus === 'PENDING' &&
+            (user?.role === 'ADMIN' || r.returnTarget === user?.name)
+          );
+          setPendingReturns(returns);
         }
 
       } else {
@@ -250,6 +265,37 @@ export default function AdminPanel() {
       }
     } catch (error) {
       toast.error('Failed to load users');
+    }
+  };
+
+  const handleProcessReturn = async () => {
+    if (!selectedReturn) return;
+
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'processReturn',
+          date: selectedReturn.date,
+          receiverName: user?.name,
+          remarks: returnRemarks,
+          quantity: selectedReturn.quantity,
+          itemId: selectedReturn.itemId,
+          userEmail: selectedReturn.userEmail
+        })
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast.success("Return processed successfully");
+        setSelectedReturn(null);
+        setReturnRemarks('');
+        fetchUsers(); // Refresh data
+        fetchInventory(); // Refresh stock
+      } else {
+        toast.error("Failed: " + result.message);
+      }
+    } catch (e) {
+      toast.error("Network error");
     }
   };
 
@@ -995,39 +1041,137 @@ export default function AdminPanel() {
             </div>
           </TabsContent>
 
-          {/* History Tab */}
-          <TabsContent value="history" className="space-y-4">
-            <div>
-              <h2 className="text-2xl font-display font-bold text-foreground">Usage History</h2>
-              <p className="text-muted-foreground">Track all inventory checkouts and returns</p>
+          {/* Usage History / Requests Tab */}
+          <TabsContent value="history" className="space-y-8">
+
+            {/* SECTION 1: Pending Returns */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold font-display flex items-center gap-2">
+                <CheckCircle className="text-emerald-600" />
+                Incoming Returns
+              </h2>
+              {pendingReturns.length > 0 ? (
+                <div className="grid gap-4">
+                  {pendingReturns.map((req, idx) => (
+                    <Card key={idx} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-l-4 border-l-yellow-400">
+                      <div>
+                        <h3 className="font-bold text-lg">{req.itemName}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Returing from: <span className="font-medium text-foreground">{req.userName}</span> ({req.userEmail})
+                        </p>
+                        <div className="flex gap-2 mt-2">
+                          <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-bold">
+                            Qty: {req.quantity}
+                          </span>
+                          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full font-bold">
+                            Target: {req.returnTarget}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => setSelectedReturn(req)}
+                      >
+                        Receive Item
+                      </Button>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center border-2 border-dashed rounded-xl text-muted-foreground">
+                  No pending returns assigned to you.
+                </div>
+              )}
             </div>
 
-            {usageHistory.length === 0 ? (
-              <Card className="card-soft p-8 text-center">
-                <p className="text-muted-foreground">No usage history yet</p>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {usageHistory.map((record) => (
-                  <Card key={record.id} className="card-soft p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-foreground">{record.itemName}</p>
-                        <p className="text-sm text-muted-foreground">{record.userEmail}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-foreground">
-                          {record.action === 'CHECKOUT' ? 'Checked Out' : 'Returned'}: {record.quantity}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(record.timestamp).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
+            <div className="border-t border-border my-8"></div>
+
+            {/* SECTION 2: Current Holdings by User */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold font-display flex items-center gap-2">
+                <UsersIcon className="text-blue-600" />
+                Current User Holdings
+              </h2>
+
+              {(() => {
+                const grouped = activeRequests.reduce((acc: any, req) => {
+                  const email = req.userEmail;
+                  if (!acc[email]) acc[email] = { name: req.userName, email: email, items: [] };
+                  acc[email].items.push(req);
+                  return acc;
+                }, {});
+
+                const users = Object.values(grouped);
+
+                if (users.length === 0) return (
+                  <div className="p-8 text-center border-2 border-dashed rounded-xl text-muted-foreground">
+                    No active items checked out.
+                  </div>
+                );
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {users.map((u: any, i) => (
+                      <Card key={i} className="p-5 hover:shadow-md transition-all">
+                        <div className="flex items-center gap-3 mb-4 border-b pb-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                            {u.name.charAt(0)}
+                          </div>
+                          <div>
+                            <h4 className="font-bold leading-tight">{u.name}</h4>
+                            <p className="text-xs text-muted-foreground">{u.email}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {u.items.map((item: any, j: number) => (
+                            <div key={j} className="flex justify-between items-center text-sm bg-muted/40 p-2 rounded">
+                              <span>{item.itemName}</span>
+                              <span className="font-bold bg-background px-2 rounded border border-border">x{item.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 pt-2 border-t text-xs text-center text-muted-foreground">
+                          Total Items: {u.items.reduce((sum: number, x: any) => sum + Number(x.quantity), 0)}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Receive Item Modal */}
+            <Dialog open={!!selectedReturn} onOpenChange={(open) => !open && setSelectedReturn(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Receive Item: {selectedReturn?.itemName}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="p-3 bg-muted rounded-lg text-sm">
+                    <p>You are receiving <strong>{selectedReturn?.quantity} unit(s)</strong> from <strong>{selectedReturn?.userName}</strong>.</p>
+                    <p className="text-muted-foreground mt-1">This will return the items to inventory stock.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Remarks (Optional)</label>
+                    <Input
+                      placeholder="e.g. Returned in good condition"
+                      value={returnRemarks}
+                      onChange={(e) => setReturnRemarks(e.target.value)}
+                    />
+                  </div>
+
+                  <Button
+                    className="w-full bg-emerald-600 hover:bg-emerald-700"
+                    onClick={handleProcessReturn}
+                  >
+                    Confirm & Update Stock
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
           </TabsContent>
 
           {/* TAB 4: LAPTOP MONITOR */}
