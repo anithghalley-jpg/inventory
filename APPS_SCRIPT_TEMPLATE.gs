@@ -126,6 +126,9 @@ function doPost(e) {
       case 'initiateReturn':
         response = handleReturnRequest(data);
         break;
+      case 'approveCheckoutRequest': // NEW
+        response = handleApproveCheckoutRequest(data);
+        break;
       case 'processReturn':
         response = handleProcessReturn(data);
         break;
@@ -333,39 +336,7 @@ function handleAddInventoryItem(data) {
   return { success: true, itemId: itemId };
 }
 
-function handleCheckoutItem(data) {
-  const { itemId, userEmail, quantity } = data;
-  const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
-  const historySheet = getSheet(SHEET_NAMES.USAGE_HISTORY);
-  const values = inventorySheet.getDataRange().getValues();
-  
-  // Find item and update quantity
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0] === itemId) {
-      const currentQty = values[i][2];
-      if (currentQty < quantity) {
-        return { success: false, message: 'Insufficient quantity' };
-      }
-      
-      // Update inventory
-      inventorySheet.getRange(i + 1, 3).setValue(currentQty - quantity);
-      
-      // Record usage
-      historySheet.appendRow([
-        Utilities.getUuid(),
-        itemId,
-        userEmail,
-        'CHECKOUT',
-        quantity,
-        new Date().toISOString()
-      ]);
-      
-      return { success: true, message: 'Item checked out' };
-    }
-  }
-  
-  return { success: false, message: 'Item not found' };
-}
+// function handleCheckoutItem has been replaced by handleCheckoutRequest + handleApproveCheckoutRequest workflow
 
 function handleReturnItem(data) {
   const { itemId, userEmail, quantity } = data;
@@ -691,20 +662,65 @@ function handleGetRequests(data) {
       itemName: values[i][4],
       quantity: values[i][5],
       status: values[i][6],        // PENDING / APPROVED / REJECTED
-      actionBy: values[i][7],      // Admin Name who approved checkout
-      returnStatus: values[i][8],  // YES / NO (or empty)
+      actionBy: values[i][7],      // Col H: Admin Name who approved checkout
+      returnStatus: values[i][8],  // Col I: RETURN_PENDING / APPROVED
       // New Columns for Return Workflow
-      returnRequestStatus: values[i][9] || '', // PENDING (when user requests return)
-      returnTarget: values[i][10] || '',       // Who the user wants to return to
-      returnReceiver: values[i][11] || '',     // Who actually received it
-      returnRemarks: values[i][12] || ''       // Remarks upon receiving
+      returnRequestStatus: values[i][8], // Using Col I for return status tracking as per request
+      returnTarget: values[i][9] || '',  // Col J
+      returnReceiver: values[i][10] || '', // Col K: Who received it + Remarks
+      returnRemarks: values[i][10] || ''   // Col K shared
     });
   }
   
   return { success: true, requests: requests };
 }
 
-// User initiates a return request
+// 1. Approve Checkout Request (Admin/Team)
+function handleApproveCheckoutRequest(data) {
+  const { requestId, approverName } = data;
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  const values = sheet.getDataRange().getValues();
+  const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
+  const invValues = inventorySheet.getDataRange().getValues();
+  
+  for (let i = 1; i < values.length; i++) {
+    // Check Date/ID matches (Col A)
+    if (String(values[i][0]) === String(requestId)) {
+      
+      // Check Inventory Stock first
+      const itemId = values[i][3];
+      const quantity = Number(values[i][5]);
+      
+      let invRowIndex = -1;
+      let currentStock = 0;
+      
+      for(let j=1; j<invValues.length; j++) {
+        if(String(invValues[j][0]) === String(itemId)) {
+           invRowIndex = j + 1;
+           currentStock = Number(invValues[j][2]);
+           break;
+        }
+      }
+      
+      if (invRowIndex === -1) return { success: false, message: 'Item not found in inventory' };
+      if (currentStock < quantity) return { success: false, message: 'Insufficient stock' };
+      
+      // Update Inventory
+      inventorySheet.getRange(invRowIndex, 3).setValue(currentStock - quantity);
+      
+      // Update Request Sheet
+      // Col G (7): Status -> APPROVED
+      sheet.getRange(i + 1, 7).setValue('APPROVED');
+      // Col H (8): Action By -> Approver Name
+      sheet.getRange(i + 1, 8).setValue(approverName);
+      
+      return { success: true, message: 'Request approved & inventory deducted' };
+    }
+  }
+  return { success: false, message: 'Request not found' };
+}
+
+// 2. User initiates a return request
 function handleReturnRequest(data) {
   const { date, returnTarget } = data; // date is used as ID here
   const sheet = getSheet(SHEET_NAMES.REQUESTS);
@@ -712,10 +728,17 @@ function handleReturnRequest(data) {
   
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]) === String(date)) {
-      // Col J (Index 9): Return Request Status -> PENDING
-      sheet.getRange(i + 1, 10).setValue('PENDING');
-      // Col K (Index 10): Return Target
-      sheet.getRange(i + 1, 11).setValue(returnTarget);
+      // Col J (Index 9): Return Target (Set logic as per requirement)
+      // User Requirement: "marking col I as pending"
+      
+      // Col I (9): Return Status -> RETURN_PENDING
+      sheet.getRange(i + 1, 9).setValue('RETURN_PENDING');
+      
+      // Col J (10): (Optional: Target) - We might not need this col if not specified, but good to keep
+      // Let's use Col J for Return Target as previously planned, or skip if strictly only I & K are mentioned.
+      // Requirement: "sent to team... marking col I as pending... who approves name in col K"
+      // So Col J might be free or used for Target. Let's use Col J for Target for routing.
+      sheet.getRange(i + 1, 10).setValue(returnTarget);
       
       return { success: true, message: 'Return request submitted' };
     }
@@ -724,6 +747,7 @@ function handleReturnRequest(data) {
 }
 
 // Admin/Team processes the return (Receive Item)
+// 3. Admin/Team processes the return (Receive Item)
 function handleProcessReturn(data) {
   const { date, receiverName, remarks, quantity, itemId, userEmail } = data;
   const reqSheet = getSheet(SHEET_NAMES.REQUESTS);
@@ -737,14 +761,16 @@ function handleProcessReturn(data) {
   for (let i = 1; i < reqValues.length; i++) {
     if (String(reqValues[i][0]) === String(date)) {
       const row = i + 1;
-      // Col I (Index 8): Return Status -> YES
-      reqSheet.getRange(row, 9).setValue('YES');
-      // Col J (Index 9): Return Request Status -> APPROVED
-      reqSheet.getRange(row, 10).setValue('APPROVED');
-      // Col L (Index 11): Return Receiver
-      reqSheet.getRange(row, 12).setValue(receiverName);
-      // Col M (Index 12): Return Remarks
-      reqSheet.getRange(row, 13).setValue(remarks || '');
+      
+      // Requirement: "whoever approves the name will be recorded in col K with a remarks"
+      
+      // Col I (Index 8): Return Status (Approved/Closed) -> 'RETURN_APPROVED'
+      reqSheet.getRange(row, 9).setValue('RETURN_APPROVED');
+      
+      // Col K (Index 10): Approver Name + Remarks
+      const entry = `${receiverName}${remarks ? ': ' + remarks : ''}`;
+      reqSheet.getRange(row, 11).setValue(entry);
+      
       reqFound = true;
       break;
     }

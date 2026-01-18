@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 // ============================================================================
 // Replace this URL with your deployed Apps Script Web App URL
 // Format: https://script.google.com/macros/s/{SCRIPT_ID}/exec
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXHLzLob0rScK6t0AaxZeKyi7HxG5NG8HEWNm0_Vs2Hkt4yd_pg81AqCPucjwpJ7o6/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXcj74jsDteyR0SFs9Mon0FC8ojVDkJnSm4m47r_FGKHTInP1ih78I7Na42Hyb2Oeu/exec';
 
 export interface User {
   id: string;

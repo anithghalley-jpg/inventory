@@ -19,7 +19,7 @@ import { toast } from 'sonner';
  * - Warm sage green accents with admin-specific styling
  */
 // 1. Add your Google Apps Script Deployment URL at the top of your component
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyh31R3tc8neHROJrhtojKppa83o_BpBSCYsC1_1w3f_JZ52aMNCwOJNnUXGgT7ERFo/exec'; // Copy this from your GAS deployment [3]
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXcj74jsDteyR0SFs9Mon0FC8ojVDkJnSm4m47r_FGKHTInP1ih78I7Na42Hyb2Oeu/exec'; // Copy this from your GAS deployment [3]
 const DRIVE_FOLDER_ID = '1i_fpnnNDIjOfK5Z8D3GP6yHp00KZ0bsg';
 
 interface PendingUser {
@@ -97,6 +97,7 @@ export default function AdminPanel() {
   const [activeLoans, setActiveLoans] = useState<any[]>([]); // New State for Loans
   const [activeRequests, setActiveRequests] = useState<any[]>([]); // All active holdings
   const [pendingReturns, setPendingReturns] = useState<any[]>([]); // Returns waiting for approval
+  const [pendingCheckouts, setPendingCheckouts] = useState<any[]>([]); // New: Checkouts waiting for approval
   const [selectedReturn, setSelectedReturn] = useState<any | null>(null); // For Receive Modal
   const [returnRemarks, setReturnRemarks] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -245,7 +246,9 @@ export default function AdminPanel() {
         if (reqResult.success) {
           // Filter for active approved loans (Return Status != YES)
           const validLoans = reqResult.requests.filter((r: any) =>
-            r.status === 'APPROVED' && (r.returnStatus || '').toLowerCase() !== 'yes'
+            r.status === 'APPROVED' &&
+            r.returnRequestStatus !== 'RETURN_APPROVED' &&
+            (r.returnStatus || '').toLowerCase() !== 'yes'
           );
           setActiveLoans(validLoans);
           setActiveRequests(validLoans); // Use for Current Holdings
@@ -254,10 +257,15 @@ export default function AdminPanel() {
           // If TEAM, only show returns targeted to them. If ADMIN, show all.
           const returns = reqResult.requests.filter((r: any) =>
             r.status === 'APPROVED' &&
-            r.returnRequestStatus === 'PENDING' &&
+            r.returnRequestStatus === 'RETURN_PENDING' &&
             (user?.role === 'ADMIN' || r.returnTarget === user?.name)
           );
           setPendingReturns(returns);
+
+          // Filter for Pending Checkouts (New)
+          setPendingCheckouts(reqResult.requests.filter((r: any) =>
+            r.status === 'PENDING'
+          ));
         }
 
       } else {
@@ -296,6 +304,29 @@ export default function AdminPanel() {
       }
     } catch (e) {
       toast.error("Network error");
+    }
+  };
+
+  const handleApproveRequest = async (req: any) => {
+    try {
+      // Optimistic Update
+      const prevCheckouts = [...pendingCheckouts];
+      setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
+      toast.success("Request Approved");
+
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'approveCheckoutRequest',
+          requestId: req.date,
+          approverName: user?.name
+        })
+      });
+      fetchUsers(); // Refresh full state
+      fetchInventory(); // Refresh stock
+    } catch (e) {
+      toast.error("Approval failed");
+      fetchUsers(); // Rollback
     }
   };
 
@@ -600,9 +631,9 @@ export default function AdminPanel() {
             <TabsTrigger value="history" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               <span className="hidden sm:inline">History</span>
-              {pendingReturns.length > 0 && (
+              {pendingReturns.length + pendingCheckouts.length > 0 && (
                 <span className="ml-1 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 rounded-full">
-                  {pendingReturns.length}
+                  {pendingReturns.length + pendingCheckouts.length}
                 </span>
               )}
             </TabsTrigger>
@@ -1077,6 +1108,48 @@ export default function AdminPanel() {
 
           {/* Usage History / Requests Tab */}
           <TabsContent value="history" className="space-y-8">
+
+            {/* SECTION 0: Pending Checkout Requests */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold font-display flex items-center gap-2">
+                <Clock className="text-orange-500" />
+                Pending Checkout Requests
+              </h2>
+              {pendingCheckouts.length > 0 ? (
+                <div className="grid gap-4">
+                  {pendingCheckouts.map((req, idx) => (
+                    <Card key={idx} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-l-4 border-l-orange-400">
+                      <div>
+                        <h3 className="font-bold text-lg">{req.itemName}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Requested by: <span className="font-medium text-foreground">{req.userName}</span> ({req.userEmail})
+                        </p>
+                        <div className="flex gap-2 mt-2">
+                          <span className="px-2 py-0.5 bg-orange-100 text-orange-800 text-xs rounded-full font-bold">
+                            Qty: {req.quantity}
+                          </span>
+                          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full font-bold">
+                            {new Date(req.date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => handleApproveRequest(req)}
+                      >
+                        Approve Checkout
+                      </Button>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center border-2 border-dashed rounded-xl text-muted-foreground">
+                  No pending checkout requests.
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border my-8"></div>
 
             {/* SECTION 1: Pending Returns */}
             <div className="space-y-4">

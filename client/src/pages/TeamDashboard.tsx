@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyh31R3tc8neHROJrhtojKppa83o_BpBSCYsC1_1w3f_JZ52aMNCwOJNnUXGgT7ERFo/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXcj74jsDteyR0SFs9Mon0FC8ojVDkJnSm4m47r_FGKHTInP1ih78I7Na42Hyb2Oeu/exec';
 
 // Types
 interface InventoryItem {
@@ -54,6 +54,7 @@ interface UsageRecord {
     returnRequestStatus?: string;
     returnTarget?: string;
     userName?: string;
+    status?: string;
 }
 
 export default function TeamDashboard() {
@@ -68,6 +69,7 @@ export default function TeamDashboard() {
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [activeRequests, setActiveRequests] = useState<any[]>([]);
     const [pendingReturns, setPendingReturns] = useState<any[]>([]);
+    const [pendingCheckouts, setPendingCheckouts] = useState<any[]>([]); // New State
     const [approvers, setApprovers] = useState<User[]>([]);
 
     // Pagination State
@@ -174,9 +176,12 @@ export default function TeamDashboard() {
             setAllUsers(result.users);
 
             // Set Approvers (Admins + Approved Team)
-            setApprovers(result.users.filter((u: any) =>
+            // Logic moved to inside success block to handle role-based filtering dynamically
+            const validApprovers = result.users.filter((u: any) =>
                 (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
-            ));
+            );
+            // Default, will be overridden below if Team
+            setApprovers(validApprovers);
 
             // Fetch Transaction History (Secured)
             const reqResponse = await fetch(SCRIPT_URL, {
@@ -193,20 +198,42 @@ export default function TeamDashboard() {
                 // 1. My Active Checkouts
                 setMyItems(reqResult.requests.filter((r: any) =>
                     r.userEmail === user?.email &&
-                    r.status === 'APPROVED' &&
+                    (r.status === 'APPROVED' || r.status === 'PENDING') && // Show Pending checkouts too
+                    r.returnRequestStatus !== 'RETURN_APPROVED' &&
                     (r.returnStatus || '').toLowerCase() !== 'yes'
                 ).map((r: any) => ({ ...r, id: r.date })));
 
                 // 2. Incoming Returns (For Team/Admin to Process)
                 setPendingReturns(reqResult.requests.filter((r: any) =>
                     r.status === 'APPROVED' &&
-                    r.returnRequestStatus === 'PENDING' &&
+                    r.returnRequestStatus === 'RETURN_PENDING' &&
                     (user?.role === 'ADMIN' || r.returnTarget === user?.name)
                 ));
 
+                // 3. Pending Checkout Requests (For Team to Approve)
+                // RULE: Team can only approve USER requests, not other TEAM members (Admin only).
+                // RULE: Team cannot approve their own request.
+                const teamPendingCheckouts = reqResult.requests.filter((r: any) => {
+                    const requester = result.users.find((u: any) => u.email === r.userEmail);
+                    const isRequesterTeam = requester?.role === 'TEAM' || requester?.role === 'ADMIN'; // Treat Admin/Team requests as restricted
+                    return r.status === 'PENDING' && !isRequesterTeam;
+                });
+                setPendingCheckouts(teamPendingCheckouts);
+
+                // Refine Approvers for Team Members (Must return to Admin)
+                if (user?.role === 'TEAM') {
+                    setApprovers(result.users.filter((u: any) => u.role === 'ADMIN' && u.status === 'APPROVED'));
+                } else {
+                    setApprovers(result.users.filter((u: any) =>
+                        (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
+                    ));
+                }
+
                 // 3. All Active Loans (For Monitor)
                 setActiveRequests(reqResult.requests.filter((r: any) =>
-                    r.status === 'APPROVED' && (r.returnStatus || '').toLowerCase() !== 'yes'
+                    r.status === 'APPROVED' &&
+                    r.returnRequestStatus !== 'RETURN_APPROVED' && // Hide returned items
+                    (r.returnStatus || '').toLowerCase() !== 'yes'
                 ));
             }
         }
@@ -290,10 +317,32 @@ export default function TeamDashboard() {
             fetchUsers();
             fetchInventory(1, true);
         } catch (e) {
-            toast.error("Error processing return");
-            // Rollback
+            toast.error("Failed to process return");
             setPendingReturns(previousReturns);
             setActiveRequests(previousActive);
+        }
+    };
+
+    const handleApproveRequest = async (req: any) => {
+        try {
+            // Optimistic Update
+            const prevCheckouts = [...pendingCheckouts];
+            setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
+            toast.success("Request Approved");
+
+            await fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'approveCheckoutRequest',
+                    requestId: req.date,
+                    approverName: user?.name
+                })
+            });
+            fetchUsers();
+            fetchInventory(1, true);
+        } catch (e) {
+            toast.error("Approval failed");
+            fetchUsers(); // Rollback
         }
     };
 
@@ -394,8 +443,8 @@ export default function TeamDashboard() {
                                 <UsersIcon className="w-4 h-4 mr-2" /> Users
                             </TabsTrigger>
                             <TabsTrigger value="returns" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
-                                <History className="w-4 h-4 mr-2" /> Returns
-                                {pendingReturns.length > 0 && <span className="ml-2 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 rounded-full">{pendingReturns.length}</span>}
+                                <History className="w-4 h-4 mr-2" /> History & Returns
+                                {(pendingReturns.length + pendingCheckouts.length) > 0 && <span className="ml-2 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-1.5 rounded-full">{pendingReturns.length + pendingCheckouts.length}</span>}
                             </TabsTrigger>
                             <TabsTrigger value="monitor" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <Monitor className="w-4 h-4 mr-2" /> Monitor
@@ -455,7 +504,7 @@ export default function TeamDashboard() {
                                                 >
                                                     <div className="relative h-40 bg-slate-100 overflow-hidden text-center">
                                                         {item.imageUrl ? (
-                                                            <img src={item.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                            <img src={item.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                                         ) : (
                                                             <div className="flex items-center justify-center h-full text-slate-300"><Package className="w-8 h-8" /></div>
                                                         )}
@@ -523,7 +572,7 @@ export default function TeamDashboard() {
                                             >
                                                 <div className="relative aspect-video bg-slate-100 rounded-lg overflow-hidden">
                                                     {getItemImage(item.itemName) ? (
-                                                        <img src={getItemImage(item.itemName)} className="w-full h-full object-cover" />
+                                                        <img src={getItemImage(item.itemName)} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                                                     ) : (
                                                         <div className="flex items-center justify-center h-full text-slate-300"><Package /></div>
                                                     )}
@@ -536,7 +585,11 @@ export default function TeamDashboard() {
                                                     </div>
                                                 </div>
 
-                                                {item.returnRequestStatus === 'PENDING' ? (
+                                                {item.status === 'PENDING' ? (
+                                                    <div className="mt-auto pt-2 text-center bg-orange-50 text-orange-700 text-xs py-1.5 rounded font-bold border border-orange-100">
+                                                        Pending Approval
+                                                    </div>
+                                                ) : item.returnRequestStatus === 'RETURN_PENDING' ? (
                                                     <div className="mt-auto pt-2 text-center bg-yellow-50 text-yellow-700 text-xs py-1.5 rounded font-bold border border-yellow-100">
                                                         Return Pending...
                                                     </div>
@@ -624,6 +677,42 @@ export default function TeamDashboard() {
                         <div className="space-y-8">
                             <div className="space-y-4">
                                 <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+                                    Item Requests
+                                    {pendingCheckouts.length > 0 && <span className="bg-red-100 text-red-800 text-sm px-2 py-0.5 rounded-full">{pendingCheckouts.length}</span>}
+                                </h2>
+                                {pendingCheckouts.length === 0 ? (
+                                    <div className="text-sm text-slate-500 italic pb-4 border-b border-slate-100">No new item requests.</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-8 border-b border-slate-200">
+                                        {pendingCheckouts.map(req => {
+                                            const img = getItemImage(req.itemName);
+                                            return (
+                                                <Card key={req.date} className="p-0 flex overflow-hidden border-l-4 border-l-orange-400 shadow-sm">
+                                                    <div className="w-24 bg-slate-100 shrink-0">
+                                                        {img ? <img src={img} referrerPolicy="no-referrer" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><Package className="text-slate-300" /></div>}
+                                                    </div>
+                                                    <div className="p-4 flex-1 flex justify-between items-center">
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <h4 className="font-bold text-slate-900">{req.itemName}</h4>
+                                                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">x{req.quantity}</span>
+                                                            </div>
+                                                            <p className="text-sm text-slate-500">Requested by <span className="font-medium text-slate-900">{req.userName}</span></p>
+                                                            <p className="text-xs text-slate-400 mt-1">{new Date(req.date).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <Button size="sm" onClick={() => handleApproveRequest(req)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                                                            Approve
+                                                        </Button>
+                                                    </div>
+                                                </Card>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-4">
+                                <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                                     Incoming Returns
                                     {pendingReturns.length > 0 && <span className="bg-yellow-100 text-yellow-800 text-sm px-2 py-0.5 rounded-full">{pendingReturns.length}</span>}
                                 </h2>
@@ -639,7 +728,7 @@ export default function TeamDashboard() {
                                             return (
                                                 <Card key={req.date} className="p-0 flex overflow-hidden border-l-4 border-l-yellow-400 shadow-sm">
                                                     <div className="w-24 bg-slate-100 shrink-0">
-                                                        {img ? <img src={img} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><Package className="text-slate-300" /></div>}
+                                                        {img ? <img src={img} referrerPolicy="no-referrer" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><Package className="text-slate-300" /></div>}
                                                     </div>
                                                     <div className="p-4 flex-1 flex justify-between items-center">
                                                         <div>
@@ -732,7 +821,7 @@ export default function TeamDashboard() {
                     {/* Left: Image (Larger) */}
                     <div className="bg-slate-100 h-64 md:h-auto md:w-1/2 relative flex items-center justify-center p-8">
                         {viewItem?.imageUrl ? (
-                            <img src={viewItem.imageUrl} className="max-w-full max-h-full object-contain drop-shadow-md" />
+                            <img src={viewItem.imageUrl} referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain drop-shadow-md" />
                         ) : (
                             <Package className="w-32 h-32 text-slate-300" />
                         )}
@@ -794,26 +883,6 @@ export default function TeamDashboard() {
                                 </div>
                             )}
                         </div>
-
-                        {/* Footer Actions */}
-                        <div className="mt-8 pt-6 border-t border-slate-100">
-                            <Button
-                                className="w-full bg-slate-900 hover:bg-slate-800 h-12 text-base font-medium shadow-lg shadow-slate-200"
-                                onClick={() => {
-                                    if (viewItem) {
-                                        if (viewItem.quantity > 0) {
-                                            setSelectedItem(viewItem);
-                                            setViewItem(null);
-                                        } else {
-                                            toast.error('Item is out of stock');
-                                        }
-                                    }
-                                }}
-                                disabled={!viewItem || viewItem.quantity === 0}
-                            >
-                                {viewItem && viewItem.quantity > 0 ? 'Request This Item' : 'Currently Out of Stock'}
-                            </Button>
-                        </div>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -869,6 +938,37 @@ export default function TeamDashboard() {
                     </div>
                 </DialogContent>
             </Dialog>
-        </div>
+
+            {/* RECEIVE RETURN DIALOG (Admin/Team) - Added to fix "Receive" button responsiveness */}
+            <Dialog open={!!selectedReturn} onOpenChange={(o) => !o && setSelectedReturn(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Receive Item: {selectedReturn?.itemName}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="p-3 bg-muted rounded-lg text-sm">
+                            <p>You are receiving <strong>{selectedReturn?.quantity} unit(s)</strong> from <strong>{selectedReturn?.userName}</strong>.</p>
+                            <p className="text-muted-foreground mt-1">This will return the items to inventory stock.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Remarks (Optional)</label>
+                            <Input
+                                placeholder="e.g. Returned in good condition"
+                                value={returnRemarks}
+                                onChange={(e) => setReturnRemarks(e.target.value)}
+                            />
+                        </div>
+
+                        <Button
+                            className="w-full bg-emerald-600 hover:bg-emerald-700"
+                            onClick={handleProcessReturn}
+                        >
+                            Confirm & Update Stock
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div >
     );
 }

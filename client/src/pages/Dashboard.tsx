@@ -18,7 +18,7 @@ import { toast } from 'sonner';
  * - Category-based grouping
  */
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyh31R3tc8neHROJrhtojKppa83o_BpBSCYsC1_1w3f_JZ52aMNCwOJNnUXGgT7ERFo/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXcj74jsDteyR0SFs9Mon0FC8ojVDkJnSm4m47r_FGKHTInP1ih78I7Na42Hyb2Oeu/exec';
 
 interface InventoryItem {
   id: string;
@@ -37,7 +37,7 @@ interface UsageRecord {
   itemId: string;
   itemName: string;
   userEmail: string;
-  action: 'CHECKOUT' | 'RETURN';
+  action: 'CHECKOUT' | 'RETURN' | 'PENDING' | 'APPROVED';
   quantity: number;
   timestamp: string;
   // New Fields
@@ -140,7 +140,8 @@ export default function Dashboard() {
          */
         const myActiveItems = reqResult.requests.filter((r: any) =>
           r.userEmail === user?.email &&
-          r.status === 'APPROVED' &&
+          (r.status === 'APPROVED' || r.status === 'PENDING') &&
+          r.returnRequestStatus !== 'RETURN_APPROVED' && // Hide only when return is approved
           (r.returnStatus || '').toLowerCase() !== 'yes'
         );
 
@@ -154,6 +155,7 @@ export default function Dashboard() {
             itemName: r.itemName,
             quantity: r.quantity,
             timestamp: r.date,
+            action: r.status, // Store status here
             actionBy: r.actionBy, // New: Who approved it
             imageUrl: invItem?.imageUrl || '',
             returnRequestStatus: r.returnRequestStatus
@@ -440,6 +442,7 @@ export default function Dashboard() {
                             <img
                               src={item.imageUrl}
                               alt={item.name}
+                              referrerPolicy="no-referrer"
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             />
                           ) : (
@@ -514,7 +517,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-md bg-muted overflow-hidden shrink-0 border border-border">
                           {record.imageUrl ?
-                            <img src={record.imageUrl} className="w-full h-full object-cover" /> :
+                            <img src={record.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover" /> :
                             <div className="flex items-center justify-center h-full text-xs text-muted-foreground">No Img</div>
                           }
                         </div>
@@ -524,20 +527,31 @@ export default function Dashboard() {
                             <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
                               x{record.quantity}
                             </span>
+                            {record.action === 'PENDING' && (
+                              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-bold ml-2">
+                                Pending Approval
+                              </span>
+                            )}
                           </div>
 
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Approved by <span className="font-medium text-foreground">{record.actionBy || 'Admin'}</span>
-                          </p>
+                          {record.action === 'APPROVED' && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Approved by <span className="font-medium text-foreground">{record.actionBy || 'Admin'}</span>
+                            </p>
+                          )}
                           <p className="text-[10px] text-muted-foreground">
                             {new Date(record.timestamp).toLocaleDateString()}
                           </p>
                         </div>
                       </div>
 
-                      {record.returnRequestStatus === 'PENDING' ? (
-                        <div className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-md border border-yellow-200">
+                      {record.returnRequestStatus === 'RETURN_PENDING' ? (
+                        <div className="mt-auto pt-2 text-center bg-yellow-50 text-yellow-700 text-xs py-1.5 rounded font-bold border border-yellow-100">
                           Return Pending...
+                        </div>
+                      ) : record.action === 'PENDING' ? (
+                        <div className="px-3 py-1 bg-gray-100 text-gray-500 text-xs font-bold rounded-md border border-gray-200">
+                          Waiting for Approval
                         </div>
                       ) : (
                         <Button
@@ -613,6 +627,7 @@ export default function Dashboard() {
                     <img
                       src={viewItem.imageUrl}
                       alt={viewItem.name}
+                      referrerPolicy="no-referrer"
                       className="w-full h-full object-contain"
                     />
                   </div>
@@ -688,7 +703,7 @@ export default function Dashboard() {
                 <div className="space-y-4 pt-4">
                   <div className="p-4 bg-muted rounded-lg flex gap-4">
                     <div className="w-16 h-16 bg-background rounded-md overflow-hidden shrink-0">
-                      <img src={selectedItem.imageUrl} className="w-full h-full object-cover" />
+                      <img src={selectedItem.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                     </div>
                     <div>
                       <p className="font-bold">{selectedItem.name}</p>
