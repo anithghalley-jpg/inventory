@@ -17,5 +17,5 @@ jobs:
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ACINVENTORY_2026 }}
-          projectId: acinventory-2026
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
+          projectId: inventory-user123
