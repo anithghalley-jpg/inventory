@@ -11,18 +11,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Create Firebase Config
-        env:
-          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
+      - name: Debug Firebase Service Account Presence
         run: |
-          if [ -z "$FIREBASE_CONFIG" ]; then
-            echo "Error: FIREBASE_CLIENT_CONFIG secret is missing or empty!"
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}" ]; then
+            echo "❌ firebaseServiceAccount secret is EMPTY"
             exit 1
+          else
+            echo "✅ firebaseServiceAccount secret is present"
           fi
-          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
-      - run: npm install && npm run build
-      - uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
-          projectId: inventory-user123
+      # - run: npm install && npm run build
+      # - uses: FirebaseExtended/action-hosting-deploy@v0
+      #   with:
+      #     repoToken: "${{ secrets.GITHUB_TOKEN }}"
+      #     firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
+      #     projectId: inventory-user123
