@@ -18,7 +18,7 @@ jobs:
       # Create Firebase client config for React
       - name: Create Firebase Config
         env:
-          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
         run: |
           if [ -z "$FIREBASE_CONFIG" ]; then
             echo "Error: FIREBASE_CLIENT_CONFIG secret is missing or empty!"
