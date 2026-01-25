@@ -2,26 +2,45 @@
 # https://github.com/firebase/firebase-tools
 
 name: Deploy to Firebase Hosting on merge
+
 on:
   push:
     branches:
       - main
+
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: Debug Firebase Service Account Presence
+
+      # Create Firebase client config for React
+      - name: Create Firebase Config
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
-          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}" ]; then
-            echo "❌ firebaseServiceAccount secret is EMPTY"
+          if [ -z "$FIREBASE_CONFIG" ]; then
+            echo "Error: FIREBASE_CLIENT_CONFIG secret is missing or empty!"
             exit 1
-          else
-            echo "✅ firebaseServiceAccount secret is present"
           fi
-      # - run: npm install && npm run build
-      # - uses: FirebaseExtended/action-hosting-deploy@v0
-      #   with:
-      #     repoToken: "${{ secrets.GITHUB_TOKEN }}"
-      #     firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
-      #     projectId: inventory-user123
+          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
+
+      # Install dependencies and build
+      - name: Install & Build
+        run: |
+          npm install
+          npm run build
+
+      # Create service account file for Firebase deploy
+      - name: Create Firebase Service Account file
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}' > firebase-service-account.json
+
+      # Deploy to Firebase Hosting
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"
+          firebaseServiceAccount: firebase-service-account.json
+          projectId: inventory-user123
