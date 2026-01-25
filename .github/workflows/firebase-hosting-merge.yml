@@ -17,7 +17,7 @@ jobs:
         env:
           FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
-          echo "$FIREBASE_CONFIG" > src/firebase-config.json
+          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
 
       # 2. Install and Build (Runs in root automatically)
       - name: Install & Build
