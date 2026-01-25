@@ -438,7 +438,7 @@ export default function TeamDashboard() {
                             <span className="font-bold text-lg leading-tight block">Team Dashboard</span>
                             <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">Team View</span>
-                                {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing...</span>}
+                                {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing ...</span>}
                             </div>
                         </div>
                     </div>
