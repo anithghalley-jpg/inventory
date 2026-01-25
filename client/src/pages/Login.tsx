@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion } from 'framer-motion';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
 
-
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google'; // Add GoogleOAuthProvider here
-
-import { jwtDecode } from 'jwt-decode';                // To decode the JWT credential
 /**
  * Design: Modern Minimalist - Login Page
  * - Hero section with generated background image
@@ -19,17 +16,9 @@ import { jwtDecode } from 'jwt-decode';                // To decode the JWT cred
  * - Smooth animations and clear typography
  */
 
-// In your login component
-
-// interface GoogleJwtPayload {
-//   email: string;
-//   name: string;
-// }
-
 export default function Login() {
-
   const [isLoading, setIsLoading] = useState(false);
-  const [isRedirecting, setIsRedirecting] = useState(false); // New state for transition
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const { login } = useAuth();
   const [, navigate] = useLocation();
 
@@ -49,13 +38,32 @@ export default function Login() {
         <div className="relative z-10 w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 mb-4 transition-all duration-500 ${isRedirecting ? 'scale-110 bg-emerald-200' : ''}`}>
+            <div className="h-20 flex items-center justify-center mb-2">
               {isRedirecting ? (
-                <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+                <motion.div
+                  className="w-16 h-16 bg-emerald-600 flex items-center justify-center shadow-lg"
+                  animate={{
+                    scale: [1, 1.1, 1],
+                    rotate: [0, 180, 180, 0],
+                    borderRadius: ["50%", "20%", "50%", "20%", "50%"]
+                  }}
+                  transition={{
+                    duration: 3,
+                    ease: "easeInOut",
+                    times: [0, 0.2, 0.5, 0.8, 1],
+                    repeat: Infinity
+                  }}
+                >
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m0 0l8 4m-8-4v10l8 4m0-10l8 4m-8-4v10l8-4M7 7l8 4m0 0l8-4" />
+                  </svg>
+                </motion.div>
               ) : (
-                <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m0 0l8 4m-8-4v10l8 4m0-10l8 4m-8-4v10l8-4M7 7l8 4m0 0l8-4" />
-                </svg>
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 transition-all duration-300 hover:scale-105">
+                  <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m0 0l8 4m-8-4v10l8 4m0-10l8 4m-8-4v10l8-4M7 7l8 4m0 0l8-4" />
+                  </svg>
+                </div>
               )}
             </div>
             <h1 className="text-3xl font-display font-bold text-foreground mb-2">
@@ -100,8 +108,6 @@ export default function Login() {
                       // Revert animation if auth fails
                       setIsRedirecting(false);
                       console.error("Login Check Failed", error);
-                      // Check if it's a rejection or just error
-                      // For now generic error
                       toast.error('Login failed. Please try again.');
                     });
                 }}
