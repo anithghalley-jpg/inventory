@@ -14,22 +14,25 @@ jobs:
 
       # 1. Write the PUBLIC config for the React App
       - name: Create Client Config
-        env:
-          CLIENT_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
           mkdir -p client/src
-          printf "%s" "$CLIENT_CONFIG" > client/src/firebase-config.json
+          printf '%s' "${{ secrets.FIREBASE_CLIENT_CONFIG }}" > client/src/firebase-config.json
 
-      # 2. Build the app (runs in root, vite outputs to dist/public)
+      # 2. Build the app
       - name: Install & Build
         run: |
           npm install
           npm run build
 
-      # 3. Deploy using the PRIVATE Service Account
+      # 3. Create service account file for deployment
+      - name: Create Firebase Service Account file
+        run: |
+          printf '%s' "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}" > firebase-service-account.json
+
+      # 4. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}"
+          firebaseServiceAccount: firebase-service-account.json
           projectId: inventory-user123
