@@ -23,7 +23,7 @@ import TeamDashboard from "./pages/TeamDashboard";
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 // Import the JSON file we created in the GitHub Action
-import firebaseConfig from "./firebase-config.json";
+import firebaseConfig from "client/src/firebase-config.json";
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
