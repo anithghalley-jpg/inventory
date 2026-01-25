@@ -12,25 +12,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Create Config - Using the correct path
+      # 1. Create the config file in your local src folder
       - name: Create Firebase Config
         env:
           FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
-          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
+          echo "$FIREBASE_CONFIG" > src/firebase-config.json
 
-      # 2. Install & Build - Running INSIDE the client folder
+      # 2. Install and Build (Runs in root automatically)
       - name: Install & Build
-        working-directory: ./client
         run: |
           npm install
           npm run build
 
-      # 3. Deploy
+      # 3. Deploy to Hosting
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          # You can pass the secret string directly here!
           firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
           projectId: inventory-user123
