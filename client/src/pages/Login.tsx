@@ -9,7 +9,7 @@ import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
 
 /**
- * Design: Modern Minimalist - Login Page
+ * Design: Modern Minimalist - Login Page.
  * - Hero section with generated background image
  * - Centered card with warm sage green accent
  * - Google Sign-In simulation (in production, use Google OAuth)
