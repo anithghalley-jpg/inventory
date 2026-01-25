@@ -12,23 +12,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Create the config file in your local src folder
-      - name: Create Firebase Config
+      # 1. Write the PUBLIC config for the React App
+      - name: Create Client Config
         env:
-          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
+          CLIENT_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
-          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
+          mkdir -p client/src
+          printf "%s" "$CLIENT_CONFIG" > client/src/firebase-config.json
 
-      # 2. Install and Build (Runs in root automatically)
+      # 2. Build the app (runs in root, vite outputs to dist/public)
       - name: Install & Build
         run: |
           npm install
           npm run build
 
-      # 3. Deploy to Hosting
+      # 3. Deploy using the PRIVATE Service Account
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}"
           projectId: inventory-user123
