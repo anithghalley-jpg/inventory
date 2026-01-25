@@ -45,7 +45,7 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <AuthProvider>
           <TooltipProvider>
-            <Toaster />
+            <Toaster richColors position="bottom-right" />
             <Router />
           </TooltipProvider>
         </AuthProvider>

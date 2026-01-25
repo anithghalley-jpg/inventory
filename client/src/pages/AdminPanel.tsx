@@ -279,32 +279,40 @@ export default function AdminPanel() {
   const handleProcessReturn = async () => {
     if (!selectedReturn) return;
 
-    try {
-      const response = await fetch(SCRIPT_URL, {
+    const returnData = { ...selectedReturn };
+    const remarks = returnRemarks;
+
+    // 1. Close modal immediately
+    setSelectedReturn(null);
+    setReturnRemarks('');
+
+    // 2. Optimistic Update (Optional) - Removed for Admin as list refresh is fast enough, but promise gives feedback
+
+    toast.promise(
+      fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({
           action: 'processReturn',
-          date: selectedReturn.date,
+          date: returnData.date,
           receiverName: user?.name,
-          remarks: returnRemarks,
-          quantity: selectedReturn.quantity,
-          itemId: selectedReturn.itemId,
-          userEmail: selectedReturn.userEmail
+          remarks: remarks,
+          quantity: returnData.quantity,
+          itemId: returnData.itemId,
+          userEmail: returnData.userEmail
         })
-      });
-      const result = await response.json();
-      if (result.success) {
-        toast.success("Return processed successfully");
-        setSelectedReturn(null);
-        setReturnRemarks('');
-        fetchUsers(); // Refresh data
-        fetchInventory(); // Refresh stock
-      } else {
-        toast.error("Failed: " + result.message);
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        fetchUsers();
+        fetchInventory();
+        return result;
+      }),
+      {
+        loading: 'Receiving item...',
+        success: 'Return processed successfully! (Synced to Sheets)',
+        error: (err) => `Failed: ${err.message}`
       }
-    } catch (e) {
-      toast.error("Network error");
-    }
+    );
   };
 
   const handleApproveRequest = async (req: any) => {
@@ -654,71 +662,69 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            <div className="grid gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {allUsers
                 .filter((u) => u.status !== 'REJECTED') // ❌ hide rejected users
                 .map((u) => (
                   <Card
                     key={u.id || u.email}
-                    className="p-4 hover:shadow-lg transition-all cursor-pointer transform hover:scale-[1.02]"
+                    className="p-5 hover:shadow-xl transition-all cursor-pointer transform hover:-translate-y-1 flex flex-col gap-4 relative overflow-hidden group"
                   >
-                    {/* Left: User Info */}
-                    <div className="flex items-center space-x-4">
-                      <div className="h-10 w-10 rounded-full bg-sage-100 flex items-center justify-center">
-                        <UsersIcon className="h-5 w-5 text-sage-600" />
-                      </div>
-
-                      <div>
-                        <h3 className="font-semibold leading-none">
-                          {u.name || 'Unknown Name'}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {u.email || 'No Email'}
-                        </p>
-
-                        {/* Role badge */}
-                        <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-muted border">
-                          {u.role || 'USER'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Active Loans Display */}
-                    <div className="flex-1 px-4">
-                      {(() => {
-                        const userLoans = activeLoans.filter(l => l.userEmail === u.email);
-                        if (userLoans.length > 0) {
-                          return (
-                            <div className="flex flex-wrap gap-2">
-                              {userLoans.map((loan, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs border border-blue-100">
-                                  <Package className="w-3 h-3" />
-                                  {loan.itemName} <span className="font-bold">x{loan.quantity}</span>
-                                </span>
-                              ))}
-                            </div>
-                          );
-                        }
-                        return <span className="text-xs text-muted-foreground italic">No active items</span>;
-                      })()}
-                    </div>
-
-                    <div className="flex items-center">
+                    {/* Top: Status Badge (Absolute) */}
+                    <div className="absolute top-3 right-3">
                       {u.status === 'APPROVED' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle className="h-3.5 w-3.5" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                           Approved
                         </span>
                       )}
-
                       {u.status === 'PENDING' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200">
-                          <Clock className="h-3.5 w-3.5" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-800 animate-pulse">
                           Pending
                         </span>
                       )}
                     </div>
 
+                    {/* Header: Avatar + Info */}
+                    <div className="flex flex-col items-center text-center pt-2">
+                      <div className="h-16 w-16 rounded-full bg-sage-50 flex items-center justify-center mb-3 border border-sage-100 shadow-sm group-hover:scale-110 transition-transform">
+                        <UsersIcon className="h-7 w-7 text-sage-600" />
+                      </div>
+                      <h3 className="font-bold text-lg text-foreground leading-tight truncate w-full px-2">
+                        {u.name || 'Unknown'}
+                      </h3>
+                      <p className="text-xs text-muted-foreground truncate w-full px-4 mb-2">
+                        {u.email}
+                      </p>
+                      <span className="inline-block px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-slate-100 text-slate-500">
+                        {u.role || 'USER'}
+                      </span>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="w-full h-px bg-border/50"></div>
+
+                    {/* Footer: Loans */}
+                    <div className="flex-1 w-full">
+                      <p className="text-[10px] uppercase font-bold text-muted-foreground mb-2 text-center">Active Loans</p>
+                      {(() => {
+                        const userLoans = activeLoans.filter(l => l.userEmail === u.email);
+                        if (userLoans.length > 0) {
+                          return (
+                            <div className="flex flex-wrap gap-1.5 justify-center">
+                              {userLoans.slice(0, 3).map((loan, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-50 text-blue-600 text-[10px] border border-blue-100 font-medium">
+                                  {loan.itemName.split(' ')[0]}... <span className="text-blue-800">x{loan.quantity}</span>
+                                </span>
+                              ))}
+                              {userLoans.length > 3 && (
+                                <span className="text-[10px] text-muted-foreground flex items-center">+{userLoans.length - 3} more</span>
+                              )}
+                            </div>
+                          );
+                        }
+                        return <p className="text-xs text-muted-foreground italic text-center py-2">No active items</p>;
+                      })()}
+                    </div>
                   </Card>
                 ))}
             </div>

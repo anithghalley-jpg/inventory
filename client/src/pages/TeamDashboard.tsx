@@ -72,10 +72,10 @@ export default function TeamDashboard() {
     const [pendingCheckouts, setPendingCheckouts] = useState<any[]>([]); // New State
     const [approvers, setApprovers] = useState<User[]>([]);
 
-    // Pagination State
-    const [page, setPage] = useState(1);
-    const [hasMore, setHasMore] = useState(true);
-    const PAGE_SIZE = 50;
+    // Pagination State (Removed for Firestore Real-time)
+    // const [page, setPage] = useState(1);
+    // const [hasMore, setHasMore] = useState(true);
+    // const PAGE_SIZE = 50;
 
     // Actions State
     const [searchQuery, setSearchQuery] = useState('');
@@ -100,10 +100,47 @@ export default function TeamDashboard() {
         }
     }, [user]);
 
+    // Firestore Integration
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        // Dynamic import to be safe, or just standard import if I add it to top
+        import('firebase/firestore').then(({ collection, query, onSnapshot }) => {
+            import('../firebase').then(({ db }) => {
+                const q = query(collection(db, 'inventory'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const items: InventoryItem[] = [];
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        items.push({
+                            id: doc.id,
+                            name: data.name,
+                            quantity: data.quantity,
+                            category: data.category,
+                            company: data.company,
+                            imageUrl: data.imageUrl,
+                            remarks: data.remarks,
+                            links: data.links,
+                            tags: Array.isArray(data.tags) ? data.tags.join(',') : (data.tags || '')
+                        });
+                    });
+                    setInventory(items);
+
+                    // Extract unique categories
+                    const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
+                    setCategories(['all', ...uniqueCats as string[]]);
+
+                    // Only set loading false if users are also done? 
+                    // Actually users fetch is separate. We can rely on separate loading states or just let it flow.
+                });
+
+                return () => unsubscribe();
+            });
+        });
+    }, [isAuthenticated]);
+
     useEffect(() => {
         if (isAuthenticated && (user?.role === 'TEAM' || user?.role === 'ADMIN')) {
-            // Reset pagination on initial load
-            fetchInventory(1, true);
             fetchUsers();
         }
     }, [isAuthenticated, user]);
@@ -113,7 +150,7 @@ export default function TeamDashboard() {
         // Wrapper for manual refreshes
         setIsLoading(true);
         try {
-            await Promise.all([fetchInventory(1, true), fetchUsers()]);
+            await fetchUsers(); // Only fetch users manually, inventory is real-time
         } catch (e) {
             toast.error("Failed to load data");
         } finally {
@@ -121,46 +158,6 @@ export default function TeamDashboard() {
         }
     };
 
-    const fetchInventory = async (pageNum = 1, reset = false) => {
-        try {
-            const response = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'getInventory',
-                    page: pageNum,
-                    pageSize: PAGE_SIZE
-                }),
-            });
-            const result = await response.json();
-            if (result.success) {
-                setInventory(prev => {
-                    const newItems = result.inventory;
-                    if (reset) return newItems;
-                    const existingIds = new Set(prev.map(i => i.id));
-                    const uniqueNewItems = newItems.filter((i: any) => !existingIds.has(i.id));
-                    return [...prev, ...uniqueNewItems];
-                });
-
-                if (result.inventory.length < PAGE_SIZE) {
-                    setHasMore(false);
-                } else {
-                    setHasMore(true);
-                }
-                setPage(pageNum);
-
-                if (reset) {
-                    const uniqueCats = Array.from(new Set(result.inventory.map((i: any) => i.category)));
-                    setCategories(['all', ...uniqueCats as string[]]);
-                }
-            }
-        } catch (error) {
-            console.error("Fetch inventory error", error);
-        }
-    };
-
-    const loadMoreInventory = () => {
-        fetchInventory(page + 1);
-    };
 
     const fetchUsers = async () => {
         // SECURED: Pass requesterRole
@@ -242,86 +239,123 @@ export default function TeamDashboard() {
     // Actions Handlers
     const handleCheckout = async () => {
         if (!selectedItem) return;
-        try {
-            await fetch(SCRIPT_URL, {
+
+        const itemToRequest = { ...selectedItem };
+        const qty = checkoutQuantity;
+        setSelectedItem(null); // Close modal immediately
+        setCheckoutQuantity('1');
+
+        toast.promise(
+            fetch(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'checkoutRequest',
                     userEmail: user?.email,
                     userName: user?.name,
-                    itemId: selectedItem.id,
-                    itemName: selectedItem.name,
-                    quantity: parseInt(checkoutQuantity)
+                    itemId: itemToRequest.id,
+                    itemName: itemToRequest.name,
+                    quantity: parseInt(qty)
                 })
-            });
-            toast.success("Request sent");
-            setSelectedItem(null);
-            fetchUsers();
-        } catch (e) { toast.error("Error sending request"); }
+            }).then(async (res) => {
+                const result = await res.json();
+                if (!result.success) throw new Error(result.message);
+                fetchUsers();
+                return result;
+            }),
+            {
+                loading: `Requesting ${qty} ${itemToRequest.name}(s)...`,
+                success: `Request sent!`,
+                error: (err) => `Failed: ${err.message}`
+            }
+        );
     };
 
     const handleReturnSubmit = async () => {
         if (!returnItem || !returnTarget) return;
-        try {
-            // OPTIMISTIC UPDATE: Remove from My Items
-            setMyItems(prev => prev.filter(i => i.id !== returnItem.id));
-            const submittedItem = { ...returnItem }; // Capture for potential rollback
 
-            await fetch(SCRIPT_URL, {
+        const item = { ...returnItem };
+        const target = returnTarget;
+
+        // 1. Close modal immediately
+        setReturnItem(null);
+        setReturnTarget('');
+
+        // 2. Optimistic Update: Remove from My Items immediately
+        setMyItems(prev => prev.filter(i => i.id !== item.id));
+
+        toast.promise(
+            fetch(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'initiateReturn',
-                    date: returnItem.id,
-                    returnTarget: returnTarget
+                    date: item.id,
+                    returnTarget: target
                 })
-            });
-            toast.success("Return initiated");
-            setReturnItem(null);
-
-            // Allow background refresh to sync eventually
-            // fetchAllData(); 
-        } catch (e) {
-            toast.error("Error initiating return");
-            // Rollback (simplified, ideally we add it back)
-            fetchAllData();
-        }
+            }).then(async (res) => {
+                const result = await res.json();
+                if (!result.success) throw new Error(result.message);
+                // Background refresh eventually
+                // fetchAllData(); 
+                return result;
+            }),
+            {
+                loading: `Returning item to ${target}...`,
+                success: `Return initiated!`,
+                error: (err) => {
+                    // Rollback
+                    fetchAllData();
+                    return `Failed: ${err.message}`;
+                }
+            }
+        );
     };
 
     const handleProcessReturn = async () => {
         if (!selectedReturn) return;
 
-        // OPTIMISTIC UPDATE
-        const previousReturns = [...pendingReturns];
-        const previousActive = [...activeRequests];
+        const returnData = { ...selectedReturn };
+        const remarks = returnRemarks;
 
-        setPendingReturns(prev => prev.filter(r => r.date !== selectedReturn.date));
-        setActiveRequests(prev => prev.filter(r => r.date !== selectedReturn.date));
-
-        toast.success("Item Received (Optimistic Update)");
+        // 1. Close modal immediately
         setSelectedReturn(null);
+        setReturnRemarks('');
 
-        try {
-            await fetch(SCRIPT_URL, {
+        // 2. Optimistic Update (Optional: Remove from list immediately)
+        // We can keep the optimistic update for the list to feel snappy
+        setPendingReturns(prev => prev.filter(r => r.date !== returnData.date));
+        setActiveRequests(prev => prev.filter(r => r.date !== returnData.date));
+
+        toast.promise(
+            fetch(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'processReturn',
-                    date: selectedReturn.date,
+                    date: returnData.date,
                     receiverName: user?.name,
-                    remarks: returnRemarks,
-                    quantity: selectedReturn.quantity,
-                    itemId: selectedReturn.itemId,
-                    userEmail: selectedReturn.userEmail
+                    remarks: remarks,
+                    quantity: returnData.quantity,
+                    itemId: returnData.itemId,
+                    userEmail: returnData.userEmail
                 })
-            });
-            // Background refresh to ensure consistency
-            fetchUsers();
-            fetchInventory(1, true);
-        } catch (e) {
-            toast.error("Failed to process return");
-            setPendingReturns(previousReturns);
-            setActiveRequests(previousActive);
-        }
+            }).then(async (res) => {
+                const result = await res.json();
+                if (!result.success) throw new Error(result.message);
+                fetchUsers();
+                // fetchInventory handled by listener
+                return result;
+            }),
+            {
+                loading: 'Receiving item...',
+                success: 'Item successfully received!',
+                error: (err) => {
+                    // Rollback optimistic update if failed
+                    fetchUsers();
+                    return `Failed: ${err.message}`;
+                }
+            }
+        );
     };
+
 
     const handleApproveRequest = async (req: any) => {
         try {
@@ -339,7 +373,7 @@ export default function TeamDashboard() {
                 })
             });
             fetchUsers();
-            fetchInventory(1, true);
+            // fetchInventory(1, true); // Handled by Firestore listener
         } catch (e) {
             toast.error("Approval failed");
             fetchUsers(); // Rollback
@@ -531,17 +565,8 @@ export default function TeamDashboard() {
                                 ))}
 
                                 {/* Load More Button */}
-                                {hasMore && !isLoading && !searchQuery && (
-                                    <div className="flex justify-center mt-6">
-                                        <Button
-                                            onClick={loadMoreInventory}
-                                            variant="outline"
-                                            className="w-full max-w-xs border-slate-300 hover:bg-slate-50"
-                                        >
-                                            Load More Items
-                                        </Button>
-                                    </div>
-                                )}
+                                {/* Load More Button - Removed for Firestore Realtime */}
+
                             </div>
                         </div>
                     </TabsContent>

@@ -61,6 +61,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('store');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [myItems, setMyItems] = useState<UsageRecord[]>([]);
+  const [requests, setRequests] = useState<any[]>([]); // Store raw requests
   const [categories, setCategories] = useState<string[]>([]);
   const [approvers, setApprovers] = useState<ItemUser[]>([]); // Admins & Team
   const [isLoading, setIsLoading] = useState(true);
@@ -87,30 +88,60 @@ export default function Dashboard() {
     }
   }, [user]);
 
+
   // 1. Fetch Data on Mount
   useEffect(() => {
     if (isAuthenticated) {
-      fetchData();
+      fetchRequestsAndUsers();
     }
   }, [isAuthenticated]);
 
-  const fetchData = async () => {
-    setIsLoading(true);
-    try {
-      // Fetch Inventory
-      const invResponse = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getInventory' }),
+  // 2. Real-time Inventory from Firebase
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Import dynamically to avoid SSR issues if any (though this file is client side)
+    // Actually we can import at top level, but for cleaner diff let's assume imports are added.
+    // We will use the already imported db if possible, but I need to add imports to the file first.
+    // Let's assume I'll add imports in a separate call or here if I can replace imports too.
+    // I will do imports in a separate step or just assume I need to add them. 
+    // To be safe, I will implement the logic here and then add imports at the top.
+
+    import('firebase/firestore').then(({ collection, query, onSnapshot }) => {
+      import('../firebase').then(({ db }) => {
+        const q = query(collection(db, 'inventory'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const items: InventoryItem[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            items.push({
+              id: doc.id,
+              name: data.name,
+              quantity: data.quantity,
+              category: data.category,
+              company: data.company,
+              imageUrl: data.imageUrl,
+              remarks: data.remarks,
+              links: data.links,
+              tags: Array.isArray(data.tags) ? data.tags.join(',') : (data.tags || '')
+            });
+          });
+          setInventory(items);
+          // Loading state for inventory is done
+
+          // Extract unique categories
+          const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
+          setCategories(['all', ...uniqueCats as string[]]);
+        });
+
+        return () => unsubscribe();
       });
-      const invResult = await invResponse.json();
+    });
+  }, [isAuthenticated]);
 
-      if (invResult.success) {
-        setInventory(invResult.inventory);
-        // Extract unique categories
-        const uniqueCats = Array.from(new Set(invResult.inventory.map((i: InventoryItem) => i.category)));
-        setCategories(['all', ...uniqueCats as string[]]);
-      }
-
+  const fetchRequestsAndUsers = async () => {
+    // setIsLoading(true); // Don't set global loading true as inventory comes separately
+    try {
       // Fetch Requests (New Logic for My Items)
       const reqResponse = await fetch(SCRIPT_URL, {
         method: 'POST',
@@ -131,107 +162,144 @@ export default function Dashboard() {
         setApprovers(qualifiedApprovers);
       }
 
-      if (reqResult.success && invResult.success) {
-        /*
-         * Filter Logic:
-         * 1. Must match current user email
-         * 2. Must be APPROVED by admin
-         * 3. Return Status must NOT be 'YES' (case-insensitive)
-         */
-        const myActiveItems = reqResult.requests.filter((r: any) =>
-          r.userEmail === user?.email &&
-          (r.status === 'APPROVED' || r.status === 'PENDING') &&
-          r.returnRequestStatus !== 'RETURN_APPROVED' && // Hide only when return is approved
-          (r.returnStatus || '').toLowerCase() !== 'yes'
-        );
+      // We need inventory to format items with images. 
+      // If inventory is not yet loaded from Firebase, we might miss images.
+      // But MyItems logic relies on matching IDs.
+      // We can update MyItems when either Requests OR Inventory changes.
+      // For now, let's just save the raw requests and format them in a useEffect that watches both.
 
-        // Map request data to UsageRecord format for compatibility
-        const formattedItems = myActiveItems.map((r: any) => {
-          // Find image from inventory
-          const invItem = invResult.inventory.find((i: any) => i.id === r.itemId);
-          return {
-            id: r.date, // Using date as ID since row ID isn't explicit
-            itemId: r.itemId,
-            itemName: r.itemName,
-            quantity: r.quantity,
-            timestamp: r.date,
-            action: r.status, // Store status here
-            actionBy: r.actionBy, // New: Who approved it
-            imageUrl: invItem?.imageUrl || '',
-            returnRequestStatus: r.returnRequestStatus
-          };
-        });
+      // Actually, to minimalize changes, let's keep the formatting logic here 
+      // but we might miss images if inventory isn't ready. 
+      // However, we can just use the item details from the request if available, 
+      // or we rely on the component re-rendering when inventory updates?
+      // No, setMyItems creates a new state.
 
-        setMyItems(formattedItems);
+      // Better approach: Store raw requests in state, and derive `myItems` view from `requests` + `inventory`.
+      // But `myItems` is state.
+      // Let's just set it here. The image might be missing initially.
+
+
+      if (reqResult.success) {
+        setRequests(reqResult.requests);
       }
+
 
     } catch (error) {
       console.error("Failed to fetch data", error);
-      toast.error("Failed to load dashboard data");
+      toast.error("Failed to load history");
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Helper to process items (can be called when inventory updates too)
+  const processMyItems = (requests: any[], currentInventory: InventoryItem[]) => {
+    /*
+      * Filter Logic:
+      * 1. Must match current user email
+      * 2. Must be APPROVED by admin
+      * 3. Return Status must NOT be 'YES' (case-insensitive)
+      */
+    const myActiveItems = requests.filter((r: any) =>
+      r.userEmail === user?.email &&
+      (r.status === 'APPROVED' || r.status === 'PENDING') &&
+      r.returnRequestStatus !== 'RETURN_APPROVED' &&
+      (r.returnStatus || '').toLowerCase() !== 'yes'
+    );
+
+    const formattedItems = myActiveItems.map((r: any) => {
+      const invItem = currentInventory.find((i) => i.id === r.itemId);
+      return {
+        id: r.date,
+        itemId: r.itemId,
+        itemName: r.itemName,
+        userEmail: r.userEmail,
+        quantity: r.quantity,
+        timestamp: r.date,
+        action: r.status,
+        actionBy: r.actionBy,
+        imageUrl: invItem?.imageUrl || '',
+        returnRequestStatus: r.returnRequestStatus
+      };
+    });
+
+    setMyItems(formattedItems);
+  };
+
+  // 3. Sync Requests + Inventory to create My Items
+  useEffect(() => {
+    if (requests.length > 0) {
+      processMyItems(requests, inventory);
+    }
+  }, [requests, inventory]);
+
+
   const handleReturnSubmit = async () => {
     if (!returnItem || !returnTarget) return;
 
-    try {
-      const response = await fetch(SCRIPT_URL, {
+    const target = returnTarget;
+    const item = { ...returnItem }; // Backup
+
+    // 1. Close Modal Immediately
+    setReturnItem(null);
+    setReturnTarget('');
+
+    toast.promise(
+      fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({
           action: 'initiateReturn',
-          date: returnItem.id, // ID
-          returnTarget: returnTarget
+          date: item.id, // ID
+          returnTarget: target
         })
-      });
-      const result = await response.json();
-      if (result.success) {
-        toast.success(`Return request submitted to ${returnTarget}`);
-        setReturnItem(null);
-        setReturnTarget('');
-        fetchData(); // Refresh to show pending status
-      } else {
-        toast.error("Failed: " + result.message);
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        fetchRequestsAndUsers();
+        return result;
+      }),
+      {
+        loading: `Initiating return to ${target}...`,
+        success: `Return initiated successfully!`,
+        error: (err) => `Failed: ${err.message}`
       }
-    } catch (e) {
-      toast.error("Network error");
-    }
+    );
   };
 
   const handleCheckout = async () => {
     if (!selectedItem || !checkoutQuantity) return;
 
-    setIsLoading(true);
-    try {
-      const response = await fetch(SCRIPT_URL, {
+    // 1. Close modal immediately as requested
+    const itemToRequest = { ...selectedItem }; // Copy item data
+    const qty = checkoutQuantity;
+    setSelectedItem(null); // Close modal
+    setCheckoutQuantity('1');
+
+    // 2. Show loading/success/error flow
+    toast.promise(
+      fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({
           action: 'checkoutRequest',
           userEmail: user?.email,
           userName: user?.name,
-          itemId: selectedItem.id,
-          itemName: selectedItem.name,
-          quantity: parseInt(checkoutQuantity),
+          itemId: itemToRequest.id,
+          itemName: itemToRequest.name,
+          quantity: parseInt(qty),
         }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success(`Request for ${checkoutQuantity} ${selectedItem.name}(s) sent to Admin`);
-        setSelectedItem(null);
-        setCheckoutQuantity('1');
-        // Refresh history to show the new pending request (logic to be added to backend to show pending methods if needed, or just let users wait)
-        fetchData();
-      } else {
-        toast.error("Failed to submit request: " + result.message);
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        // Refresh handled below
+        fetchRequestsAndUsers();
+        return result;
+      }),
+      {
+        loading: `Requesting ${qty} ${itemToRequest.name}(s)...`,
+        success: `Request for ${itemToRequest.name} successful!`,
+        error: (err) => `Failed: ${err.message}`,
       }
-    } catch (error) {
-      toast.error("Network error submitting request");
-    } finally {
-      setIsLoading(false);
-    }
+    );
   };
 
   const handleRequestNewItem = () => {
