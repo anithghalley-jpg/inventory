@@ -58,20 +58,33 @@ jobs:
           ${{ secrets.FIREBASE_CLIENT_CONFIG }}
           EOF
 
-      # 2. Install dependencies & build
+      # 2. Setup pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      # 3. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      # 4. Install dependencies & build
       - name: Install & Build
         run: |
-          npm install
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
-      # 3. Create Firebase Service Account file
+      # 5. Create Firebase Service Account file
       - name: Create Firebase Service Account
         run: |
           cat << 'EOF' > firebase-service-account.json
           ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
           EOF
 
-      # 4. Deploy to Firebase Hosting
+      # 6. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:

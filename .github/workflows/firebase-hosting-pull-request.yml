@@ -22,7 +22,17 @@ jobs:
             exit 1
           fi
           echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
-      - run: npm install && npm run build
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install & Build
+        run: pnpm install --frozen-lockfile && pnpm run build
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
