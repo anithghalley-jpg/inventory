@@ -1,41 +1,3 @@
-# name: Deploy to Firebase Hosting on merge
-
-# on:
-#   push:
-#     branches:
-#       - main
-
-# jobs:
-#   build_and_deploy:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - uses: actions/checkout@v4
-
-#       # 1. Write the PUBLIC config for the React App
-#       - name: Create Client Config
-#         run: |
-#           mkdir -p client/src
-#           printf '%s' "${{ secrets.FIREBASE_CLIENT_CONFIG }}" > client/src/firebase-config.json
-
-#       # 2. Build the app
-#       - name: Install & Build
-#         run: |
-#           npm install
-#           npm run build
-
-#       # 3. Create service account file for deployment
-#       - name: Create Firebase Service Account file
-#         run: |
-#           printf '%s' "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}" > firebase-service-account.json
-
-#       # 4. Deploy to Firebase Hosting
-#       - name: Deploy to Firebase Hosting
-#         uses: FirebaseExtended/action-hosting-deploy@v0
-#         with:
-#           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-#           firebaseServiceAccount: firebase-service-account.json
-#           projectId: inventory-user123
 name: Deploy to Firebase Hosting on merge
 
 on:
@@ -56,7 +18,9 @@ jobs:
           FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
           mkdir -p client/src
-          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
+          cat <<EOF > client/src/firebase-config.json
+          $FIREBASE_CONFIG
+          EOF
 
       # 2. Setup pnpm
       - name: Setup pnpm
@@ -75,18 +39,10 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
-      # # 5. Create Firebase Service Account file
-      # - name: Create Firebase Service Account
-      #   env:
-      #     SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
-      #   run: |
-      #     echo "$SERVICE_ACCOUNT" > firebase-service-account.json
-
-      # 6. Deploy to Firebase Hosting
+      # 5. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
-        - uses: FirebaseExtended/action-hosting-deploy@v0
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          # You are injecting the ACTUAL SECRET CONTENT directly here
           firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
           projectId: inventory-user123
