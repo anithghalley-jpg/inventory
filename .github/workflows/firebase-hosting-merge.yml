@@ -75,17 +75,18 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
-      # 5. Create Firebase Service Account file
-      - name: Create Firebase Service Account
-        env:
-          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
-        run: |
-          echo "$SERVICE_ACCOUNT" > firebase-service-account.json
+      # # 5. Create Firebase Service Account file
+      # - name: Create Firebase Service Account
+      #   env:
+      #     SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
+      #   run: |
+      #     echo "$SERVICE_ACCOUNT" > firebase-service-account.json
 
       # 6. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
+        - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: firebase-service-account.json
+          # You are injecting the ACTUAL SECRET CONTENT directly here
+          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}"
           projectId: inventory-user123
