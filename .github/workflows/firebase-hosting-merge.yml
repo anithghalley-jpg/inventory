@@ -1,3 +1,41 @@
+# name: Deploy to Firebase Hosting on merge
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+#   build_and_deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       # 1. Write the PUBLIC config for the React App
+#       - name: Create Client Config
+#         run: |
+#           mkdir -p client/src
+#           printf '%s' "${{ secrets.FIREBASE_CLIENT_CONFIG }}" > client/src/firebase-config.json
+
+#       # 2. Build the app
+#       - name: Install & Build
+#         run: |
+#           npm install
+#           npm run build
+
+#       # 3. Create service account file for deployment
+#       - name: Create Firebase Service Account file
+#         run: |
+#           printf '%s' "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}" > firebase-service-account.json
+
+#       # 4. Deploy to Firebase Hosting
+#       - name: Deploy to Firebase Hosting
+#         uses: FirebaseExtended/action-hosting-deploy@v0
+#         with:
+#           repoToken: "${{ secrets.GITHUB_TOKEN }}"
+#           firebaseServiceAccount: firebase-service-account.json
+#           projectId: inventory-user123
 name: Deploy to Firebase Hosting on merge
 
 on:
@@ -12,22 +50,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Write the PUBLIC config for the React App
+      # 1. Write the PUBLIC Firebase config (client)
       - name: Create Client Config
         run: |
           mkdir -p client/src
-          printf '%s' "${{ secrets.FIREBASE_CLIENT_CONFIG }}" > client/src/firebase-config.json
+          cat << 'EOF' > client/src/firebase-config.json
+          ${{ secrets.FIREBASE_CLIENT_CONFIG }}
+          EOF
 
-      # 2. Build the app
+      # 2. Install dependencies & build
       - name: Install & Build
         run: |
           npm install
           npm run build
 
-      # 3. Create service account file for deployment
-      - name: Create Firebase Service Account file
+      # 3. Create Firebase Service Account file
+      - name: Create Firebase Service Account
         run: |
-          printf '%s' "${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}" > firebase-service-account.json
+          cat << 'EOF' > firebase-service-account.json
+          ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
+          EOF
 
       # 4. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
