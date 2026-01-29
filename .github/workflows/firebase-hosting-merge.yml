@@ -52,11 +52,11 @@ jobs:
 
       # 1. Write the PUBLIC Firebase config (client)
       - name: Create Client Config
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
         run: |
           mkdir -p client/src
-          cat << 'EOF' > client/src/firebase-config.json
-          ${{ secrets.FIREBASE_CLIENT_CONFIG }}
-          EOF
+          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
 
       # 2. Setup pnpm
       - name: Setup pnpm
@@ -77,10 +77,10 @@ jobs:
 
       # 5. Create Firebase Service Account file
       - name: Create Firebase Service Account
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
         run: |
-          cat << 'EOF' > firebase-service-account.json
-          ${{ secrets.FIREBASE_SERVICE_ACCOUNT_INVENTORY_USER123 }}
-          EOF
+          echo "$SERVICE_ACCOUNT" > firebase-service-account.json
 
       # 6. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
