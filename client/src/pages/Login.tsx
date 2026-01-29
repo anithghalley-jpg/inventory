@@ -125,7 +125,7 @@ export default function Login() {
 
           {/* Footer */}
           <p className="text-center text-xs text-muted-foreground mt-8">
-            Internal use only • Secure & encrypted
+            Internal use only • Secure & encrypted.
           </p>
         </div>
       </div>
