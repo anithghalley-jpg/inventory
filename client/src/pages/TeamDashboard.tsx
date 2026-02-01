@@ -8,9 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
     Search, Package, LogOut, Users as UsersIcon,
-    LayoutDashboard, ShoppingBag, History, Monitor
+    LayoutDashboard, ShoppingBag, History, Monitor,
+    Printer, Scissors, Zap, BookOpen
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -38,6 +40,7 @@ interface User {
     createdDate: string;
     laptopStatus?: string;
     totalTime?: number;
+    tags?: string[];
 }
 
 interface UsageRecord {
@@ -443,6 +446,59 @@ export default function TeamDashboard() {
                         </div>
                     </div>
 
+                    {/* Center: Medals / Badges */}
+                    {user?.tags && user.tags.length > 0 && (
+                        <div className="hidden md:flex items-center gap-2 mx-4 px-4 py-2 bg-slate-50/50 rounded-full border border-slate-100 shadow-sm">
+                            <TooltipProvider>
+                                {user.tags.map((tag, idx) => {
+                                    const lower = tag.toLowerCase();
+                                    let icon = <div className="w-2 h-2 rounded-full bg-indigo-400 opacity-50" />;
+                                    let bg = 'bg-indigo-100 text-indigo-700 border-indigo-200';
+                                    let ring = 'ring-indigo-100';
+                                    let label = tag;
+
+                                    if (lower.includes('3d') || lower.includes('print')) {
+                                        icon = <Printer className="w-4 h-4" />;
+                                        bg = 'bg-orange-100 text-orange-700 border-orange-200';
+                                        ring = 'ring-orange-100';
+                                        label = "3D Printing Certified";
+                                    }
+                                    else if (lower.includes('laser') || lower.includes('cut')) {
+                                        icon = <Scissors className="w-4 h-4" />;
+                                        bg = 'bg-red-100 text-red-700 border-red-200';
+                                        ring = 'ring-red-100';
+                                        label = "Laser Cutter Certified";
+                                    }
+                                    else if (lower.includes('cnc') || lower.includes('mill')) {
+                                        icon = <Zap className="w-4 h-4" />;
+                                        bg = 'bg-slate-100 text-slate-700 border-slate-200';
+                                        ring = 'ring-slate-100';
+                                        label = "CNC Milling Certified";
+                                    }
+                                    else if (lower.includes('wood')) {
+                                        icon = <BookOpen className="w-4 h-4" />;
+                                        bg = 'bg-amber-100 text-amber-700 border-amber-200';
+                                        ring = 'ring-amber-100';
+                                        label = "Wood Shop Certified";
+                                    }
+
+                                    return (
+                                        <Tooltip key={idx}>
+                                            <TooltipTrigger asChild>
+                                                <div className={`relative group cursor-help p-1.5 rounded-full border ${bg} transition-transform hover:scale-110 ring-2 ${ring} ring-offset-2`}>
+                                                    {icon}
+                                                </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                <p className="font-semibold">{label}</p>
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    );
+                                })}
+                            </TooltipProvider>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-3 bg-slate-100/50 px-3 py-1.5 rounded-full border border-border/50">
                             <div className="text-right mr-1 hidden sm:block">
@@ -661,14 +717,61 @@ export default function TeamDashboard() {
                                                         </span>
                                                     </div>
                                                     <p className="text-sm text-slate-500 truncate">{u.email}</p>
-                                                    <div className="flex items-center gap-2 mt-2">
-                                                        <span className="text-[10px] font-medium bg-slate-100 px-2 py-1 rounded text-slate-600 uppercase tracking-wide">
-                                                            {u.role}
-                                                        </span>
-                                                        {u.laptopStatus === 'Online' && (
-                                                            <span className="text-[10px] font-medium text-emerald-600 flex items-center gap-1">
-                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
+                                                    <div className="flex flex-col gap-2 mt-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] font-medium bg-slate-100 px-2 py-1 rounded text-slate-600 uppercase tracking-wide">
+                                                                {u.role}
                                                             </span>
+                                                            {u.laptopStatus === 'Online' && (
+                                                                <span className="text-[10px] font-medium text-emerald-600 flex items-center gap-1">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* User Tags (Badges) - Team View */}
+                                                        {u.tags && u.tags.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1.5 w-full">
+                                                                {u.tags.map((tag, idx) => {
+                                                                    // Define styles for known tags
+                                                                    const getTagStyle = (tagName: string) => {
+                                                                        const lower = tagName.toLowerCase();
+                                                                        if (lower.includes('3d') || lower.includes('print')) return {
+                                                                            bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100',
+                                                                            icon: <Printer className="w-3 h-3 mr-1" />
+                                                                        };
+                                                                        if (lower.includes('laser') || lower.includes('cut')) return {
+                                                                            bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100',
+                                                                            icon: <Scissors className="w-3 h-3 mr-1" />
+                                                                        };
+                                                                        if (lower.includes('cnc') || lower.includes('mill') || lower.includes('drill')) return {
+                                                                            bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100',
+                                                                            icon: <Zap className="w-3 h-3 mr-1" />
+                                                                        };
+                                                                        if (lower.includes('wood') || lower.includes('shop')) return {
+                                                                            bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100',
+                                                                            icon: <BookOpen className="w-3 h-3 mr-1" />
+                                                                        };
+                                                                        // Default
+                                                                        return {
+                                                                            bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100',
+                                                                            icon: <div className="w-1.5 h-1.5 mr-1 rounded-full bg-indigo-400 opacity-50" />
+                                                                        };
+                                                                    };
+
+                                                                    const style = getTagStyle(tag);
+
+                                                                    return (
+                                                                        <span
+                                                                            key={idx}
+                                                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${style.bg} ${style.text} ${style.border}`}
+                                                                        >
+                                                                            {style.icon}
+                                                                            {tag}
+                                                                        </span>
+                                                                    );
+                                                                })}
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>

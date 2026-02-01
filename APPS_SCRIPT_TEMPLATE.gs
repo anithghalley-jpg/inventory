@@ -172,7 +172,8 @@ function handleLogin(data) {
           status: values[i][3],
           createdDate: values[i][4],
           laptopStatus: values[i][5] || 'Offline',
-          totalTime: values[i][8] || 0
+          totalTime: values[i][8] || 0,
+          tags: values[i].slice(10).filter(t => t !== '') // New: User Tags
         }
       };
     }
@@ -588,17 +589,24 @@ function handleGetAllUsers() {
   const values = sheet.getDataRange().getValues();
   
   // Skip the header row (index 0)
-  const users = values.slice(1).map(row => ({
-    email: row[0],
-    name: row[1],
-    role: row[2] || 'USER',
-    status: row[3] || 'PENDING',
-    createdDate: row[4],
-    laptopStatus: row[5] || 'Offline', // Col F: Status
-    // sessionStart: row[6],           // Col G: Start
-    // sessionEnd: row[7],             // Col H: End
-    totalTime: row[8] || 0             // Col I: Total Time (mins)
-  }));
+  // Skip the header row (index 0)
+  const users = values.slice(1).map(row => {
+    // Collect tags from Column K (Index 10) onwards
+    const tags = row.slice(10).filter(t => t !== '');
+    
+    return {
+      email: row[0],
+      name: row[1],
+      role: row[2] || 'USER',
+      status: row[3] || 'PENDING',
+      createdDate: row[4],
+      laptopStatus: row[5] || 'Offline', // Col F: Status
+      // sessionStart: row[6],           // Col G: Start
+      // sessionEnd: row[7],             // Col H: End
+      totalTime: row[8] || 0,            // Col I: Total Time (mins)
+      tags: tags                         // New: User Tags
+    };
+  });
 
   return { success: true, users: users };
 }

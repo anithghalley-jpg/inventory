@@ -8,7 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, LogOut, Package, History } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
@@ -63,6 +64,7 @@ export default function Dashboard() {
   const [myItems, setMyItems] = useState<UsageRecord[]>([]);
   const [requests, setRequests] = useState<any[]>([]); // Store raw requests
   const [categories, setCategories] = useState<string[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]); // Community Directory
   const [approvers, setApprovers] = useState<ItemUser[]>([]); // Admins & Team
   const [isLoading, setIsLoading] = useState(true);
 
@@ -156,10 +158,15 @@ export default function Dashboard() {
       });
       const usersResult = await usersResponse.json();
       if (usersResult.success) {
+        // 1. Approvers (Admins/Team)
         const qualifiedApprovers = usersResult.users.filter((u: any) =>
           (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
         );
         setApprovers(qualifiedApprovers);
+
+        // 2. Directory (Only Approved Users)
+        const directoryUsers = usersResult.users.filter((u: any) => u.status === 'APPROVED');
+        setAllUsers(directoryUsers);
       }
 
       // We need inventory to format items with images. 
@@ -378,61 +385,109 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-card border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-16">
+        <div className="container px-4 md:px-6 h-20 flex items-center justify-between">
+
+          {/* Left: Brand */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md">
               <Package className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground">Aesthetic Centre</h1>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">User Dashboard</span>
-                {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing...</span>}
-              </div>
+              <h1 className="text-xl font-extrabold tracking-tight text-foreground leading-none">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500">Maker</span>Inventory
+              </h1>
+              <p className="text-[11px] text-muted-foreground font-medium mt-0.5">User Dashboard</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-foreground">{user?.name}</p>
-              <p className="text-xs text-muted-foreground">{user?.email}</p>
-            </div>
+          {/* Center: Medals / Badges (Hidden on mobile) */}
+          <div className="hidden md:flex flex-1 justify-center">
+            {user?.tags && user.tags.length > 0 && (
+              <TooltipProvider>
+                <div className="flex items-center gap-2 px-6 py-2 bg-slate-50/80 backdrop-blur-sm rounded-full border border-slate-100 shadow-sm">
+                  {user.tags.map((tag, idx) => {
+                    const lower = tag.toLowerCase();
+                    let icon = <div className="w-2 h-2 rounded-full bg-indigo-400 opacity-50" />;
+                    let bg = 'bg-indigo-100 text-indigo-700 border-indigo-200';
+                    let ring = 'ring-indigo-100';
+                    let label = tag;
 
+                    if (lower.includes('3d') || lower.includes('print')) {
+                      icon = <Printer className="w-4 h-4" />;
+                      bg = 'bg-orange-100 text-orange-700 border-orange-200';
+                      ring = 'ring-orange-100';
+                      label = "3D Printing Certified";
+                    }
+                    else if (lower.includes('laser') || lower.includes('cut')) {
+                      icon = <Scissors className="w-4 h-4" />;
+                      bg = 'bg-red-100 text-red-700 border-red-200';
+                      ring = 'ring-red-100';
+                      label = "Laser Cutter Certified";
+                    }
+                    else if (lower.includes('cnc') || lower.includes('mill')) {
+                      icon = <Zap className="w-4 h-4" />;
+                      bg = 'bg-slate-100 text-slate-700 border-slate-200';
+                      ring = 'ring-slate-100';
+                      label = "CNC Milling Certified";
+                    }
+                    else if (lower.includes('wood')) {
+                      icon = <BookOpen className="w-4 h-4" />;
+                      bg = 'bg-amber-100 text-amber-700 border-amber-200';
+                      ring = 'ring-amber-100';
+                      label = "Wood Shop Certified";
+                    }
+
+                    return (
+                      <Tooltip key={idx}>
+                        <TooltipTrigger asChild>
+                          <div className={`relative group cursor-help p-2 rounded-full border ${bg} transition-all duration-300 hover:scale-110 hover:shadow-md ring-2 ${ring} ring-offset-2 ring-offset-background`}>
+                            {icon}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-semibold">{label}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </TooltipProvider>
+            )}
+          </div>
+
+          {/* Right: Profile & Controls */}
+
+          {/* Right: Profile & Controls */}
+          <div className="flex items-center gap-4">
             {/* Laptop Toggle */}
-            <div className="flex items-center gap-3 bg-muted/50 px-3 py-1.5 rounded-full border border-border">
-              <div className="flex flex-col items-end mr-1">
-                <span className={`text-xs font-bold ${laptopStatus === 'Online' ? 'text-emerald-500' : 'text-muted-foreground'}`}>
-                  {laptopStatus === 'Online' ? 'Online' : 'Offline'}
-                </span>
-                {laptopStatus === 'Offline' && (
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    Time: {formatTime(totalScreenTime)}
-                  </span>
-                )}
-              </div>
+            <div className="hidden sm:flex items-center space-x-2 bg-muted/30 p-1.5 rounded-lg border border-border/50">
               <Switch
                 checked={laptopStatus === 'Online'}
                 onCheckedChange={handleLaptopToggle}
                 className="data-[state=checked]:bg-emerald-500"
               />
+              <Monitor className={`h-4 w-4 ${laptopStatus === 'Online' ? 'text-emerald-500' : 'text-slate-400'}`} />
             </div>
 
-            <Button
-              onClick={() => { logout(); navigate('/'); }}
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <LogOut className="w-4 h-4" />
+            <div className="h-8 w-px bg-border hidden sm:block"></div>
+
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-bold text-foreground leading-none">{user?.name}</p>
+              <p className="text-[10px] text-muted-foreground">{user?.email}</p>
+            </div>
+
+            <Button variant="ghost" size="icon" onClick={() => { logout(); navigate('/'); }} className="text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors rounded-full">
+              <LogOut className="w-5 h-5" />
             </Button>
           </div>
+
         </div>
       </header>
 
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="store" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2 bg-muted">
+          <TabsList className="grid w-full max-w-md grid-cols-3 bg-muted">
             <TabsTrigger value="store" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               Store
@@ -441,6 +496,10 @@ export default function Dashboard() {
               <History className="w-4 h-4" />
               My Items
               {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <UsersIcon className="w-4 h-4" />
+              Community
             </TabsTrigger>
           </TabsList>
 
@@ -644,6 +703,88 @@ export default function Dashboard() {
             </Card>
           </TabsContent>
 
+
+          {/* TAB 3: USERS (COMMUNITY) */}
+          <TabsContent value="users">
+            <Card className="card-soft p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold">Community Directory</h2>
+                  <p className="text-muted-foreground">Certified makers in the space.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {allUsers.map((u) => (
+                  <Card key={u.id} className="flex flex-col p-4 hover:shadow-md transition-all border-slate-200 bg-white/50">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                        <UsersIcon className="h-5 w-5 text-slate-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                          <p className="font-bold text-sm text-slate-900 truncate pr-2">{u.name}</p>
+                          <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">
+                            Active
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role}</p>
+
+                        {/* Badges */}
+                        {u.tags && u.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2.5">
+                            <TooltipProvider>
+                              {u.tags.map((tag: string, idx: number) => {
+                                const lower = tag.toLowerCase();
+                                let icon = <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 opacity-50" />;
+                                let style = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                                let label = tag;
+
+                                if (lower.includes('3d') || lower.includes('print')) {
+                                  icon = <Printer className="w-3 h-3" />;
+                                  style = 'bg-orange-50 text-orange-700 border-orange-100';
+                                  label = "3D Printing";
+                                }
+                                else if (lower.includes('laser') || lower.includes('cut')) {
+                                  icon = <Scissors className="w-3 h-3" />;
+                                  style = 'bg-red-50 text-red-700 border-red-100';
+                                  label = "Laser Cutting";
+                                }
+                                else if (lower.includes('cnc') || lower.includes('mill')) {
+                                  icon = <Zap className="w-3 h-3" />;
+                                  style = 'bg-slate-50 text-slate-700 border-slate-100';
+                                  label = "CNC Machining";
+                                }
+                                else if (lower.includes('wood')) {
+                                  icon = <BookOpen className="w-3 h-3" />;
+                                  style = 'bg-amber-50 text-amber-700 border-amber-100';
+                                  label = "Wood Shop";
+                                }
+
+                                return (
+                                  <Tooltip key={idx}>
+                                    <TooltipTrigger asChild>
+                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium border cursor-help ${style}`}>
+                                        {icon} {tag}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>{label}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                );
+                              })}
+                            </TooltipProvider>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </Card>
+          </TabsContent>
+
           {/* Return Item Modal */}
           <Dialog open={!!returnItem} onOpenChange={(open) => !open && setReturnItem(null)}>
             <DialogContent>
@@ -797,7 +938,7 @@ export default function Dashboard() {
           </Dialog>
 
         </Tabs>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }

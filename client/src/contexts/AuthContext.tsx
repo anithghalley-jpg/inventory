@@ -16,6 +16,7 @@ export interface User {
   createdDate: string;
   laptopStatus?: 'Online' | 'Offline';
   totalTime?: number;
+  tags?: string[];
 }
 
 interface AuthContextType {
@@ -90,7 +91,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           status: data.user.status?.toUpperCase() || 'PENDING', // Normalize to uppercase
           createdDate: data.user.createdDate || new Date().toISOString(),
           laptopStatus: data.user.laptopStatus || 'Offline',
-          totalTime: data.user.totalTime || 0
+          totalTime: data.user.totalTime || 0,
+          tags: Array.isArray(data.user.tags) ? data.user.tags : (data.user.tags ? data.user.tags.split(',') : [])
         };
 
         setUser(userData);

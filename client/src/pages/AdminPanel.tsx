@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
@@ -37,6 +37,7 @@ interface User {
   status: string;
   role: string;
   createdDate: string;
+  tags?: string[]; // New: User tags (permissions)
 }
 
 interface InventoryItem {
@@ -698,6 +699,52 @@ export default function AdminPanel() {
                       <span className="inline-block px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-slate-100 text-slate-500">
                         {u.role || 'USER'}
                       </span>
+
+                      {/* User Tags (Badges) */}
+                      {u.tags && u.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2 justify-center mt-3 px-2 w-full">
+                          {u.tags.map((tag, idx) => {
+                            // Define styles for known tags
+                            const getTagStyle = (tagName: string) => {
+                              const lower = tagName.toLowerCase();
+                              if (lower.includes('3d') || lower.includes('print')) return {
+                                bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200',
+                                icon: <Printer className="w-3 h-3 mr-1" />
+                              };
+                              if (lower.includes('laser') || lower.includes('cut')) return {
+                                bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200',
+                                icon: <Scissors className="w-3 h-3 mr-1" />
+                              };
+                              if (lower.includes('cnc') || lower.includes('mill') || lower.includes('drill')) return {
+                                bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200',
+                                icon: <Zap className="w-3 h-3 mr-1" />
+                              };
+                              if (lower.includes('wood') || lower.includes('shop')) return {
+                                bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200',
+                                icon: <BookOpen className="w-3 h-3 mr-1" />
+                              };
+                              // Default
+                              return {
+                                bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100',
+                                icon: <div className="w-2 h-2 mr-1.5 rounded-full bg-indigo-400 opacity-50" />
+                              };
+                            };
+
+                            const style = getTagStyle(tag);
+
+                            return (
+                              <span
+                                key={idx}
+                                className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.bg} ${style.text} ${style.border}`}
+                                title="Earned Badge"
+                              >
+                                {style.icon}
+                                {tag}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {/* Divider */}
