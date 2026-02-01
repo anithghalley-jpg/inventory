@@ -39,7 +39,8 @@ const SHEET_NAMES = {
   USAGE_HISTORY: 'UsageHistory',
   CATEGORIES: 'Categories',
   ITEM_REQUESTS: 'ItemRequests',
-  REQUESTS: 'Requests'
+  REQUESTS: 'Requests',
+  MACHINES: ['LaserCutter', 'LaserCutter2', '3DPrinter1']
 };
 
 // Initialize spreadsheet
@@ -96,6 +97,9 @@ function doPost(e) {
         break;
       case 'addCategory':
         response = handleAddCategory(data);
+        break;
+      case 'getMachineLogs':
+        response = handleGetMachineLogs(data);
         break;
       case 'getUsageHistory':
         response = handleGetUsageHistory(data);
@@ -994,3 +998,347 @@ function onInventoryEdit(e) {
 }
 
 
+
+// ===== MACHINE LOGS FEATURE =====
+
+function handleGetMachineLogs(data) {
+    const machines = SHEET_NAMES.MACHINES;
+    const result = [];
+
+    // Pre-fetch Users for RFID Lookup
+    // Users Sheet: Col A = ID/Email?, Col B = Name?, ... Col J = RFID?
+    // User Prompt: "Users sheets under column J (rfid)... name is taken from that same row under col B"
+    const usersSheet = getSheet(SHEET_NAMES.USERS);
+    const usersData = usersSheet.getDataRange().getValues();
+    const rfidMap = {}; // RFID -> Name
+
+    // Skip header (row 0)
+    for (let i = 1; i < usersData.length; i++) {
+        const rfid = String(usersData[i][9] || '').trim(); // Col J is index 9
+        const name = usersData[i][1]; // Col B is index 1
+        if (rfid) {
+            rfidMap[rfid] = name;
+        }
+    }
+
+    machines.forEach(machineName => {
+        const sheet = getSheet(machineName);
+        if (!sheet) return;
+
+        const range = sheet.getDataRange();
+        const values = range.getValues();
+        // Headers: RFID(A), Name(B), Command(C), Machine(D), Start(E), Stop(F), Duration(G)
+        // Indices: 0,       1,       2,          3,          4,        5,       6
+
+        // We need to look for empty names and update them if RFID matches
+        // But we should be careful about writing back to sheet too often. 
+        // Let's collect updates.
+
+        const logs = [];
+        let isOnline = false;
+        let currentUser = '';
+
+        // Iterate rows (skip header)
+        for (let i = 1; i < values.length; i++) {
+            const row = values[i];
+            let rfid = String(row[0] || '').trim();
+            let name = row[1];
+            const command = String(row[2] || '').toUpperCase(); // Col C
+            const machineId = row[3]; // Col D
+            const start = row[4];
+            const stop = row[5];
+            const duration = row[6]; // Col G
+
+            // 1. UPDATE NAME IF MISSING
+            if (!name && rfid && rfidMap[rfid]) {
+                name = rfidMap[rfid];
+                // Update the cell in the sheet directly
+                // i + 1 is row number (1-based)
+                sheet.getRange(i + 1, 2).setValue(name); // Col B is 2
+            }
+
+            logs.push({
+                rfid,
+                name: name || 'Unknown',
+                command,
+                machineId,
+                start,
+                stop,
+                duration
+            });
+        }
+
+        // Determine Status from LAST row
+        if (logs.length > 0) {
+            const lastLog = logs[logs.length - 1];
+            // "last entry of col D is ON or GET" -> User likely meant Col C (Command)
+            // "command column C is ON or GET... OFF or PASS"
+            const status = lastLog.command;
+            if (status === 'ON' || status === 'GET') {
+                isOnline = true;
+                currentUser = lastLog.name;
+            }
+        }
+
+        result.push({
+            id: machineName,
+            name: formatMachineName(machineName), // e.g. "Laser Cutter"
+            logs: logs.reverse(), // Newest first
+            isOnline,
+            currentUser
+        });
+    });
+
+    return {
+        success: true,
+        data: result
+    };
+}
+
+function formatMachineName(str) {
+    // Simple formatter: "LaserCutter" -> "Laser Cutter"
+    return str.replace(/([A-Z])/g, ' $1').trim();
+}
+
+// ===== MACHINE LOGIC PROCESSOR =====
+
+/**
+ * Triggers on any change to the spreadsheet.
+ * Manually set this up as an Installable Trigger:
+ * - Function: onMachineSheetChange
+ * - Event Source: From spreadsheet
+ * - Event Type: On change
+ */
+function onMachineSheetChange(e) {
+  // Check if it's a machine sheet
+  const sheet = e.source.getActiveSheet();
+  const sheetName = sheet.getName();
+  
+  if (SHEET_NAMES.MACHINES.includes(sheetName)) {
+    console.log(`Processing machine logs for: ${sheetName}`);
+    
+    // Build RFID Map once
+    const usersSheet = getSheet(SHEET_NAMES.USERS);
+    const usersData = usersSheet.getDataRange().getValues();
+    const rfidMap = {};
+    // Skip header
+    for (let i = 1; i < usersData.length; i++) {
+        const rfid = String(usersData[i][9] || '').trim(); // Col J is index 9
+        const name = usersData[i][1]; // Col B is index 1
+        if (rfid) rfidMap[rfid] = name;
+    }
+    
+    processMachineLogs(sheet, rfidMap);
+  }
+}
+
+// Helper to calculate duration in minutes (Decimal precision)
+function calculateDurationMinutes(startTime, stopTime) {
+  if (!startTime || !stopTime) return 0;
+  const start = new Date(startTime);
+  const stop = new Date(stopTime);
+  // Ensure valid dates
+  if (isNaN(start.getTime()) || isNaN(stop.getTime())) return 0;
+  
+  const diffMs = stop.getTime() - start.getTime();
+  // Return with 3 decimal places e.g. 3.382
+  // We use Number() to convert "3.382" string back to number
+  return Number((diffMs / 60000).toFixed(3));
+}
+
+function processMachineLogs(sheet, rfidMap) {
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    const now = new Date();
+    const nowIso = now.toISOString(); // Unified ISO format
+
+    const updates = []; // Array of {row, col, value}
+    
+    // Track ACTIVE session to calculate duration
+    // We assume single-user active at a time per machine logic (Event Stream)
+    // ON/GET -> Sets Active Session
+    // OFF/PASS -> Closes Active Session (regardless of who scanned OFF/PASS)
+    
+    let activeSession = null; // { name, startTime, rowIndex }
+
+    for (let i = 1; i < values.length; i++) {
+        const row = values[i];
+        const rfid = String(row[0] || '').trim();
+        let name = row[1];
+        const command = String(row[2] || '').trim().toUpperCase();
+        let status = row[3]; // Col D
+        let start = row[4];  // Col E
+        let stop = row[5];   // Col F
+        let duration = row[6]; // Col G
+        
+        // Track whether we modified the current row 'i'
+        // Note: Start Row updates (Col G) might target previous 'i'
+        let rowUpdated = false;
+
+        // 1. RESOLVE RFID (Update Name)
+        if (!name && rfid && rfidMap[rfid]) {
+            name = rfidMap[rfid];
+            // Col B (Index 1) -> Sheet Col 2
+            updates.push({ r: i + 1, c: 2, val: name });
+            rowUpdated = true;
+        }
+
+        // 2. INTERPRET COMMAND & UPDATE STATE
+        
+        let newStatus = status;
+        let isStartCommand = (command === 'ON' || command === 'GET');
+        let isStopCommand = (command === 'OFF' || command === 'PASS');
+        
+        if (isStartCommand) newStatus = 'ON';
+        else if (isStopCommand) newStatus = 'OFF';
+        
+        if (newStatus !== status) {
+             updates.push({ r: i + 1, c: 4, val: newStatus });
+             status = newStatus;
+             rowUpdated = true;
+        }
+
+        // 3. HANDLE TIMES & DURATIONS
+        
+        if (isStartCommand) {
+            // Start Session
+            if (!start) {
+                // FORCE ISO 8601
+                start = nowIso;
+                updates.push({ r: i + 1, c: 5, val: start });
+                rowUpdated = true;
+            }
+            
+            // Set Active Session (Last Write Wins for Start Time)
+            // Store rowIndex (i + 1) so we can write duration back to THIS row later
+            activeSession = { 
+                name: name || 'Unknown', 
+                startTime: new Date(start),
+                rowIndex: i + 1
+            };
+        }
+        else if (isStopCommand) {
+            // End Session
+            if (!stop) {
+                // FORCE ISO 8601
+                stop = nowIso;
+                updates.push({ r: i + 1, c: 6, val: stop });
+                rowUpdated = true;
+            }
+            
+            // Calculate Duration using ACTIVE SESSION
+            // This handles "User A ON" -> "User B PASS" scenario
+            if (activeSession) {
+                 const startTime = activeSession.startTime;
+                 const stopTime = new Date(stop);
+                 const diffMins = calculateDurationMinutes(startTime, stopTime);
+
+                 // CHECK: Does Start Row already have duration?
+                 // We need to look at values[] for the start row.
+                 const startRowIndex = activeSession.rowIndex - 1;
+                 const existingDuration = values[startRowIndex][6]; // Col G is index 6
+                 
+                 // Update if empty, 0, or significantly different (re-calc)
+                 // We compare with tolerance for floating point, though typically exact replace is fine
+                 if (!existingDuration || existingDuration === 0 || existingDuration === '0') {
+                     
+                     console.log(`Updating duration for row ${activeSession.rowIndex}: ${diffMins} mins`);
+                     
+                     // Update the START ROW with the duration
+                     updates.push({ r: activeSession.rowIndex, c: 7, val: diffMins });
+                     
+                     // Also update our local values copy so we don't re-process if logic overlaps
+                     if (startRowIndex < values.length) {
+                         values[startRowIndex][6] = diffMins;
+                     }
+                 }
+                 
+                // End active session
+                activeSession = null;
+            }
+        }
+    }
+
+    // APPLY UPDATES
+    if (updates.length > 0) {
+        updates.forEach(u => {
+            // Update local array to return fresh data
+            values[u.r - 1][u.c - 1] = u.val;
+            // Write to sheet
+            sheet.getRange(u.r, u.c).setValue(u.val);
+        });
+        console.log(`Updated ${updates.length} cells in ${sheet.getName()}`);
+    }
+
+    return values;
+}
+
+// Updated handleGetMachineLogs to use processor
+function handleGetMachineLogs(data) {
+    const machines = SHEET_NAMES.MACHINES;
+    const result = [];
+
+    const usersSheet = getSheet(SHEET_NAMES.USERS);
+    const usersData = usersSheet.getDataRange().getValues();
+    const rfidMap = {};
+
+    for (let i = 1; i < usersData.length; i++) {
+        const rfid = String(usersData[i][9] || '').trim();
+        const name = usersData[i][1];
+        if (rfid) rfidMap[rfid] = name;
+    }
+
+    machines.forEach(machineName => {
+        const sheet = getSheet(machineName);
+        if (!sheet) return;
+
+        // PROCESS LOGIC HERE - ENSURE FRESH DATA
+        const values = processMachineLogs(sheet, rfidMap);
+
+        const logs = [];
+        let isOnline = false;
+        let currentUser = '';
+
+        // Skip header
+        for (let i = 1; i < values.length; i++) {
+            const row = values[i];
+            const rfid = row[0];
+            const name = row[1];
+            const command = row[2];
+            const status = row[3];
+            const start = row[4];
+            const stop = row[5];
+            const duration = row[6];
+
+            logs.push({
+                rfid,
+                name: name || 'Unknown',
+                command,
+                status,
+                machineId: machineName,
+                start,
+                stop,
+                duration
+            });
+        }
+        
+        // Determine Machine Current Status
+        if (logs.length > 0) {
+             const lastLog = logs[logs.length - 1];
+             if (lastLog.status === 'ON') {
+                 isOnline = true;
+                 currentUser = lastLog.name;
+             }
+        }
+
+        result.push({
+            id: machineName,
+            name: formatMachineName(machineName),
+            logs: logs.reverse(),
+            isOnline,
+            currentUser
+        });
+    });
+
+    return { success: true, data: result };
+}
