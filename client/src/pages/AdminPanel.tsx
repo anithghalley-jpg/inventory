@@ -20,7 +20,7 @@ import { MachineCard, MachineData } from '@/components/MachineCard';
  * - Warm sage green accents with admin-specific styling
  */
 // 1. Add your Google Apps Script Deployment URL at the top of your component
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXcj74jsDteyR0SFs9Mon0FC8ojVDkJnSm4m47r_FGKHTInP1ih78I7Na42Hyb2Oeu/exec'; // Copy this from your GAS deployment [3]
+import { SCRIPT_URL } from '@/config';
 const DRIVE_FOLDER_ID = '1i_fpnnNDIjOfK5Z8D3GP6yHp00KZ0bsg';
 
 interface PendingUser {
@@ -104,6 +104,25 @@ export default function AdminPanel() {
   const [returnRemarks, setReturnRemarks] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [machineLogs, setMachineLogs] = useState<MachineData[]>([]); // New: Machine Logs State
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null); // Item currently in edit mode
+  const [editItemForm, setEditItemForm] = useState<Partial<InventoryItem & { tagsInput: string }>>({});
+  const [editingUserEmail, setEditingUserEmail] = useState<string | null>(null); // Email key for user edit
+  const [editUserForm, setEditUserForm] = useState<{ name: string; role: string; note: string }>({ name: '', role: 'USER', note: '' });
+  const [homeItems, setHomeItems] = useState<any[]>([]);
+  const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
+  const [showAddHome, setShowAddHome] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{
+    users: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
+    requests: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
+    firebaseAvailable: boolean;
+    loading: boolean;
+    credentialError?: string;
+  }>({
+    users: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
+    requests: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
+    firebaseAvailable: true,
+    loading: false,
+  });
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,10 +168,242 @@ export default function AdminPanel() {
           )
         );
       }
-      toast.success("User approved!");
     } catch (error) {
       toast.error("Approval failed");
     }
+  };
+
+  const handleForceTurnOff = async (email: string) => {
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'forceToggleLaptop',
+          userEmail: email,
+          adminName: user?.name
+        })
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        
+        // Optimistic UI update
+        setAllUsers(prevUsers => prevUsers.map(u => 
+          u.email === email ? { ...u, laptopStatus: 'Offline' } : u
+        ));
+        
+        return result;
+      }),
+      {
+        loading: 'Forcing session to close...',
+        success: 'User session terminated.',
+        error: (err) => `Failed: ${err.message}`
+      }
+    );
+  };
+
+  const handleUpdateUserNote = async (email: string, note: string) => {
+    if (!email) return;
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'updateUserNote',
+          userEmail: email,
+          note: note
+        })
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        // We will fetch users again to get full state, or just optimistic update
+        setAllUsers(prevUsers => prevUsers.map(u => 
+          u.email === email ? { ...u, note: note } as User : u
+        ));
+        return result;
+      }),
+      {
+        loading: 'Saving admin note...',
+        success: 'Note saved successfully.',
+        error: (err) => `Failed to save: ${err.message}`
+      }
+    );
+  };
+
+  const [activeNoteEditId, setActiveNoteEditId] = useState<string | null>(null); // uses email as key
+  const [tempNoteText, setTempNoteText] = useState('');
+
+  // ======== INVENTORY EDIT HANDLERS ========
+  const handleOpenEditItem = (item: InventoryItem) => {
+    setEditingItem(item);
+    const tagsStr = (item as any).tags || '';
+    setEditItemForm({ ...item, tagsInput: tagsStr });
+  };
+
+  const handleUpdateInventoryItem = async () => {
+    if (!editingItem) return;
+    const { tagsInput, ...rest } = editItemForm as any;
+    const tagsArray = (tagsInput || '').split(',').map((t: string) => t.trim()).filter(Boolean);
+    const payload = { ...rest, tags: tagsArray };
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'updateInventoryItem', itemId: editingItem.id, ...payload }),
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        // Optimistic local update
+        setInventory(prev => prev.map(i =>
+          i.id === editingItem.id ? { ...i, ...payload, tags: tagsArray.join(',') } : i
+        ));
+        setSelectedItem(null);
+        setEditingItem(null);
+        return result;
+      }),
+      { loading: 'Saving changes...', success: 'Item updated & synced!', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const handleDeleteInventoryItem = async (item: InventoryItem) => {
+    if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'deleteInventoryItem', itemId: item.id }),
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        setInventory(prev => prev.filter(i => i.id !== item.id));
+        setSelectedItem(null);
+        return result;
+      }),
+      { loading: 'Deleting item...', success: 'Item deleted.', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  // ======== USER EDIT HANDLERS ========
+  const handleOpenEditUser = (u: any) => {
+    setEditingUserEmail(u.email);
+    setEditUserForm({ name: u.name || '', role: u.role || 'USER', note: (u as any).note || '' });
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUserEmail) return;
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'updateUser',
+          userEmail: editingUserEmail,
+          name: editUserForm.name,
+          role: editUserForm.role,
+          note: editUserForm.note,
+        }),
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        setAllUsers(prev => prev.map(u =>
+          u.email === editingUserEmail
+            ? { ...u, name: editUserForm.name, role: editUserForm.role, note: editUserForm.note } as any
+            : u
+        ));
+        setEditingUserEmail(null);
+        return result;
+      }),
+      { loading: 'Updating user...', success: 'User updated & synced!', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  // ======== FIREBASE SYNC BUTTONS ========
+  const fetchSyncStatus = async () => {
+    setSyncStatus(s => ({ ...s, loading: true }));
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'checkSyncStatus' }) });
+      const data = await res.json();
+      if (data.success) {
+        setSyncStatus({ ...data, loading: false });
+      } else {
+        setSyncStatus(s => ({ ...s, loading: false, firebaseAvailable: false, credentialError: data.message }));
+      }
+    } catch (e) {
+      setSyncStatus(s => ({ ...s, loading: false, firebaseAvailable: false }));
+    }
+  };
+
+  const handleSyncUsersToFirebase = async () => {
+    setSyncStatus(s => ({ ...s, loading: true }));
+    toast.promise(
+      fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'syncUsersToFirebase' }) })
+        .then(async r => {
+          const d = await r.json();
+          if (!d.success) throw new Error(d.message);
+          return d;
+        })
+        .finally(() => fetchSyncStatus()), // Re-check after sync
+      {
+        loading: 'Syncing users to Firebase… this may take up to 60s',
+        success: (d: any) => d.message || 'Users synced!',
+        error: (e: any) => `Sync failed: ${e.message}`
+      }
+    );
+  };
+
+  const handleSyncRequestsToFirebase = async () => {
+    setSyncStatus(s => ({ ...s, loading: true }));
+    toast.promise(
+      fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'syncRequestsToFirebase' }) })
+        .then(async r => {
+          const d = await r.json();
+          if (!d.success) throw new Error(d.message);
+          return d;
+        })
+        .finally(() => fetchSyncStatus()),
+      {
+        loading: 'Syncing requests to Firebase… this may take up to 60s',
+        success: (d: any) => d.message || 'Requests synced!',
+        error: (e: any) => `Sync failed: ${e.message}`
+      }
+    );
+  };
+
+  // ======== HOME CONTENT ========
+  const fetchHomeContent = async () => {
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getHomeContent' }) });
+      const data = await res.json();
+      if (data.success) setHomeItems(data.items || []);
+    } catch (e) { console.error('Failed to fetch home content', e); }
+  };
+
+  const handleSaveHomeContent = async () => {
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'manageHomeContent', ...homeForm }),
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message || 'Failed');
+        setShowAddHome(false);
+        setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
+        await fetchHomeContent();
+        return result;
+      }),
+      { loading: 'Saving content block...', success: 'Homepage updated & synced!', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const handleDeleteHomeContent = async (id: string) => {
+    if (!window.confirm('Delete this content block?')) return;
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'deleteHomeContent', id }),
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        setHomeItems(prev => prev.filter(h => h.id !== id));
+        return result;
+      }),
+      { loading: 'Deleting...', success: 'Content block deleted.', error: (e) => `Failed: ${e.message}` }
+    );
   };
 
   const handleApproveUser = (userId: string) => {
@@ -556,10 +807,12 @@ export default function AdminPanel() {
     fetchCategories();
     fetchUsers();
     fetchMachineLogs(); // Initial fetch
+    fetchHomeContent(); // Home CMS content
 
     const interval = setInterval(fetchMachineLogs, 30000); // Poll every 30s
     return () => clearInterval(interval);
   }, []);
+
 
   const fetchMachineLogs = async () => {
     try {
@@ -640,8 +893,8 @@ export default function AdminPanel() {
 
       {/* Main Content */}
       <main className="container py-8">
-        <Tabs defaultValue="users" className="space-y-20">
-          <TabsList className="grid w-full max-w-2xl grid-cols-5 bg-muted">
+        <Tabs defaultValue="users" className="space-y-20" onValueChange={(tab) => { if (tab === 'settings') fetchSyncStatus(); }}>
+          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-3xl grid-cols-6' : 'max-w-2xl grid-cols-5'} bg-muted`}>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -672,6 +925,12 @@ export default function AdminPanel() {
               <Monitor className="w-4 h-4" />
               <span className="hidden sm:inline">Monitor</span>
             </TabsTrigger>
+            {user?.role === 'ADMIN' && (
+              <TabsTrigger value="settings" className="flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                <span className="hidden sm:inline">Settings</span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Users Tab */}
@@ -771,6 +1030,59 @@ export default function AdminPanel() {
 
                     {/* Divider */}
                     <div className="w-full h-px bg-border/50"></div>
+                    
+                    {/* Admin Note Section (Visible to Admin/Team) */}
+                    <div className="w-full px-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Admin Note</span>
+                        {/* BUG FIX: use u.email (not u.id which is undefined for GAS users) */}
+                        {activeNoteEditId !== u.email ? (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setActiveNoteEditId(u.email); setTempNoteText((u as any).note || ''); }}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setActiveNoteEditId(null); }}
+                              className="text-[10px] text-gray-500 hover:text-gray-700 font-medium"
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                handleUpdateUserNote(u.email, tempNoteText); 
+                                setActiveNoteEditId(null);
+                              }}
+                              className="text-[10px] text-emerald-600 hover:text-emerald-800 font-bold"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {activeNoteEditId === u.email ? (
+                        <textarea 
+                           className="w-full text-xs p-2 border rounded-md bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
+                           rows={2}
+                           value={tempNoteText}
+                           onChange={(e) => setTempNoteText(e.target.value)}
+                           onClick={(e) => e.stopPropagation()}
+                           autoFocus
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground bg-muted/40 p-2 rounded-md min-h-[36px] line-clamp-2 italic">
+                          {(u as any).note || "No notes"}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="w-full h-px bg-border/50"></div>
 
                     {/* Footer: Loans */}
                     <div className="flex-1 w-full">
@@ -794,9 +1106,66 @@ export default function AdminPanel() {
                         return <p className="text-xs text-muted-foreground italic text-center py-2">No active items</p>;
                       })()}
                     </div>
+
+                    {/* Edit Profile Button (Admin only) */}
+                    {user?.role === 'ADMIN' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                        onClick={(e) => { e.stopPropagation(); handleOpenEditUser(u); }}
+                      >
+                        <Edit2 className="w-3 h-3 mr-1" /> Edit Profile
+                      </Button>
+                    )}
                   </Card>
                 ))}
             </div>
+
+            {/* Edit User Profile Dialog */}
+            <Dialog open={!!editingUserEmail} onOpenChange={(open) => !open && setEditingUserEmail(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit User Profile</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Display Name</label>
+                    <Input
+                      value={editUserForm.name}
+                      onChange={(e) => setEditUserForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="Full name"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Role</label>
+                    <select
+                      value={editUserForm.role}
+                      onChange={(e) => setEditUserForm(f => ({ ...f, role: e.target.value }))}
+                      className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background"
+                    >
+                      <option value="USER">USER</option>
+                      <option value="TEAM">TEAM</option>
+                      <option value="ADMIN">ADMIN</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Admin Note</label>
+                    <textarea
+                      className="w-full text-sm p-2 border rounded-md bg-background focus:ring-1 focus:ring-emerald-500 outline-none resize-none"
+                      rows={3}
+                      value={editUserForm.note}
+                      onChange={(e) => setEditUserForm(f => ({ ...f, note: e.target.value }))}
+                      placeholder="Private admin note…"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setEditingUserEmail(null)}>Cancel</Button>
+                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleUpdateUser}>Save Changes</Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
           </TabsContent>
 
@@ -1059,7 +1428,7 @@ export default function AdminPanel() {
 
                 {/* Main Content */}
                 <div className="px-6 pb-6 space-y-6">
-                  {/* Image – Center Focus */}
+                  {/* Image */}
                   <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-muted border">
                     {selectedItem?.imageUrl ? (
                       <img
@@ -1075,77 +1444,142 @@ export default function AdminPanel() {
                     )}
                   </div>
 
-                  {/* Item Details */}
-                  <div className="grid md:grid-cols-3 gap-4">
-                    {/* Stock */}
-                    <div className="rounded-xl border bg-emerald-50 p-4 text-center">
-                      <p className="text-sm font-medium text-emerald-600">Stock Level</p>
-                      <p className="text-3xl font-bold text-emerald-900">
-                        {selectedItem?.quantity}
-                      </p>
-                    </div>
-
-                    {/* Category */}
-                    <div className="rounded-xl border bg-blue-50 p-4 text-center">
-                      <p className="text-sm font-medium text-blue-600">Category</p>
-                      <p className="text-lg font-semibold text-blue-900">
-                        {selectedItem?.category}
-                      </p>
-                    </div>
-
-                    {/* Company */}
-                    <div className="rounded-xl border bg-purple-50 p-4 text-center">
-                      <p className="text-sm font-medium text-purple-600">Company / Brand</p>
-                      <p className="text-lg font-semibold text-purple-900">
-                        {selectedItem?.company}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Additional Info */}
-                  <div className="space-y-4">
-                    {selectedItem?.remarks && (
-                      <div className="rounded-xl border bg-muted p-4">
-                        <h4 className="font-medium text-foreground mb-1">Remarks</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {selectedItem.remarks}
-                        </p>
+                  {editingItem?.id === selectedItem?.id ? (
+                    /* ======= EDIT MODE ======= */
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Name</label>
+                          <Input
+                            value={editItemForm.name || ''}
+                            onChange={e => setEditItemForm(f => ({ ...f, name: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Quantity</label>
+                          <Input
+                            type="number"
+                            value={editItemForm.quantity ?? ''}
+                            onChange={e => setEditItemForm(f => ({ ...f, quantity: Number(e.target.value) }))}
+                          />
+                        </div>
                       </div>
-                    )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Company / Brand</label>
+                          <Input
+                            value={editItemForm.company || ''}
+                            onChange={e => setEditItemForm(f => ({ ...f, company: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Category</label>
+                          <select
+                            value={editItemForm.category || ''}
+                            onChange={e => setEditItemForm(f => ({ ...f, category: e.target.value }))}
+                            className="w-full h-10 px-3 py-2 border border-border rounded-md text-sm bg-background"
+                          >
+                            <option value="">Select category</option>
+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Tags (comma-separated)</label>
+                        <Input
+                          value={(editItemForm as any).tagsInput || ''}
+                          onChange={e => setEditItemForm(f => ({ ...f, tagsInput: e.target.value }))}
+                          placeholder="e.g. electronics, power-tool"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Remarks</label>
+                        <textarea
+                          className="w-full text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                          rows={2}
+                          value={editItemForm.remarks || ''}
+                          onChange={e => setEditItemForm(f => ({ ...f, remarks: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Link / URL</label>
+                        <Input
+                          value={editItemForm.links || ''}
+                          onChange={e => setEditItemForm(f => ({ ...f, links: e.target.value }))}
+                          placeholder="https://..."
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <Button variant="outline" className="flex-1" onClick={() => setEditingItem(null)}>Cancel</Button>
+                        <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleUpdateInventoryItem}>
+                          Save Changes
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ======= VIEW MODE ======= */
+                    <>
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div className="rounded-xl border bg-emerald-50 p-4 text-center">
+                          <p className="text-sm font-medium text-emerald-600">Stock Level</p>
+                          <p className="text-3xl font-bold text-emerald-900">{selectedItem?.quantity}</p>
+                        </div>
+                        <div className="rounded-xl border bg-blue-50 p-4 text-center">
+                          <p className="text-sm font-medium text-blue-600">Category</p>
+                          <p className="text-lg font-semibold text-blue-900">{selectedItem?.category}</p>
+                        </div>
+                        <div className="rounded-xl border bg-purple-50 p-4 text-center">
+                          <p className="text-sm font-medium text-purple-600">Company / Brand</p>
+                          <p className="text-lg font-semibold text-purple-900">{selectedItem?.company}</p>
+                        </div>
+                      </div>
 
-                    {selectedItem?.links && (
-                      <div className="rounded-xl border p-4">
-                        <h4 className="font-medium text-foreground mb-1">Important Link</h4>
-                        <a
-                          href={selectedItem.links}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-blue-600 hover:underline break-all"
+                      <div className="space-y-3">
+                        {selectedItem?.remarks && (
+                          <div className="rounded-xl border bg-muted p-4">
+                            <h4 className="font-medium text-foreground mb-1">Remarks</h4>
+                            <p className="text-sm text-muted-foreground">{selectedItem.remarks}</p>
+                          </div>
+                        )}
+                        {selectedItem?.links && (
+                          <div className="rounded-xl border p-4">
+                            <h4 className="font-medium text-foreground mb-1">Important Link</h4>
+                            <a href={selectedItem.links} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">
+                              {selectedItem.links}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-3 pt-2">
+                        <Button variant="outline" className="flex-1" onClick={() => setSelectedItem(null)}>
+                          Close
+                        </Button>
+                        <Button
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => selectedItem && handleOpenEditItem(selectedItem)}
                         >
-                          {selectedItem.links}
-                        </a>
+                          <Edit2 className="w-4 h-4 mr-2" /> Edit Details
+                        </Button>
+                        {user?.role === 'ADMIN' && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => selectedItem && handleDeleteInventoryItem(selectedItem)}
+                            title="Delete item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-3 pt-4">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => setSelectedItem(null)}
-                    >
-                      Close
-                    </Button>
-                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700">
-                      Edit Details
-                    </Button>
-                  </div>
+                    </>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>
 
           </TabsContent>
+
 
           {/* Categories Tab */}
           <TabsContent value="categories" className="space-y-4">
@@ -1395,12 +1829,21 @@ export default function AdminPanel() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {allUsers.filter((u: any) => u.laptopStatus === 'Online').length > 0 ? (
                       allUsers.filter((u: any) => u.laptopStatus === 'Online').map(u => (
-                        <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 flex flex-col gap-1 shadow-sm">
-                          <p className="font-bold text-sm truncate" title={u.name}>{u.name}</p>
-                          <p className="text-xs text-muted-foreground truncate" title={u.email}>{u.email}</p>
+                        <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 flex flex-col gap-1 shadow-sm relative group">
+                          <p className="font-bold text-sm truncate pr-6" title={u.name}>{u.name}</p>
+                          <p className="text-xs text-muted-foreground truncate pr-6" title={u.email}>{u.email}</p>
                           <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit mt-1">
                             Online
                           </span>
+                          <Button 
+                            variant="destructive" 
+                            size="icon" 
+                            className="absolute top-2 right-2 w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => handleForceTurnOff(u.email)}
+                            title="Force Turn Off"
+                          >
+                            <span className="text-[10px] font-bold">X</span>
+                          </Button>
                         </Card>
                       ))
                     ) : (
@@ -1479,6 +1922,237 @@ export default function AdminPanel() {
               </div>
             </div>
           </TabsContent>
+
+          {/* HOME CMS TAB (ADMIN ONLY) */}
+          {user?.role === 'ADMIN' && (
+            <TabsContent value="settings" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+                {/* SETTINGS CARD */}
+                <div className="space-y-6">
+                  <Card className="p-6">
+                    <h2 className="text-xl font-bold font-display mb-4 border-b pb-2">Global System Settings</h2>
+                    <div className="space-y-6 pt-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-semibold text-foreground">Allow Team Inventory Management</h4>
+                          <p className="text-sm text-muted-foreground max-w-sm">
+                            If enabled, TEAM members can add, edit, and delete inventory items.
+                          </p>
+                        </div>
+                        <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                          <input
+                            type="checkbox"
+                            name="toggle"
+                            id="toggle"
+                            className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                            onChange={(e) => {
+                              toast.promise(
+                                fetch(SCRIPT_URL, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ action: 'manageAdminSettings', allowTeamInventoryEdit: e.target.checked })
+                                }).then(res => res.json()),
+                                { loading: 'Saving...', success: 'Settings updated!', error: 'Failed to update' }
+                              );
+                            }}
+                          />
+                          <label htmlFor="toggle" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                          <style>{`
+                            .toggle-checkbox:checked { right: 0; border-color: #10b981; }
+                            .toggle-checkbox:checked + .toggle-label { background-color: #10b981; }
+                            .toggle-checkbox { right: 24px; transition: all 0.2s ease; border-color: #d1d5db; z-index: 10; }
+                          `}</style>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* DATA SYNC CARD */}
+                  <Card className="p-6">
+                    <h2 className="text-xl font-bold font-display mb-1 border-b pb-2 flex items-center gap-2">
+                      Firebase Data Sync
+                      {syncStatus.loading && (
+                        <span className="inline-block w-3 h-3 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                      )}
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Manually push changed rows from Google Sheets → Firebase. Only rows that differ from the last sync are written (hash-checked).
+                    </p>
+
+                    {/* Firebase credential error banner */}
+                    {!syncStatus.firebaseAvailable && (
+                      <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                        ⚠️ <strong>Firebase not reachable.</strong> Check that <code>client_email</code>, <code>private_key</code>, and <code>project_id</code> are set in your Apps Script → Project Settings → Script Properties.
+                        {syncStatus.credentialError && <div className="mt-1 font-mono break-all">{syncStatus.credentialError}</div>}
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      <div>
+                        {/* Users sync button */}
+                        <Button
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                          onClick={handleSyncUsersToFirebase}
+                          disabled={syncStatus.loading || !syncStatus.firebaseAvailable || syncStatus.users.unsyncedRows === 0}
+                        >
+                          <UsersIcon className="w-4 h-4 mr-2" />
+                          Sync Users → Firebase
+                          {syncStatus.users.unsyncedRows > 0 && (
+                            <span className="ml-2 bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              {syncStatus.users.unsyncedRows} unsynced
+                            </span>
+                          )}
+                          {syncStatus.users.unsyncedRows === 0 && syncStatus.firebaseAvailable && !syncStatus.loading && (
+                            <span className="ml-2 text-[10px] opacity-70">✓ Up to date</span>
+                          )}
+                        </Button>
+                        <p className="text-[10px] text-muted-foreground mt-1 text-center">
+                          {syncStatus.users.sheetRows} total users in sheet
+                        </p>
+                      </div>
+
+                      <div>
+                        {/* Requests sync button */}
+                        <Button
+                          className="w-full bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+                          onClick={handleSyncRequestsToFirebase}
+                          disabled={syncStatus.loading || !syncStatus.firebaseAvailable || syncStatus.requests.unsyncedRows === 0}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Sync Requests → Firebase
+                          {syncStatus.requests.unsyncedRows > 0 && (
+                            <span className="ml-2 bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              {syncStatus.requests.unsyncedRows} unsynced
+                            </span>
+                          )}
+                          {syncStatus.requests.unsyncedRows === 0 && syncStatus.firebaseAvailable && !syncStatus.loading && (
+                            <span className="ml-2 text-[10px] opacity-70">✓ Up to date</span>
+                          )}
+                        </Button>
+                        <p className="text-[10px] text-muted-foreground mt-1 text-center">
+                          {syncStatus.requests.sheetRows} total requests in sheet
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          onClick={fetchSyncStatus}
+                          disabled={syncStatus.loading}
+                        >
+                          {syncStatus.loading ? 'Checking…' : '↻ Refresh Status'}
+                        </Button>
+                        <p className="text-[10px] text-muted-foreground italic">
+                          Inventory syncs automatically on every edit. Only Users & Requests need manual sync.
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                {/* HOME CONTENT CMS CARD */}
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-4 border-b pb-2">
+                    <h2 className="text-xl font-bold font-display">Guest Page Content</h2>
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => { setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' }); setShowAddHome(true); }}
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add Block
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Manage dynamic content shown on the public guest homepage.
+                  </p>
+
+                  {/* Add / Edit Form */}
+                  {showAddHome && (
+                    <div className="mb-4 p-4 border rounded-xl bg-muted/20 space-y-3">
+                      <h3 className="font-semibold text-sm">{homeForm.id ? 'Edit Block' : 'New Content Block'}</h3>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Type</label>
+                        <select
+                          value={homeForm.type}
+                          onChange={e => setHomeForm(f => ({ ...f, type: e.target.value }))}
+                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background mt-1"
+                        >
+                          <option value="text_block">Text Block</option>
+                          <option value="banner">Banner</option>
+                          <option value="link">Link</option>
+                          <option value="gallery">Gallery</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Heading</label>
+                        <Input className="mt-1" value={homeForm.heading} onChange={e => setHomeForm(f => ({ ...f, heading: e.target.value }))} placeholder="Main title" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Description</label>
+                        <textarea
+                          className="w-full mt-1 text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                          rows={3}
+                          value={homeForm.description}
+                          onChange={e => setHomeForm(f => ({ ...f, description: e.target.value }))}
+                          placeholder="Body text..."
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Content URL (image/link)</label>
+                        <Input className="mt-1" value={homeForm.contentUrl} onChange={e => setHomeForm(f => ({ ...f, contentUrl: e.target.value }))} placeholder="https://..." />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1" onClick={() => setShowAddHome(false)}>Cancel</Button>
+                        <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveHomeContent}>Save & Sync</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Content Blocks List */}
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                    {homeItems.length === 0 ? (
+                      <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
+                        No content blocks yet. Click "Add Block" to create one.
+                      </div>
+                    ) : homeItems.map(item => (
+                      <div key={item.id} className="p-3 border rounded-lg bg-muted/20 flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{item.type}</span>
+                            <span className="font-medium text-sm truncate">{item.heading}</span>
+                          </div>
+                          {item.description && <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>}
+                          {item.contentUrl && <p className="text-[10px] text-blue-500 truncate mt-1">{item.contentUrl}</p>}
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => { setHomeForm({ ...item }); setShowAddHome(true); }}
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                            onClick={() => handleDeleteHomeContent(item.id)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+              </div>
+            </TabsContent>
+          )}
+
         </Tabs>
       </main>
     </div>

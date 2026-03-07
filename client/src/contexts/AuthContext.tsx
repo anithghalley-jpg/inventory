@@ -4,8 +4,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 // GOOGLE APPS SCRIPT CONFIGURATION
 // ============================================================================
 // Replace this URL with your deployed Apps Script Web App URL
-// Format: https://script.google.com/macros/s/{SCRIPT_ID}/exec
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXcj74jsDteyR0SFs9Mon0FC8ojVDkJnSm4m47r_FGKHTInP1ih78I7Na42Hyb2Oeu/exec';
+import { SCRIPT_URL as APPS_SCRIPT_URL } from '@/config';
 
 export interface User {
   id: string;

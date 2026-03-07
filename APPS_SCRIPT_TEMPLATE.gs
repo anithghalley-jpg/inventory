@@ -136,6 +136,45 @@ function doPost(e) {
       case 'processReturn':
         response = handleProcessReturn(data);
         break;
+      case 'forceToggleLaptop':
+        response = handleForceToggleLaptop(data);
+        break;
+      case 'updateUserNote':
+        response = handleUpdateUserNote(data);
+        break;
+      case 'getHomeContent':
+        response = handleGetHomeContent(data);
+        break;
+      case 'manageHomeContent':
+        response = handleManageHomeContent(data);
+        break;
+      case 'getSettings':
+        response = handleGetSettings(data);
+        break;
+      case 'manageAdminSettings':
+        response = handleManageAdminSettings(data);
+        break;
+      case 'updateInventoryItem':
+        response = handleUpdateInventoryItem(data);
+        break;
+      case 'deleteInventoryItem':
+        response = handleDeleteInventoryItem(data);
+        break;
+      case 'updateUser':
+        response = handleUpdateUser(data);
+        break;
+      case 'syncUsersToFirebase':
+        response = handleSyncUsersToFirebase(data);
+        break;
+      case 'syncRequestsToFirebase':
+        response = handleSyncRequestsToFirebase(data);
+        break;
+      case 'deleteHomeContent':
+        response = handleDeleteHomeContent(data);
+        break;
+      case 'checkSyncStatus':
+        response = handleCheckSyncStatus(data);
+        break;
       default:
         response = { success: false, message: 'Unknown action' };
     }
@@ -1341,4 +1380,667 @@ function handleGetMachineLogs(data) {
     });
 
     return { success: true, data: result };
+}
+// ===== PRD 2.0 & 2.1 NEW FEATURES =====
+
+/**
+ * Handle Force Turn Off (Admin/Team)
+ * Turns off a user's laptop session from the dashboard.
+ */
+function handleForceToggleLaptop(data) {
+  const { userEmail, adminName } = data;
+  if (!userEmail) return { success: false, message: 'Missing user email' };
+
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const hashColIndex = headers.indexOf('Sync Hash');
+  
+  // Find columns
+  let laptopStatusCol = 0, sessionStartCol = 0, sessionEndCol = 0, totalTimeCol = 0;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').toLowerCase();
+    if (h.includes('laptop status')) laptopStatusCol = c;
+    if (h.includes('session start')) sessionStartCol = c;
+    if (h.includes('session end')) sessionEndCol = c;
+    if (h.includes('total time')) totalTimeCol = c;
+  }
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim() === userEmail) {
+      const currentStatus = values[i][laptopStatusCol];
+      if (currentStatus !== 'Online') {
+        return { success: false, message: 'User is not online' };
+      }
+
+      const now = new Date();
+      sheet.getRange(i + 1, laptopStatusCol + 1).setValue('Offline');
+      sheet.getRange(i + 1, sessionEndCol + 1).setValue(now.toISOString());
+      
+      const startTimeStr = values[i][sessionStartCol];
+      let newTotal = Number(values[i][totalTimeCol]) || 0;
+      
+      if (startTimeStr) {
+        const startTime = new Date(startTimeStr);
+        const diffMs = now.getTime() - startTime.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins > 0) newTotal += diffMins;
+      }
+      
+      sheet.getRange(i + 1, totalTimeCol + 1).setValue(newTotal);
+
+      // Trigger user sync (Assuming onSpreadsheetEdit or a local sync call handles Firestore)
+      // We will manually sync the user back to Firestore to ensure UI updates immediately
+      const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const tags = rowData.slice(hashColIndex !== -1 ? hashColIndex + 1 : 13).filter(t => t !== '');
+      const userData = {
+        email: userEmail,
+        name: rowData[1],
+        role: rowData[2] || 'USER',
+        status: rowData[3] || 'PENDING',
+        createdDate: rowData[4],
+        laptopStatus: 'Offline',
+        totalTime: newTotal,
+        myPageLink: rowData[10] || '',
+        note: rowData[11] || '',
+        tags: tags,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      const firestore = getFirestore();
+      try { firestore.updateDocument('users/' + userEmail, userData); } 
+      catch (e) { firestore.createDocument('users/' + userEmail, userData); }
+
+      return { success: true, message: `Forced turn off by ${adminName}` };
+    }
+  }
+  return { success: false, message: 'User not found' };
+}
+
+/**
+ * Handle Admin Note Update
+ * Appends or overwrites the "Admin Note" on a user profile.
+ */
+function handleUpdateUserNote(data) {
+  const { userEmail, note } = data;
+  if (!userEmail) return { success: false, message: 'Missing user email' };
+
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  
+  let noteColIndex = headers.indexOf('Note');
+  if (noteColIndex === -1 && headers.indexOf('Admin Note') !== -1) {
+      noteColIndex = headers.indexOf('Admin Note');
+  } else if (noteColIndex === -1) {
+      noteColIndex = 11; // Default
+  }
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim() === userEmail) {
+      sheet.getRange(i + 1, noteColIndex + 1).setValue(note);
+      
+      // Sync back to firestore
+      const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const hashColIndex = headers.indexOf('Sync Hash');
+      const tags = rowData.slice(hashColIndex !== -1 ? hashColIndex + 1 : 13).filter(t => t !== '');
+      const userData = {
+        email: userEmail,
+        name: rowData[1],
+        role: rowData[2],
+        status: rowData[3],
+        createdDate: rowData[4],
+        laptopStatus: rowData[5],
+        totalTime: rowData[8] || 0,
+        myPageLink: rowData[10] || '',
+        note: note, // NEW NOTE!
+        tags: tags,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      const firestore = getFirestore();
+      try { firestore.updateDocument('users/' + userEmail, userData); } 
+      catch (e) { firestore.createDocument('users/' + userEmail, userData); }
+
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'User not found' };
+}
+
+/**
+ * Manage Global System Settings (e.g. Allow Team Inventory Edit)
+ */
+function handleManageAdminSettings(data) {
+  const { allowTeamInventoryEdit } = data;
+  // If no "Settings" sheet, save directly to Firestore under 'settings/admin'
+  let sheet = null;
+  try { sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings'); } catch(e){}
+  
+  if (!sheet) {
+    const firestore = getFirestore();
+    const doc = { allowTeamInventoryEdit: !!allowTeamInventoryEdit };
+    try { firestore.updateDocument('settings/admin', doc); }
+    catch (e) { firestore.createDocument('settings/admin', doc); }
+    return { success: true, warning: 'Saved to Firestore only. Create "Settings" sheet to persist.' };
+  }
+  
+  const values = sheet.getDataRange().getValues();
+  let found = false;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === 'allowTeamInventoryEdit') {
+      sheet.getRange(i + 1, 2).setValue(String(allowTeamInventoryEdit));
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    sheet.appendRow(['allowTeamInventoryEdit', String(allowTeamInventoryEdit)]);
+  }
+  
+  try { syncSettingsToFirebase(); } catch(e) {}
+  return { success: true };
+}
+
+function handleGetSettings(data) {
+  let sheet = null;
+  try { sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings'); } catch(e){}
+  const defaults = { allowTeamInventoryEdit: false };
+  if (!sheet) return { success: true, settings: defaults };
+  
+  const values = sheet.getDataRange().getValues();
+  let allow = false;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === 'allowTeamInventoryEdit') {
+      allow = String(values[i][1]).toLowerCase() === 'true';
+    }
+  }
+  return { success: true, settings: { allowTeamInventoryEdit: allow } };
+}
+
+/**
+ * Handle Managing Home Page Content
+ * Inserts content into the "Home" sheet and syncs it.
+ */
+function handleManageHomeContent(data) {
+  const { id, type, heading, description, contentUrl } = data;
+  const sheet = getSheet(SHEET_NAMES.HOME);
+  if (!sheet) return { success: false, message: "Home sheet not found." };
+  
+  // Format based on what syncHomeToFirebase expects: [id, type, heading, description, contentUrl]
+  const newRow = [id || Utilities.getUuid(), type, heading, description, contentUrl];
+  
+  // Update or append
+  const values = sheet.getDataRange().getValues();
+  let found = false;
+  if (id) {
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][0] === id) {
+        sheet.getRange(i + 1, 1, 1, 5).setValues([newRow]);
+        found = true;
+        break;
+      }
+    }
+  }
+  if (!found) sheet.appendRow(newRow);
+  
+  try { syncHomeToFirebase(); } catch(e) { console.error(e); }
+  return { success: true };
+}
+
+
+function handleGetHomeContent(data) {
+  const sheet = getSheet(SHEET_NAMES.HOME);
+  if (!sheet) return { success: true, items: [] };
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return { success: true, items: [] };
+  
+  const items = values.slice(1).map(row => ({
+    id: String(row[0]),
+    type: String(row[1] || ''),
+    heading: String(row[2] || ''),
+    description: String(row[3] || ''),
+    contentUrl: String(row[4] || '')
+  }));
+  return { success: true, items };
+}
+
+// ===== NEW: ADMIN EDIT & SYNC HANDLERS =====
+
+/**
+ * Update an existing Inventory item in Google Sheets and sync to Firestore.
+ * Lookup key: itemId (Column A of Inventory sheet)
+ */
+function handleUpdateInventoryItem(data) {
+  const { itemId, name, quantity, category, company, remarks, links, tags } = data;
+  if (!itemId) return { success: false, message: 'Missing itemId' };
+
+  const sheet = getSheet(SHEET_NAMES.INVENTORY);
+  const values = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(itemId).trim()) {
+      const tagsArray = Array.isArray(tags) ? tags : (tags ? String(tags).split(',').map(t => t.trim()).filter(Boolean) : []);
+
+      // Build new row data, keeping imageUrl (col 5) unchanged
+      const rowData = [
+        itemId,
+        name || values[i][1],
+        quantity !== undefined ? Number(quantity) : values[i][2],
+        category || values[i][3],
+        company || values[i][4],
+        values[i][5], // Keep existing imageUrl
+        remarks !== undefined ? remarks : (values[i][6] || ''),
+        links !== undefined ? links : (values[i][7] || ''),
+        '', // Column I reserved
+        ...tagsArray
+      ];
+
+      sheet.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
+
+      // Sync to Firebase
+      try { syncSingleInventoryItem(itemId, rowData); } catch (e) { console.error('Firebase sync error: ' + e); }
+
+      return { success: true, message: 'Item updated successfully' };
+    }
+  }
+  return { success: false, message: 'Item not found' };
+}
+
+/**
+ * Delete an inventory item from Google Sheets and Firestore.
+ * Lookup key: itemId (Column A of Inventory sheet)
+ */
+function handleDeleteInventoryItem(data) {
+  const { itemId } = data;
+  if (!itemId) return { success: false, message: 'Missing itemId' };
+
+  const sheet = getSheet(SHEET_NAMES.INVENTORY);
+  const values = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(itemId).trim()) {
+      sheet.deleteRow(i + 1);
+
+      // Delete from Firestore
+      try {
+        const firestore = getFirestore();
+        firestore.deleteDocument('inventory/' + itemId);
+      } catch (e) { console.error('Firebase delete error: ' + e); }
+
+      return { success: true, message: 'Item deleted' };
+    }
+  }
+  return { success: false, message: 'Item not found' };
+}
+
+/**
+ * Update a user's name, role, and/or admin note.
+ * Lookup key: email (Col A of Users sheet — email IS the natural identifier)
+ */
+function handleUpdateUser(data) {
+  const { userEmail, name, role, note } = data;
+  if (!userEmail) return { success: false, message: 'Missing userEmail' };
+
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+
+  let noteColIndex = headers.indexOf('Note');
+  if (noteColIndex === -1) noteColIndex = headers.indexOf('Admin Note');
+  if (noteColIndex === -1) noteColIndex = 11; // Default col L (0-indexed 11)
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(userEmail).trim()) {
+      // Update Name (Col B = index 1)
+      if (name !== undefined) sheet.getRange(i + 1, 2).setValue(name);
+      // Update Role (Col C = index 2)
+      if (role !== undefined) sheet.getRange(i + 1, 3).setValue(role.toUpperCase());
+      // Update Note
+      if (note !== undefined) sheet.getRange(i + 1, noteColIndex + 1).setValue(note);
+
+      // Sync to Firestore
+      try {
+        const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        syncSingleUser(userEmail, rowData, noteColIndex);
+      } catch (e) { console.error('Firebase sync error: ' + e); }
+
+      return { success: true, message: 'User updated successfully' };
+    }
+  }
+  return { success: false, message: 'User not found' };
+}
+
+/**
+ * Bulk sync the entire Users sheet to Firestore.
+ * FIXED: getFirestore() is wrapped in its own try/catch so credential errors
+ * return a readable message instead of crashing the whole request.
+ * OPTIMISED: Skips rows whose MD5 hash hasn't changed since last sync.
+ */
+function handleSyncUsersToFirebase(data) {
+  // 1. Validate Firebase credentials first — surface helpful error immediately
+  let firestore;
+  try {
+    firestore = getFirestore();
+  } catch (credErr) {
+    return { success: false, message: 'Firebase credentials error: ' + credErr.toString() + '. Check Script Properties (client_email, private_key, project_id).' };
+  }
+
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+
+  // Locate key columns
+  let hashColIndex = headers.indexOf('Sync Hash');
+  let noteColIndex = headers.indexOf('Note');
+  if (noteColIndex === -1) noteColIndex = headers.indexOf('Admin Note');
+  if (noteColIndex === -1) noteColIndex = 11;
+
+  // If there is no Sync Hash column, create one at the end
+  if (hashColIndex === -1) {
+    hashColIndex = headers.length;
+    sheet.getRange(1, hashColIndex + 1).setValue('Sync Hash');
+  }
+
+  let synced = 0;
+  let skipped = 0;
+  let errors = 0;
+  const startTime = Date.now();
+  const MAX_RUNTIME_MS = 270000; // 4.5 minutes — GAS limit is 6 min
+
+  for (let i = 1; i < values.length; i++) {
+    // Safety: stop if approaching GAS 6-min wall
+    if (Date.now() - startTime > MAX_RUNTIME_MS) {
+      return { success: true, partial: true, message: `Timeout safety stop. Synced ${synced}, skipped ${skipped}, errors ${errors}. Re-run to continue.` };
+    }
+
+    const row = values[i];
+    const email = String(row[0] || '').trim();
+    if (!email) continue;
+
+    const tagsStart = hashColIndex > 0 ? hashColIndex + 1 : 13;
+    const tags = row.slice(tagsStart).filter(t => t !== '' && t !== undefined);
+
+    const userData = {
+      email: email,
+      name: row[1] || '',
+      role: row[2] || 'USER',
+      status: row[3] || 'PENDING',
+      createdDate: row[4] ? String(row[4]) : '',
+      laptopStatus: row[5] || 'Offline',
+      totalTime: Number(row[8]) || 0,
+      myPageLink: row[10] || '',
+      note: row[noteColIndex] || '',
+      tags: tags,
+      lastUpdated: new Date().toISOString()
+    };
+
+    // MD5-based change detection — skip unchanged rows
+    const rowPayload = JSON.stringify({ ...userData, lastUpdated: '' }); // exclude timestamp from hash
+    const currentHash = computeMd5Hash(rowPayload);
+    const storedHash = String(row[hashColIndex] || '');
+
+    if (currentHash === storedHash) {
+      skipped++;
+      continue; // Row hasn't changed — no need to write to Firebase
+    }
+
+    try {
+      try { firestore.updateDocument('users/' + email, userData); }
+      catch (e) { firestore.createDocument('users/' + email, userData); }
+      // Write new hash back to sheet so we skip it next run
+      sheet.getRange(i + 1, hashColIndex + 1).setValue(currentHash);
+      synced++;
+    } catch (rowErr) {
+      errors++;
+      console.error('Failed to sync user ' + email + ': ' + rowErr);
+    }
+
+    // Rate limiting — stay well within Firebase quota
+    if (i % 3 === 0) Utilities.sleep(400);
+  }
+
+  return { success: true, message: `Synced ${synced} users (${skipped} unchanged, ${errors} errors).` };
+}
+
+/**
+ * Bulk sync the entire Requests sheet to Firestore.
+ * FIXED: Credential errors return early with a readable message.
+ * OPTIMISED: MD5 hash-based change detection.
+ */
+function handleSyncRequestsToFirebase(data) {
+  let firestore;
+  try {
+    firestore = getFirestore();
+  } catch (credErr) {
+    return { success: false, message: 'Firebase credentials error: ' + credErr.toString() + '. Check Script Properties.' };
+  }
+
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  if (!sheet) return { success: false, message: 'Requests sheet not found. Check SHEET_NAMES.REQUESTS.' };
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  let hashColIndex = headers ? headers.indexOf('Sync Hash') : -1;
+
+  if (hashColIndex === -1 && headers) {
+    hashColIndex = headers.length;
+    sheet.getRange(1, hashColIndex + 1).setValue('Sync Hash');
+  }
+
+  let synced = 0;
+  let skipped = 0;
+  let errors = 0;
+  const startTime = Date.now();
+
+  for (let i = 1; i < values.length; i++) {
+    if (Date.now() - startTime > 270000) {
+      return { success: true, partial: true, message: `Timeout stop. Synced ${synced}, skipped ${skipped}, errors ${errors}.` };
+    }
+
+    const row = values[i];
+    const requestId = String(row[0] || '').trim();
+    if (!requestId) continue;
+
+    const reqData = {
+      date: requestId,
+      userEmail: row[1] || '',
+      userName: row[2] || '',
+      itemId: row[3] || '',
+      itemName: row[4] || '',
+      quantity: Number(row[5]) || 0,
+      status: row[6] || 'PENDING',
+      actionBy: row[7] || '',
+      returnRequestStatus: row[8] || '',
+      returnTarget: row[9] || '',
+      returnReceiver: row[10] || '',
+      lastUpdated: new Date().toISOString()
+    };
+
+    const docId = requestId.replace(/[:/]/g, '_');
+    const rowPayload = JSON.stringify({ ...reqData, lastUpdated: '' });
+    const currentHash = computeMd5Hash(rowPayload);
+    const storedHash = String(row[hashColIndex] || '');
+
+    if (currentHash === storedHash) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      try { firestore.updateDocument('requests/' + docId, reqData); }
+      catch (e) { firestore.createDocument('requests/' + docId, reqData); }
+      sheet.getRange(i + 1, hashColIndex + 1).setValue(currentHash);
+      synced++;
+    } catch (rowErr) {
+      errors++;
+      console.error('Failed to sync request ' + requestId + ': ' + rowErr);
+    }
+
+    if (i % 3 === 0) Utilities.sleep(400);
+  }
+
+  return { success: true, message: `Synced ${synced} requests (${skipped} unchanged, ${errors} errors).` };
+}
+
+/**
+ * Delete a home content block from the Home sheet and Firestore.
+ */
+function handleDeleteHomeContent(data) {
+  const { id } = data;
+  if (!id) return { success: false, message: 'Missing id' };
+
+  const sheet = getSheet(SHEET_NAMES.HOME);
+  if (!sheet) return { success: false, message: 'Home sheet not found' };
+  const values = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]) === String(id)) {
+      sheet.deleteRow(i + 1);
+      try {
+        const firestore = getFirestore();
+        firestore.deleteDocument('home/' + id);
+      } catch (e) { console.error('Firebase delete error: ' + e); }
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Content block not found' };
+}
+
+// ===== FIREBASE PER-DOC SYNC HELPERS =====
+
+/**
+ * Sync a single inventory item to Firestore.
+ * @param {string} itemId
+ * @param {Array} rowData - Array representing the sheet row values
+ */
+function syncSingleInventoryItem(itemId, rowData) {
+  const firestore = getFirestore();
+  const tags = rowData.slice(9).filter(t => t !== '');
+  const item = {
+    name: rowData[1],
+    quantity: typeof rowData[2] === 'number' ? rowData[2] : Number(rowData[2]) || 0,
+    category: rowData[3],
+    company: rowData[4],
+    imageUrl: rowData[5],
+    remarks: rowData[6] || '',
+    links: rowData[7] || '',
+    tags: tags,
+    lastUpdated: new Date().toISOString()
+  };
+  try { firestore.updateDocument('inventory/' + itemId, item); }
+  catch (e) { firestore.createDocument('inventory/' + itemId, item); }
+}
+
+/**
+ * Sync a single user to Firestore.
+ * @param {string} email
+ * @param {Array} rowData - Array representing the sheet row values
+ * @param {number} noteColIndex
+ */
+function syncSingleUser(email, rowData, noteColIndex) {
+  const firestore = getFirestore();
+  const tagsStart = noteColIndex + 1;
+  const tags = rowData.slice(tagsStart > 13 ? tagsStart : 13).filter(t => t !== '');
+  const userData = {
+    email: email,
+    name: rowData[1] || '',
+    role: rowData[2] || 'USER',
+    status: rowData[3] || 'PENDING',
+    createdDate: rowData[4] || '',
+    laptopStatus: rowData[5] || 'Offline',
+    totalTime: Number(rowData[8]) || 0,
+    myPageLink: rowData[10] || '',
+    note: rowData[noteColIndex] || '',
+    tags: tags,
+    lastUpdated: new Date().toISOString()
+  };
+  try { firestore.updateDocument('users/' + email, userData); }
+  catch (e) { firestore.createDocument('users/' + email, userData); }
+}
+
+// ===== MD5 HASH HELPER =====
+
+/**
+ * Computes a short hex hash of a string.
+ * Uses GAS built-in Utilities.computeDigest — no external library needed.
+ */
+function computeMd5Hash(str) {
+  const raw = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, str, Utilities.Charset.UTF_8);
+  return raw.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+}
+
+// ===== SYNC STATUS CHECK =====
+
+/**
+ * Compares Google Sheets rows vs Firebase document count to determine
+ * if a sync is needed. Returns counts and an estimate of unsynced rows.
+ * 
+ * Strategy: Count rows in Sheets that have an EMPTY 'Sync Hash' column
+ *           — those have never been synced (or changed since last sync).
+ *           We also try to read Firebase collection size, but skip if
+ *           Firebase credentials are unavailable (graceful degradation).
+ */
+function handleCheckSyncStatus(data) {
+  const result = {
+    success: true,
+    users: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
+    requests: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
+    firebaseAvailable: false
+  };
+
+  // Check Firebase connectivity
+  try {
+    getFirestore(); // Just test credentials — don't read anything
+    result.firebaseAvailable = true;
+  } catch (e) {
+    result.firebaseAvailable = false;
+    result.credentialError = e.toString();
+  }
+
+  // ---- Users ----
+  try {
+    const usersSheet = getSheet(SHEET_NAMES.USERS);
+    const usersValues = usersSheet.getDataRange().getValues();
+    const usersHeaders = usersValues[0] || [];
+    const hashCol = usersHeaders.indexOf('Sync Hash');
+    const dataRows = usersValues.slice(1).filter(r => String(r[0] || '').trim() !== '');
+    result.users.sheetRows = dataRows.length;
+
+    if (hashCol !== -1) {
+      // Count rows where hash is empty (never synced or changed)
+      result.users.unsyncedRows = dataRows.filter(r => !String(r[hashCol] || '').trim()).length;
+    } else {
+      // No hash column at all — every row is unsynced
+      result.users.unsyncedRows = dataRows.length;
+    }
+  } catch (e) {
+    result.users.canCheck = false;
+    result.users.error = e.toString();
+  }
+
+  // ---- Requests ----
+  try {
+    const reqSheet = getSheet(SHEET_NAMES.REQUESTS);
+    if (!reqSheet) {
+      result.requests.canCheck = false;
+    } else {
+      const reqValues = reqSheet.getDataRange().getValues();
+      const reqHeaders = reqValues[0] || [];
+      const reqHashCol = reqHeaders.indexOf('Sync Hash');
+      const reqDataRows = reqValues.slice(1).filter(r => String(r[0] || '').trim() !== '');
+      result.requests.sheetRows = reqDataRows.length;
+
+      if (reqHashCol !== -1) {
+        result.requests.unsyncedRows = reqDataRows.filter(r => !String(r[reqHashCol] || '').trim()).length;
+      } else {
+        result.requests.unsyncedRows = reqDataRows.length;
+      }
+    }
+  } catch (e) {
+    result.requests.canCheck = false;
+    result.requests.error = e.toString();
+  }
+
+  return result;
 }
