@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,6 +28,40 @@ export default function Login() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-background to-emerald-50 px-4">
+        {/* Navigation Bar */}
+        <header className="fixed top-0 left-0 w-full p-4 md:px-8 md:py-6 z-50 flex items-center justify-between transition-all duration-300 bg-background/80 backdrop-blur-md border-b border-border/50 text-slate-900 pointer-events-auto">
+          {/* Left: Logo */}
+          <Link href="/">
+            <div className="flex flex-col cursor-pointer group">
+              <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-600 transition-colors">AESTHETIC</span>
+              <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 mt-0.5 uppercase">Centre</span>
+            </div>
+          </Link>
+
+          {/* Center: Navigation Links */}
+          <div className="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+            <Link href="/community">
+              <button className="text-sm font-medium tracking-wide text-slate-500 hover:text-slate-900 transition-colors duration-200">
+                Community
+              </button>
+            </Link>
+            <Link href="/">
+              <button className="text-sm font-semibold tracking-wide text-slate-900 transition-colors duration-200">
+                Aesthetic Centre
+              </button>
+            </Link>
+            <Link href="/learning">
+              <button className="text-sm font-medium tracking-wide text-slate-500 hover:text-slate-900 transition-colors duration-200">
+                Learning
+              </button>
+            </Link>
+          </div>
+
+          {/* Right: Login Button */}
+          <button disabled className="px-6 py-2.5 text-white text-sm font-semibold rounded-full shadow-md bg-emerald-600/50 cursor-not-allowed">
+            Sign In
+          </button>
+        </header>
         {/* Decorative background elements */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-20 right-20 w-72 h-72 bg-emerald-100 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>

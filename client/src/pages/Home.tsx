@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 import {
   Telescope, Palette, Hammer, Scissors,
-  Music, Activity, Scale, Sparkles, Gem, Cpu, ArrowRight
+  Music, Activity, Scale, Sparkles, Gem, Cpu, ArrowRight, ArrowLeft
 } from "lucide-react";
 
 const PLANETS = [
@@ -21,14 +21,58 @@ const PLANETS = [
 
 export default function Home() {
   const [isSpaceHovered, setIsSpaceHovered] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
+  const aspectsSectionRef = useRef<HTMLElement>(null);
+
+  const handleGlobeClick = (aspectName: string) => {
+    setSelectedAspect(aspectName);
+    aspectsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans overflow-x-hidden">
-      {/* Header with Login */}
-      <header className={`absolute top-0 left-0 w-full p-4 md:p-6 z-50 flex justify-between items-center pointer-events-auto transition-colors duration-1000 ${isSpaceHovered ? 'text-white' : 'text-emerald-900'}`}>
-        <div className="font-display font-bold text-xl tracking-tight">Aesthetic Centre</div>
+      {/* Navigation Bar */}
+      <header className={`fixed top-0 left-0 w-full p-4 md:px-8 md:py-6 z-50 flex items-center justify-between pointer-events-auto transition-all duration-500 ${isScrolled ? 'bg-background/90 backdrop-blur-md border-b border-border/50 text-slate-900 py-3 md:py-4 shadow-sm' : isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
+        
+        {/* Left: Logo (Two lines, varied fonts) */}
+        <Link href="/">
+          <div className="flex flex-col cursor-pointer group">
+            <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-500 transition-colors">AESTHETIC</span>
+            <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 group-hover:text-emerald-400 transition-colors mt-0.5 uppercase">Centre</span>
+          </div>
+        </Link>
+
+        {/* Center: Navigation Links */}
+        <div className="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+          <Link href="/community">
+            <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+              Community
+            </button>
+          </Link>
+          <Link href="/">
+            <button className={`text-sm font-semibold tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
+              Aesthetic Centre
+            </button>
+          </Link>
+          <Link href="/learning">
+            <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+              Learning
+            </button>
+          </Link>
+        </div>
+
+        {/* Right: Login Button */}
         <Link href="/login">
-          <button className={`px-5 py-2 text-white text-sm font-semibold rounded-full shadow-md transition-all hover:scale-105 active:scale-95 ${isSpaceHovered ? 'bg-white/20 hover:bg-white/30 backdrop-blur-md' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+          <button className={`px-6 py-2.5 text-white text-sm font-semibold rounded-full shadow-md transition-all hover:scale-105 active:scale-95 ${isSpaceHovered ? 'bg-white/20 hover:bg-white/30 backdrop-blur-md' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
             Sign In
           </button>
         </Link>
@@ -134,6 +178,7 @@ export default function Home() {
                         >
                           {/* 2. Un-tilt the 70deg board rotation so the text stands perfectly upright facing the camera */}
                           <div
+                            onClick={() => handleGlobeClick(planet.name)}
                             className="flex flex-col items-center justify-center group cursor-pointer relative z-30 transition-all duration-500"
                             style={{ transform: "rotateX(-70deg)", transformStyle: "preserve-3d" }}
                           >
@@ -165,118 +210,220 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Bento Box Grid Section */}
-      <section className="py-16 md:py-24 px-4 md:px-8 max-w-7xl mx-auto w-full">
-        <div className="mb-12 text-center">
-          <h2 className="text-3xl font-display font-bold text-foreground">Explore Our Aspects</h2>
-          <p className="text-muted-foreground mt-2">Discover the different clusters of our aesthetic center.</p>
-        </div>
+      {/* Aspects Section */}
+      <section ref={aspectsSectionRef} className="py-16 md:py-24 px-4 md:px-8 max-w-7xl mx-auto w-full min-h-[600px] scroll-mt-20">
+        {selectedAspect ? (
+          <div className="w-full">
+            {/* Aspect Detail View */}
+            
+            {/* Sub Navigation */}
+            <div className="flex items-center gap-3 overflow-x-auto pb-4 mb-10 border-b border-border/50 scrollbar-hide no-scrollbar">
+              <button 
+                onClick={() => setSelectedAspect(null)} 
+                className="shrink-0 flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 border border-border rounded-full px-4 py-2 mr-2 hover:bg-slate-50 transition-colors"
+              >
+                 <ArrowLeft className="w-4 h-4" /> Back to Grid
+              </button>
+              
+              {PLANETS.map(p => (
+                <button 
+                  key={p.name}
+                  onClick={() => setSelectedAspect(p.name)}
+                  className={`shrink-0 flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-full transition-all duration-300 ${selectedAspect === p.name ? 'bg-emerald-100 text-emerald-800 shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                >
+                  <p.icon className={`w-4 h-4 ${selectedAspect === p.name ? 'text-emerald-600' : ''}`} /> {p.name}
+                </button>
+              ))}
+            </div>
 
-        {/* Masonry / Bento Box Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 auto-rows-[200px] gap-4 md:gap-6">
-          {/* Card 1: Large Wide */}
-          <motion.div
-            whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-            className="md:col-span-2 md:row-span-2 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-          >
-            <div className={`w-14 h-14 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4`}>
-              <Cpu className={`w-7 h-7 text-blue-500`} />
+            {/* Content Area */}
+            {(() => {
+               const aspectData = PLANETS.find(p => p.name === selectedAspect);
+               if (!aspectData) return null;
+               return (
+                 <motion.div 
+                   initial={{ opacity: 0, y: 20 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   key={aspectData.name}
+                   className="flex flex-col md:flex-row gap-12 lg:gap-16"
+                 >
+                    <div className="flex-1 space-y-8">
+                      <div className="flex items-center gap-5">
+                         <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
+                            <aspectData.icon className="w-10 h-10 text-emerald-600" />
+                         </div>
+                         <div>
+                           <h2 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tight">{aspectData.name}</h2>
+                           <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
+                         </div>
+                      </div>
+                      
+                      <div className="prose prose-slate max-w-none text-muted-foreground text-lg leading-relaxed">
+                         <p>
+                            Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}. 
+                            This cluster provides members with specialized tools, immersive environments, and the collaborative 
+                            energy needed to explore and refine their craft.
+                         </p>
+                         <p>
+                            Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers 
+                            resources designed to inspire and elevate your practice. Connect with like-minded individuals, 
+                            participate in hands-on workshops, and unlock new dimensions of creativity and understanding 
+                            in the aesthetic centre.
+                         </p>
+                      </div>
+                      
+                      <div className="pt-6 border-t border-border/50">
+                        <button className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-medium transition-colors shadow-sm inline-flex items-center gap-2">
+                          Join {aspectData.name} Sessions <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Visual representation */}
+                    <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group">
+                       <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
+                       <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
+                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                       <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+                    </div>
+                 </motion.div>
+               );
+            })()}
+          </div>
+        ) : (
+          <div>
+            <div className="mb-12 text-center">
+              <h2 className="text-3xl font-display font-bold text-foreground">Explore Our Aspects</h2>
+              <p className="text-muted-foreground mt-2">Discover the different clusters of our aesthetic center.</p>
             </div>
-            <div>
-              <h3 className="text-2xl font-bold mb-2">FabLab</h3>
-              <p className="text-muted-foreground line-clamp-3">
-                Our digital fabrication laboratory, equipped with 3D printers, laser cutters, and electronics workstations. A space to rapid-prototype and bring your designs to physical reality.
-              </p>
-              <div className="mt-6 flex items-center text-blue-600 font-medium group-hover:gap-2 transition-all">
-                Learn More <ArrowRight className="w-4 h-4 ml-1" />
-              </div>
-            </div>
-          </motion.div>
 
-          {/* Card 2: Tall */}
-          <motion.div
-            whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-            className="md:col-span-1 md:row-span-2 rounded-2xl border border-border bg-[#fafafa] overflow-hidden p-6 flex flex-col group cursor-pointer transition-all duration-300 shadow-sm"
-          >
-            <div className={`w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-6`}>
-              <Telescope className={`w-6 h-6 text-indigo-500`} />
-            </div>
-            <h3 className="text-xl font-bold mb-2">Astronomy</h3>
-            <p className="text-sm text-muted-foreground flex-grow">
-              Explore the cosmos with our telescopes and observational equipment.
-            </p>
-            <div className="mt-4 flex items-center text-indigo-600 text-sm font-medium group-hover:gap-2 transition-all">
-              Details <ArrowRight className="w-4 h-4 ml-1" />
-            </div>
-          </motion.div>
+            {/* Masonry / Bento Box Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-4 auto-rows-[200px] gap-4 md:gap-6">
+              {/* Card 1: Large Wide */}
+              <motion.div
+                onClick={() => setSelectedAspect('FabLab')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-2 md:row-span-2 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className={`w-14 h-14 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4`}>
+                  <Cpu className={`w-7 h-7 text-blue-500`} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold mb-2">FabLab</h3>
+                  <p className="text-muted-foreground line-clamp-3">
+                    Our digital fabrication laboratory, equipped with 3D printers, laser cutters, and electronics workstations. A space to rapid-prototype and bring your designs to physical reality.
+                  </p>
+                  <div className="mt-6 flex items-center text-blue-600 font-medium group-hover:gap-2 transition-all">
+                    Learn More <ArrowRight className="w-4 h-4 ml-1" />
+                  </div>
+                </div>
+              </motion.div>
 
-          {/* Card 3: Standard */}
-          <motion.div
-            whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-            className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center flex-shrink-0`}>
-                <Palette className={`w-6 h-6 text-pink-500`} />
-              </div>
-              <h3 className="text-lg font-bold">Painting</h3>
-            </div>
-          </motion.div>
+              {/* Card 2: Tall */}
+              <motion.div
+                onClick={() => setSelectedAspect('Astronomy')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-2 rounded-2xl border border-border bg-[#fafafa] overflow-hidden p-6 flex flex-col group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className={`w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-6`}>
+                  <Telescope className={`w-6 h-6 text-indigo-500`} />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Astronomy</h3>
+                <p className="text-sm text-muted-foreground flex-grow">
+                  Explore the cosmos with our telescopes and observational equipment.
+                </p>
+                <div className="mt-4 flex items-center text-indigo-600 text-sm font-medium group-hover:gap-2 transition-all">
+                  Details <ArrowRight className="w-4 h-4 ml-1" />
+                </div>
+              </motion.div>
 
-          {/* Card 4: Standard */}
-          <motion.div
-            whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-            className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
-          >
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0`}>
-                <Hammer className={`w-6 h-6 text-orange-500`} />
-              </div>
-              <h3 className="text-lg font-bold">Sculpting</h3>
-            </div>
-          </motion.div>
+              {/* Card 3: Standard */}
+              <motion.div
+                onClick={() => setSelectedAspect('Painting')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center flex-shrink-0`}>
+                    <Palette className={`w-6 h-6 text-pink-500`} />
+                  </div>
+                  <h3 className="text-lg font-bold">Painting</h3>
+                </div>
+              </motion.div>
 
-          {/* Card 5: Wide */}
-          <motion.div
-            whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-            className="md:col-span-2 md:row-span-1 rounded-2xl border border-border bg-[#fafafa] overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-          >
-            <div>
-              <h3 className="text-xl font-bold mb-1">Music & Dance</h3>
-              <p className="text-sm text-muted-foreground">Soundscapes and movement studios.</p>
-            </div>
-            <div className="flex -space-x-4">
-              <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center shadow-sm">
-                <Music className="w-5 h-5 text-purple-500" />
-              </div>
-              <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-sm">
-                <Activity className="w-5 h-5 text-rose-500" />
-              </div>
-            </div>
-          </motion.div>
+              {/* Card 4: Standard */}
+              <motion.div
+                onClick={() => handleGlobeClick('Sculpting')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0`}>
+                    <Hammer className={`w-6 h-6 text-orange-500`} />
+                  </div>
+                  <h3 className="text-lg font-bold">Sculpting</h3>
+                </div>
+              </motion.div>
 
-          {/* Card 6: Wide */}
-          <motion.div
-            whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-            className="md:col-span-2 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-          >
-            <div className="flex -space-x-4">
-              <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center shadow-sm z-20">
-                <Scale className="w-5 h-5 text-slate-700" />
-              </div>
-              <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shadow-sm z-10">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-              </div>
-              <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shadow-sm z-0">
-                <Gem className="w-5 h-5 text-emerald-500" />
-              </div>
+              {/* Card 5: Standard */}
+              <motion.div
+                onClick={() => handleGlobeClick('Weaving')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center flex-shrink-0`}>
+                    <Scissors className={`w-6 h-6 text-teal-500`} />
+                  </div>
+                  <h3 className="text-lg font-bold">Weaving</h3>
+                </div>
+              </motion.div>
+
+              {/* Card 6: Wide */}
+              <motion.div
+                onClick={() => handleGlobeClick('Music')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-2 md:row-span-1 rounded-2xl border border-border bg-[#fafafa] overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div>
+                  <h3 className="text-xl font-bold mb-1">Music & Dance</h3>
+                  <p className="text-sm text-muted-foreground">Soundscapes and movement studios.</p>
+                </div>
+                <div className="flex -space-x-4">
+                  <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center shadow-sm">
+                    <Music className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-sm">
+                    <Activity className="w-5 h-5 text-rose-500" />
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Card 7: Wide */}
+              <motion.div
+                onClick={() => handleGlobeClick('Truth')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-3 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex -space-x-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center shadow-sm z-20">
+                    <Scale className="w-5 h-5 text-slate-700" />
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shadow-sm z-10">
+                    <Sparkles className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shadow-sm z-0">
+                    <Gem className="w-5 h-5 text-emerald-500" />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-xl font-bold mb-1">Truth, Beauty & Value</h3>
+                  <p className="text-sm text-muted-foreground">The philosophical cores.</p>
+                </div>
+              </motion.div>
             </div>
-            <div className="text-right">
-              <h3 className="text-xl font-bold mb-1">Truth, Beauty & Value</h3>
-              <p className="text-sm text-muted-foreground">The philosophical cores.</p>
-            </div>
-          </motion.div>
-        </div>
+          </div>
+        )}
       </section>
 
       {/* Footer */}

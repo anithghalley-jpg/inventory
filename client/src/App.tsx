@@ -7,24 +7,20 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import Login from "./pages/Login";
+import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
 import TeamDashboard from "./pages/TeamDashboard";
-
-/**
- * Design Philosophy: Modern Minimalist with Warm Accents
- * - Warm sage green (#10b981) primary color
- * - Cream background (#fafaf9) with white cards
- * - Plus Jakarta Sans for headers, Inter for body
- * - Soft shadows and rounded corners (12px radius)
- * - Smooth transitions and micro-interactions
- */
-
+import Community from "./pages/Community";
+import Learning from "./pages/Learning";
 
 function Router() {
   return (
     <Switch>
-      <Route path={"/"} component={Login} />
+      <Route path="/" component={Home} />
+      <Route path="/login" component={Login} />
+      <Route path="/community" component={Community} />
+      <Route path="/learning" component={Learning} />
       <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} allowedRoles={['USER', 'ADMIN']} />
       </Route>
