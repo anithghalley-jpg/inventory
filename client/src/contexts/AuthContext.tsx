@@ -122,8 +122,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const logout = useCallback(() => {
     console.log('🚪 User logging out');
+    const activeEmail = localStorage.getItem('active_session_email');
+    if (activeEmail) {
+      localStorage.removeItem(`user_${activeEmail}`);
+    }
+    localStorage.removeItem('active_session_email');
     setUser(null);
-    localStorage.clear();
   }, []);
 
 
@@ -164,9 +168,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (storedUser) {
         try {
           const parsedUser = JSON.parse(storedUser);
-          // Optional: Verify token validity here if you had an expiry
           setUser(parsedUser);
           console.log('🔄 Session restored for:', parsedUser.email);
+
+          // Verify with backend silently to ensure status hasn't changed (e.g. they were rejected)
+          fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'login', email: parsedUser.email, name: parsedUser.name })
+          })
+            .then(r => r.json())
+            .then(data => {
+              if (data.success) {
+                // Update with fresh data from server
+                const freshUser = { ...parsedUser, ...data.user };
+                setUser(freshUser);
+                localStorage.setItem(`user_${activeEmail}`, JSON.stringify(freshUser));
+              } else {
+                // User might have been deleted or rejected
+                logout();
+              }
+            })
+            .catch(e => {
+              console.warn('Silent auth verify failed (offline?), keeping cached session', e);
+            });
+
         } catch (e) {
           console.error('Failed to parse stored user session');
           localStorage.removeItem(`user_${activeEmail}`);
@@ -174,7 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     setIsLoading(false);
-  }, []);
+  }, [logout]);
 
 
 

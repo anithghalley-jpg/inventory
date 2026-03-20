@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 import {
   Telescope, Palette, Hammer, Scissors,
-  Music, Activity, Scale, Sparkles, Gem, Cpu, ArrowRight, ArrowLeft
+  Music, Activity, Scale, Sparkles, Gem, Cpu, Code2, ArrowRight, ArrowLeft
 } from "lucide-react";
 
 const PLANETS = [
@@ -17,6 +17,7 @@ const PLANETS = [
   { name: "Truth", aspect: "Objective Logic", icon: Scale, planetBg: "radial-gradient(circle at 30% 30%, #cbd5e1, #64748b, #0f172a)", shadow: "rgba(100,116,139,0.5)", size: "w-6 h-6 md:w-9 md:h-9" },
   { name: "Beauty", aspect: "Divine Aesthetics", icon: Sparkles, planetBg: "radial-gradient(circle at 30% 30%, #fde047, #eab308, #713f12)", shadow: "rgba(234,179,8,0.5)", size: "w-10 h-10 md:w-14 md:h-14" },
   { name: "Value", aspect: "Intrinsic Worth", icon: Gem, planetBg: "radial-gradient(circle at 30% 30%, #6ee7b7, #059669, #064e3b)", shadow: "rgba(5,150,105,0.5)", size: "w-7 h-7 md:w-10 md:h-10" },
+  { name: "Computer Science", aspect: "Computational Thinking", icon: Code2, planetBg: "radial-gradient(circle at 30% 30%, #67e8f9, #0891b2, #164e63)", shadow: "rgba(8,145,178,0.5)", size: "w-8 h-8 md:w-12 md:h-12" },
 ];
 
 export default function Home() {
@@ -30,6 +31,20 @@ export default function Home() {
     aspectsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // MED-1 Fix: Cache star positions so they don't randomise on every render
+  const starElements = useMemo(() =>
+    [...Array(50)].map((_, i) => (
+      <div
+        key={i}
+        className="absolute w-1 h-1 bg-white rounded-full animate-pulse"
+        style={{
+          top: `${Math.random() * 100}%`, left: `${Math.random() * 100}%`,
+          opacity: Math.random() * 0.5 + 0.2, animationDuration: `${Math.random() * 3 + 2}s`
+        }}
+      />
+    )), []
+  );
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
@@ -42,7 +57,7 @@ export default function Home() {
     <div className="min-h-screen bg-background flex flex-col font-sans overflow-x-hidden">
       {/* Navigation Bar */}
       <header className={`fixed top-0 left-0 w-full p-4 md:px-8 md:py-6 z-50 flex items-center justify-between pointer-events-auto transition-all duration-500 ${isScrolled ? 'bg-background/90 backdrop-blur-md border-b border-border/50 text-slate-900 py-3 md:py-4 shadow-sm' : isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
-        
+
         {/* Left: Logo (Two lines, varied fonts) */}
         <Link href="/">
           <div className="flex flex-col cursor-pointer group">
@@ -94,16 +109,7 @@ export default function Home() {
           </motion.div>
 
           {/* Optional little stars */}
-          {[...Array(50)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-1 h-1 bg-white rounded-full animate-pulse"
-              style={{
-                top: `${Math.random() * 100}%`, left: `${Math.random() * 100}%`,
-                opacity: Math.random() * 0.5 + 0.2, animationDuration: `${Math.random() * 3 + 2}s`
-              }}
-            />
-          ))}
+          {starElements}
         </div>
 
         {/* Global Sun + Orbit Wrapper (incorporates 92% scaling and 20px upward shift) */}
@@ -215,18 +221,18 @@ export default function Home() {
         {selectedAspect ? (
           <div className="w-full">
             {/* Aspect Detail View */}
-            
+
             {/* Sub Navigation */}
             <div className="flex items-center gap-3 overflow-x-auto pb-4 mb-10 border-b border-border/50 scrollbar-hide no-scrollbar">
-              <button 
-                onClick={() => setSelectedAspect(null)} 
+              <button
+                onClick={() => setSelectedAspect(null)}
                 className="shrink-0 flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 border border-border rounded-full px-4 py-2 mr-2 hover:bg-slate-50 transition-colors"
               >
-                 <ArrowLeft className="w-4 h-4" /> Back to Grid
+                <ArrowLeft className="w-4 h-4" /> Back to Grid
               </button>
-              
+
               {PLANETS.map(p => (
-                <button 
+                <button
                   key={p.name}
                   onClick={() => setSelectedAspect(p.name)}
                   className={`shrink-0 flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-full transition-all duration-300 ${selectedAspect === p.name ? 'bg-emerald-100 text-emerald-800 shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
@@ -238,56 +244,56 @@ export default function Home() {
 
             {/* Content Area */}
             {(() => {
-               const aspectData = PLANETS.find(p => p.name === selectedAspect);
-               if (!aspectData) return null;
-               return (
-                 <motion.div 
-                   initial={{ opacity: 0, y: 20 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   key={aspectData.name}
-                   className="flex flex-col md:flex-row gap-12 lg:gap-16"
-                 >
-                    <div className="flex-1 space-y-8">
-                      <div className="flex items-center gap-5">
-                         <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
-                            <aspectData.icon className="w-10 h-10 text-emerald-600" />
-                         </div>
-                         <div>
-                           <h2 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tight">{aspectData.name}</h2>
-                           <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
-                         </div>
+              const aspectData = PLANETS.find(p => p.name === selectedAspect);
+              if (!aspectData) return null;
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  key={aspectData.name}
+                  className="flex flex-col md:flex-row gap-12 lg:gap-16"
+                >
+                  <div className="flex-1 space-y-8">
+                    <div className="flex items-center gap-5">
+                      <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
+                        <aspectData.icon className="w-10 h-10 text-emerald-600" />
                       </div>
-                      
-                      <div className="prose prose-slate max-w-none text-muted-foreground text-lg leading-relaxed">
-                         <p>
-                            Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}. 
-                            This cluster provides members with specialized tools, immersive environments, and the collaborative 
-                            energy needed to explore and refine their craft.
-                         </p>
-                         <p>
-                            Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers 
-                            resources designed to inspire and elevate your practice. Connect with like-minded individuals, 
-                            participate in hands-on workshops, and unlock new dimensions of creativity and understanding 
-                            in the aesthetic centre.
-                         </p>
-                      </div>
-                      
-                      <div className="pt-6 border-t border-border/50">
-                        <button className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-medium transition-colors shadow-sm inline-flex items-center gap-2">
-                          Join {aspectData.name} Sessions <ArrowRight className="w-4 h-4" />
-                        </button>
+                      <div>
+                        <h2 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tight">{aspectData.name}</h2>
+                        <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
                       </div>
                     </div>
-                    
-                    {/* Visual representation */}
-                    <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group">
-                       <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
-                       <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
-                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                       <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+
+                    <div className="prose prose-slate max-w-none text-muted-foreground text-lg leading-relaxed">
+                      <p>
+                        Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}.
+                        This cluster provides members with specialized tools, immersive environments, and the collaborative
+                        energy needed to explore and refine their craft.
+                      </p>
+                      <p>
+                        Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers
+                        resources designed to inspire and elevate your practice. Connect with like-minded individuals,
+                        participate in hands-on workshops, and unlock new dimensions of creativity and understanding
+                        in the aesthetic centre.
+                      </p>
                     </div>
-                 </motion.div>
-               );
+
+                    <div className="pt-6 border-t border-border/50">
+                      <button className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-medium transition-colors shadow-sm inline-flex items-center gap-2">
+                        Join {aspectData.name} Sessions <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visual representation */}
+                  <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group">
+                    <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
+                    <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                    <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+                  </div>
+                </motion.div>
+              );
             })()}
           </div>
         ) : (
@@ -395,6 +401,25 @@ export default function Home() {
                   </div>
                   <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-sm">
                     <Activity className="w-5 h-5 text-rose-500" />
+                  </div>
+                </div>
+              </motion.div>
+              {/* Card 8: Computer Science — fills bottom-right gap (row-span-2) */}
+              <motion.div
+                onClick={() => handleGlobeClick('Computer Science')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-2 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="w-12 h-12 rounded-full bg-cyan-50 border border-cyan-100 flex items-center justify-center mb-4">
+                  <Code2 className="w-6 h-6 text-cyan-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold mb-2">Computer Science</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Algorithms, logic, and computational thinking to build, automate, and innovate.
+                  </p>
+                  <div className="mt-4 flex items-center text-cyan-600 text-sm font-medium group-hover:gap-2 transition-all">
+                    Details <ArrowRight className="w-4 h-4 ml-1" />
                   </div>
                 </div>
               </motion.div>

@@ -20,8 +20,8 @@ import { MachineCard, MachineData } from '@/components/MachineCard';
  * - Warm sage green accents with admin-specific styling
  */
 // 1. Add your Google Apps Script Deployment URL at the top of your component
-import { SCRIPT_URL } from '@/config';
-const DRIVE_FOLDER_ID = '1i_fpnnNDIjOfK5Z8D3GP6yHp00KZ0bsg';
+import { SCRIPT_URL, DRIVE_FOLDER_ID } from '@/config';
+import { getTagStyle } from '@/lib/tagUtils';
 
 interface PendingUser {
   id: string;
@@ -406,23 +406,7 @@ export default function AdminPanel() {
     );
   };
 
-  const handleApproveUser = (userId: string) => {
-    setPendingUsers(
-      pendingUsers.map((u) =>
-        u.id === userId ? { ...u, status: 'APPROVED' } : u
-      )
-    );
-    toast.success('User approved');
-  };
 
-  const handleRejectUser = (userId: string) => {
-    setPendingUsers(
-      pendingUsers.map((u) =>
-        u.id === userId ? { ...u, status: 'REJECTED' } : u
-      )
-    );
-    toast.success('User rejected');
-  };
 
   const handleAddCategory = async () => {
     if (!newCategory) {
@@ -570,26 +554,35 @@ export default function AdminPanel() {
   };
 
   const handleApproveRequest = async (req: any) => {
-    try {
-      // Optimistic Update
-      const prevCheckouts = [...pendingCheckouts];
-      setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
-      toast.success("Request Approved");
+    // 1. Optimistic Update
+    const prevCheckouts = [...pendingCheckouts];
+    setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
 
-      await fetch(SCRIPT_URL, {
+    toast.promise(
+      fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({
           action: 'approveCheckoutRequest',
           requestId: req.date,
           approverName: user?.name
         })
-      });
-      fetchUsers(); // Refresh full state
-      fetchInventory(); // Refresh stock
-    } catch (e) {
-      toast.error("Approval failed");
-      fetchUsers(); // Rollback
-    }
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        fetchUsers(); // Refresh full state
+        fetchInventory(); // Refresh stock
+        return result;
+      }),
+      {
+        loading: 'Approving request...',
+        success: 'Request Approved!',
+        error: (err) => {
+          // Rollback on failure
+          setPendingCheckouts(prevCheckouts);
+          return `Approval failed: ${err.message}`;
+        }
+      }
+    );
   };
 
   // 2. Replace the old handleAddItem with this version
@@ -688,12 +681,13 @@ export default function AdminPanel() {
     let syncedItemId = '';
 
     try {
-      // STEP 1: Upload Image
+      let syncedItemId = '';
+
+      // STEP 1: Upload Image (if present)
       if (itemToSync.imageUrl && itemToSync.imageUrl.startsWith('data:')) {
         const base64Content = itemToSync.imageUrl.split(',')[1];
         const uploadResponse = await fetch(SCRIPT_URL, {
           method: 'POST',
-          // mode: 'no-cors' REMOVED to allow reading the JSON response
           body: JSON.stringify({
             action: 'uploadImage',
             fileName: `${itemToSync.name.replace(/\s+/g, '_')}_${Date.now()}.png`,
@@ -705,33 +699,35 @@ export default function AdminPanel() {
 
         const uploadResult = await uploadResponse.json();
         if (uploadResult.success) {
-          syncedItemId = uploadResult.itemId; // Real UUID from backend
+          // Now we just have the Drive URL. We haven't created a row yet.
+          itemToSync.imageUrl = uploadResult.imageUrl;
         } else {
           throw new Error("Image upload failed: " + uploadResult.message);
         }
+      } else if (itemToSync.imageUrl && !itemToSync.imageUrl.startsWith('http')) {
+        itemToSync.imageUrl = ''; // Clear invalid non-data URLs
       }
 
-      // ONLY PROCEED if we have a valid ID to update
-      if (!syncedItemId) throw new Error("No Item ID received from server");
-      // Inside processSyncQueue Step 2
-      const completeResponse = await fetch(SCRIPT_URL, {
+      // STEP 2: Add Inventory Item
+      const addResponse = await fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({
-          action: 'completeInventoryItem',
-          itemId: syncedItemId,
+          action: 'addInventoryItem',
           name: itemToSync.name,
           quantity: itemToSync.quantity,
           category: itemToSync.category,
           company: itemToSync.company,
+          imageUrl: itemToSync.imageUrl || '',
           remarks: itemToSync.remarks || '',
           links: itemToSync.links || '',
           tags: itemToSync.tagsArray || (itemToSync.tags ? itemToSync.tags.split(',') : [])
         }),
       });
 
-      const completeResult = await completeResponse.json();
+      const addResult = await addResponse.json();
 
-      if (completeResult.success) {
+      if (addResult.success) {
+        syncedItemId = addResult.itemId;
         // SUCCESS: Move to next
         const updatedQueue = queue.slice(1);
         localStorage.setItem('syncQueue', JSON.stringify(updatedQueue));
@@ -740,22 +736,20 @@ export default function AdminPanel() {
         // 2. UPDATE THE UI: Find the item in 'inventory' and mark it finished
         setInventory(prevInventory =>
           prevInventory.map(invItem =>
-            // We match by name or temporary ID
-            invItem.name === itemToSync.name ?
-              { ...invItem, isPending: false, imageUrl: itemToSync.imageUrl } :
+            // We match by the local temporary ID stored during creation
+            invItem.id === itemToSync.id ?
+              { ...invItem, id: syncedItemId, isPending: false, imageUrl: itemToSync.imageUrl } :
               invItem
           )
         );
         if (updatedQueue.length === 0) {
-          // Optional: Only fetch if you want a total refresh
-          // fetchInventory(); 
           toast.success(`All items synced!`);
         } else {
           processSyncQueue();
         }
       } else {
         // SERVER REJECTED (e.g. Duplicate name)
-        throw new Error(completeResult.message);
+        throw new Error(addResult.message);
       }
 
       // AdminPanel.tsx approx line 261
@@ -770,10 +764,25 @@ export default function AdminPanel() {
     }
   };
 
+  const streamRef = React.useRef<MediaStream | null>(null);
+
+  React.useEffect(() => {
+    // Cleanup video tracks when component unmounts
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
   const startCamera = async () => {
     setIsCameraActive(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // Request environment (rear) camera on mobile
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' } 
+      });
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -795,8 +804,13 @@ export default function AdminPanel() {
       setCapturedImage(imageData);
 
       // Stop camera stream
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      } else {
+        const stream = videoRef.current.srcObject as MediaStream;
+        if (stream) stream.getTracks().forEach(track => track.stop());
+      }
       setIsCameraActive(false);
     }
   };
@@ -985,38 +999,12 @@ export default function AdminPanel() {
                       {u.tags && u.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2 justify-center mt-3 px-2 w-full">
                           {u.tags.map((tag, idx) => {
-                            // Define styles for known tags
-                            const getTagStyle = (tagName: string) => {
-                              const lower = tagName.toLowerCase();
-                              if (lower.includes('3d') || lower.includes('print')) return {
-                                bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200',
-                                icon: <Printer className="w-3 h-3 mr-1" />
-                              };
-                              if (lower.includes('laser') || lower.includes('cut')) return {
-                                bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200',
-                                icon: <Scissors className="w-3 h-3 mr-1" />
-                              };
-                              if (lower.includes('cnc') || lower.includes('mill') || lower.includes('drill')) return {
-                                bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200',
-                                icon: <Zap className="w-3 h-3 mr-1" />
-                              };
-                              if (lower.includes('wood') || lower.includes('shop')) return {
-                                bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200',
-                                icon: <BookOpen className="w-3 h-3 mr-1" />
-                              };
-                              // Default
-                              return {
-                                bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100',
-                                icon: <div className="w-2 h-2 mr-1.5 rounded-full bg-indigo-400 opacity-50" />
-                              };
-                            };
-
                             const style = getTagStyle(tag);
 
                             return (
                               <span
                                 key={idx}
-                                className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.bg} ${style.text} ${style.border}`}
+                                className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.color}`}
                                 title="Earned Badge"
                               >
                                 {style.icon}
@@ -2083,6 +2071,7 @@ export default function AdminPanel() {
                           <option value="banner">Banner</option>
                           <option value="link">Link</option>
                           <option value="gallery">Gallery</option>
+                          <option value="video">Video</option>
                         </select>
                       </div>
                       <div>

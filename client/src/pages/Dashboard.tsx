@@ -77,6 +77,9 @@ export default function Dashboard() {
   const [returnItem, setReturnItem] = useState<UsageRecord | null>(null); // For Return Modal
   const [returnTarget, setReturnTarget] = useState(''); // Selected Approver
   const [checkoutQuantity, setCheckoutQuantity] = useState('1');
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [newItemNameRequest, setNewItemNameRequest] = useState('');
+  const [newItemRemarksRequest, setNewItemRemarksRequest] = useState('');
 
   // Laptop Tracking State
   const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
@@ -98,21 +101,48 @@ export default function Dashboard() {
     }
   }, [isAuthenticated]);
 
-  // 2. Real-time Inventory from Firebase
+  // Track if we're using the fallback (Sheets) or Firebase
+  const [inventorySource, setInventorySource] = React.useState<'firebase' | 'sheets' | 'loading'>('loading');
+
+  // Helper: load inventory from Google Sheets (Golden Rule fallback)
+  const fetchInventoryFromSheets = React.useCallback(async () => {
+    try {
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'getInventory' }),
+      });
+      const result = await res.json();
+      if (result.success && result.inventory) {
+        const items: InventoryItem[] = result.inventory.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          category: item.category,
+          company: item.company,
+          imageUrl: item.imageUrl,
+          remarks: item.remarks,
+          links: item.links,
+          tags: Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '')
+        }));
+        setInventory(items);
+        const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
+        setCategories(['all', ...uniqueCats as string[]]);
+        setInventorySource('sheets');
+      }
+    } catch (err) {
+      console.error('Sheets fallback also failed:', err);
+      setInventorySource('sheets'); // Still set so loading spinner stops
+    }
+  }, []);
+
+  // 2. Inventory: Firebase is primary. Sheets is the error-only fallback.
+  // No auth gate — sets up immediately like Community.tsx so Firestore connects right away.
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    // Import dynamically to avoid SSR issues if any (though this file is client side)
-    // Actually we can import at top level, but for cleaner diff let's assume imports are added.
-    // We will use the already imported db if possible, but I need to add imports to the file first.
-    // Let's assume I'll add imports in a separate call or here if I can replace imports too.
-    // I will do imports in a separate step or just assume I need to add them. 
-    // To be safe, I will implement the logic here and then add imports at the top.
-
     import('firebase/firestore').then(({ collection, query, onSnapshot }) => {
       import('../firebase').then(({ db }) => {
         const q = query(collection(db, 'inventory'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
+          // Firebase is the source of truth — trust it even if empty
           const items: InventoryItem[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data();
@@ -129,17 +159,19 @@ export default function Dashboard() {
             });
           });
           setInventory(items);
-          // Loading state for inventory is done
-
-          // Extract unique categories
           const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
           setCategories(['all', ...uniqueCats as string[]]);
+          setInventorySource('firebase');
+        }, (error) => {
+          // Real Firebase error (quota exceeded, permission denied)
+          console.warn('Firebase error — falling back to Sheets:', error.message);
+          fetchInventoryFromSheets();
         });
 
         return () => unsubscribe();
-      });
-    });
-  }, [isAuthenticated]);
+      }).catch(() => fetchInventoryFromSheets());
+    }).catch(() => fetchInventoryFromSheets());
+  }, [fetchInventoryFromSheets]);
 
   const fetchRequestsAndUsers = async () => {
     // setIsLoading(true); // Don't set global loading true as inventory comes separately
@@ -273,8 +305,11 @@ export default function Dashboard() {
     );
   };
 
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
   const handleCheckout = async () => {
-    if (!selectedItem || !checkoutQuantity) return;
+    if (!selectedItem || !checkoutQuantity || isCheckingOut) return;
+    setIsCheckingOut(true);
 
     // 1. Close modal immediately as requested
     const itemToRequest = { ...selectedItem }; // Copy item data
@@ -300,6 +335,8 @@ export default function Dashboard() {
         // Refresh handled below
         fetchRequestsAndUsers();
         return result;
+      }).finally(() => {
+        setIsCheckingOut(false);
       }),
       {
         loading: `Requesting ${qty} ${itemToRequest.name}(s)...`,
@@ -310,7 +347,34 @@ export default function Dashboard() {
   };
 
   const handleRequestNewItem = () => {
-    toast.success('New item request submitted successfully');
+    if (!newItemNameRequest) {
+      toast.error('Please enter an item name');
+      return;
+    }
+
+    toast.promise(
+      fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'requestItem',
+          userEmail: user?.email,
+          itemName: newItemNameRequest,
+          remarks: newItemRemarksRequest
+        })
+      }).then(async (res) => {
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message);
+        setNewItemNameRequest('');
+        setNewItemRemarksRequest('');
+        setIsRequestModalOpen(false);
+        return result;
+      }),
+      {
+        loading: 'Submitting request...',
+        success: 'New item request submitted successfully',
+        error: (err) => `Failed: ${err.message}`
+      }
+    );
   };
 
   const handleLaptopToggle = async (checked: boolean) => {
@@ -394,9 +458,9 @@ export default function Dashboard() {
             </div>
             <div>
               <h1 className="text-xl font-extrabold tracking-tight text-foreground leading-none">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500">Maker</span>Inventory
+                <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-500 transition-colors">AESTHETIC</span>
               </h1>
-              <p className="text-[11px] text-muted-foreground font-medium mt-0.5">User Dashboard</p>
+              <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 group-hover:text-emerald-400 transition-colors mt-0.5 uppercase">Centre</span>
             </div>
           </div>
 
@@ -529,7 +593,7 @@ export default function Dashboard() {
                 </Select>
               </div>
 
-              <Dialog>
+              <Dialog open={isRequestModalOpen} onOpenChange={setIsRequestModalOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
                     <Plus className="w-4 h-4 mr-2" /> Request New Item
@@ -538,13 +602,35 @@ export default function Dashboard() {
                 <DialogContent>
                   <DialogHeader><DialogTitle>Request New Inventory Item</DialogTitle></DialogHeader>
                   <div className="space-y-4 pt-4">
-                    <Input placeholder="Item Name (e.g. Ergonomic Mouse)" />
-                    <Input placeholder="Reason / Remarks" />
+                    <Input
+                      value={newItemNameRequest}
+                      onChange={(e) => setNewItemNameRequest(e.target.value)}
+                      placeholder="Item Name (e.g. Ergonomic Mouse)"
+                    />
+                    <Input
+                      value={newItemRemarksRequest}
+                      onChange={(e) => setNewItemRemarksRequest(e.target.value)}
+                      placeholder="Reason / Remarks"
+                    />
                     <Button onClick={handleRequestNewItem} className="w-full bg-emerald-600">Submit Request</Button>
                   </div>
                 </DialogContent>
               </Dialog>
             </div>
+
+            {/* Data source indicator banner */}
+            {inventorySource === 'sheets' && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                <span className="text-base">📋</span>
+                <span><strong>Showing data from Google Sheets</strong> — Firebase quota may be exceeded. Data refreshed from master source.</span>
+              </div>
+            )}
+            {inventorySource === 'loading' && inventory.length === 0 && (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                Loading inventory...
+              </div>
+            )}
 
             {/* Content Grid (Grouped) */}
             {sortedCategories.length > 0 ? (

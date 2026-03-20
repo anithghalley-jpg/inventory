@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner';
 
 import { SCRIPT_URL } from '@/config';
+import { getTagStyle } from '@/lib/tagUtils';
 
 // Types
 interface InventoryItem {
@@ -103,15 +104,48 @@ export default function TeamDashboard() {
         }
     }, [user]);
 
-    // Firestore Integration
-    useEffect(() => {
-        if (!isAuthenticated) return;
+    // Track if we're using the fallback (Sheets) or Firebase
+    const [inventorySource, setInventorySource] = React.useState<'firebase' | 'sheets' | 'loading'>('loading');
 
-        // Dynamic import to be safe, or just standard import if I add it to top
+    // Helper: load inventory from Google Sheets (Golden Rule fallback)
+    const fetchInventoryFromSheets = React.useCallback(async () => {
+        try {
+            const res = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'getInventory' }),
+            });
+            const result = await res.json();
+            if (result.success && result.inventory) {
+                const items: InventoryItem[] = result.inventory.map((item: any) => ({
+                    id: item.id,
+                    name: item.name,
+                    quantity: item.quantity,
+                    category: item.category,
+                    company: item.company,
+                    imageUrl: item.imageUrl,
+                    remarks: item.remarks,
+                    links: item.links,
+                    tags: Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || '')
+                }));
+                setInventory(items);
+                const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
+                setCategories(['all', ...uniqueCats as string[]]);
+                setInventorySource('sheets');
+            }
+        } catch (err) {
+            console.error('Sheets fallback also failed:', err);
+            setInventorySource('sheets');
+        }
+    }, []);
+
+    // Inventory: Firebase is primary. Sheets is the error-only fallback.
+    // No auth gate — sets up immediately like Community.tsx so Firestore connects right away.
+    useEffect(() => {
         import('firebase/firestore').then(({ collection, query, onSnapshot }) => {
             import('../firebase').then(({ db }) => {
                 const q = query(collection(db, 'inventory'));
                 const unsubscribe = onSnapshot(q, (snapshot) => {
+                    // Firebase is source of truth — trust it even if empty
                     const items: InventoryItem[] = [];
                     snapshot.forEach((doc) => {
                         const data = doc.data();
@@ -128,19 +162,19 @@ export default function TeamDashboard() {
                         });
                     });
                     setInventory(items);
-
-                    // Extract unique categories
                     const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
                     setCategories(['all', ...uniqueCats as string[]]);
-
-                    // Only set loading false if users are also done? 
-                    // Actually users fetch is separate. We can rely on separate loading states or just let it flow.
+                    setInventorySource('firebase');
+                }, (error) => {
+                    // Real Firebase error — ONLY then fall back to Google Sheets
+                    console.warn('Firebase error — falling back to Sheets:', error.message);
+                    fetchInventoryFromSheets();
                 });
 
                 return () => unsubscribe();
-            });
-        });
-    }, [isAuthenticated]);
+            }).catch(() => fetchInventoryFromSheets());
+        }).catch(() => fetchInventoryFromSheets());
+    }, [fetchInventoryFromSheets]);
 
     useEffect(() => {
         if (isAuthenticated && (user?.role === 'TEAM' || user?.role === 'ADMIN')) {
@@ -438,9 +472,9 @@ export default function TeamDashboard() {
                             <Package className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <span className="font-bold text-lg leading-tight block">Team Dashboard</span>
+                            <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-500 transition-colors">AESTHETIC</span>
                             <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">Team View</span>
+                                <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 group-hover:text-emerald-400 transition-colors mt-0.5 uppercase">Centre</span>
                                 {isLoading && <span className="text-xs text-emerald-600 animate-pulse">• Syncing ...</span>}
                             </div>
                         </div>
@@ -575,6 +609,20 @@ export default function TeamDashboard() {
                                     </Select>
                                 </div>
                             </div>
+
+                            {/* Data source indicator banner */}
+                            {inventorySource === 'sheets' && (
+                                <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 mb-2">
+                                    <span className="text-base">📋</span>
+                                    <span><strong>Showing data from Google Sheets</strong> — Firebase quota may be exceeded. Data refreshed from master source.</span>
+                                </div>
+                            )}
+                            {inventorySource === 'loading' && inventory.length === 0 && (
+                                <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                                    <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                                    Loading inventory...
+                                </div>
+                            )}
 
                             <div className="space-y-8">
                                 {Object.keys(groupedItems).sort().map(cat => (
@@ -733,38 +781,12 @@ export default function TeamDashboard() {
                                                         {u.tags && u.tags.length > 0 && (
                                                             <div className="flex flex-wrap gap-1.5 w-full">
                                                                 {u.tags.map((tag, idx) => {
-                                                                    // Define styles for known tags
-                                                                    const getTagStyle = (tagName: string) => {
-                                                                        const lower = tagName.toLowerCase();
-                                                                        if (lower.includes('3d') || lower.includes('print')) return {
-                                                                            bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100',
-                                                                            icon: <Printer className="w-3 h-3 mr-1" />
-                                                                        };
-                                                                        if (lower.includes('laser') || lower.includes('cut')) return {
-                                                                            bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100',
-                                                                            icon: <Scissors className="w-3 h-3 mr-1" />
-                                                                        };
-                                                                        if (lower.includes('cnc') || lower.includes('mill') || lower.includes('drill')) return {
-                                                                            bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-100',
-                                                                            icon: <Zap className="w-3 h-3 mr-1" />
-                                                                        };
-                                                                        if (lower.includes('wood') || lower.includes('shop')) return {
-                                                                            bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100',
-                                                                            icon: <BookOpen className="w-3 h-3 mr-1" />
-                                                                        };
-                                                                        // Default
-                                                                        return {
-                                                                            bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100',
-                                                                            icon: <div className="w-1.5 h-1.5 mr-1 rounded-full bg-indigo-400 opacity-50" />
-                                                                        };
-                                                                    };
-
                                                                     const style = getTagStyle(tag);
 
                                                                     return (
                                                                         <span
                                                                             key={idx}
-                                                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${style.bg} ${style.text} ${style.border}`}
+                                                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${style.color}`}
                                                                         >
                                                                             {style.icon}
                                                                             {tag}

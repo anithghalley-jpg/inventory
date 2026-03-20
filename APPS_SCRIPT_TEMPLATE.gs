@@ -35,6 +35,7 @@
 const SPREADSHEET_ID = '1-Ybi9I5P20ss6P1-dsA6UkcHa591o_Tq83jVrfSMaWE'; // Replace with your Google Sheet ID
 const SHEET_NAMES = {
   USERS: 'Users',
+  HOME : 'Home',
   INVENTORY: 'Inventory',
   USAGE_HISTORY: 'UsageHistory',
   CATEGORIES: 'Categories',
@@ -87,10 +88,10 @@ function doPost(e) {
         response = handleGetPendingUsers(data);
         break;
       case 'approveUser':
-        response = handleUpdateUserStatus(data);
+        response = handleUpdateUserStatus(data.userId, 'APPROVED');
         break;
       case 'rejectUser':
-        response = handleUpdateUserStatus(data);
+        response = handleUpdateUserStatus(data.userId, 'REJECTED');
         break;
       case 'addInventoryItem':
         response = handleAddInventoryItem(data);
@@ -105,12 +106,8 @@ function doPost(e) {
         response = handleGetUsageHistory(data);
         break;
       case 'uploadImage':
-        // OPTIMIZED: This now directly updates Sheets with image URL
+        // OPTIMIZED: This just uploads and returns the URL
         response = handleUploadImageOptimized(data);
-        break;
-      case 'completeInventoryItem':
-        // NEW: Complete the inventory item after image is uploaded
-        response = handleCompleteInventoryItem(data);
         break;
       case 'getCategories':
         response = handleGetCategories(data);
@@ -266,35 +263,8 @@ function handleGetPendingUsers(data) {
   return { success: true, users: pendingUsers };
 }
 
-function handleApproveUser(data) {
-  const { userId } = data;
-  const sheet = getSheet(SHEET_NAMES.USERS);
-  const values = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0] === userId) {
-      sheet.getRange(i + 1, 4).setValue('APPROVED');
-      return { success: true, message: 'User approved' };
-    }
-  }
-  
-  return { success: false, message: 'User not found' };
-}
-
-function handleRejectUser(data) {
-  const { userId } = data;
-  const sheet = getSheet(SHEET_NAMES.USERS);
-  const values = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0] === userId) {
-      sheet.getRange(i + 1, 4).setValue('REJECTED');
-      return { success: true, message: 'User rejected' };
-    }
-  }
-  
-  return { success: false, message: 'User not found' };
-}
+// handleApproveUser and handleRejectUser were duplicate fake functions.
+// They have been removed in favor of handleUpdateUserStatus.
 
 // ===== INVENTORY MANAGEMENT =====
 
@@ -338,14 +308,13 @@ function handleAddInventoryItem(data) {
   //     return { success: false, message: 'Item already exists' };
   //   }
   // }
-  // Inside your handleCompleteInventoryItem function
   const values = sheet.getDataRange().getValues();
   for (let j = 1; j < values.length; j++) {
     // Add a safety check: String(values[j][1] || "") 
     // This converts null or numbers to strings so .toLowerCase() doesn't crash
     const existingName = String(values[j][1] || "").toLowerCase();
     
-    if (j !== i && existingName === name.toLowerCase()) {
+    if (existingName === name.toLowerCase()) {
       return { success: false, message: 'Item with this name already exists' };
     }
   }
@@ -374,7 +343,8 @@ function handleAddInventoryItem(data) {
     'admin@system',
     'CREATE',
     quantity,
-    new Date().toISOString()
+    new Date().toISOString(),
+    name // log name for LOW-5
   ]);
   
   return { success: true, itemId: itemId };
@@ -382,42 +352,17 @@ function handleAddInventoryItem(data) {
 
 // function handleCheckoutItem has been replaced by handleCheckoutRequest + handleApproveCheckoutRequest workflow
 
-function handleReturnItem(data) {
-  const { itemId, userEmail, quantity } = data;
-  const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
-  const historySheet = getSheet(SHEET_NAMES.USAGE_HISTORY);
-  const values = inventorySheet.getDataRange().getValues();
-  
-  // Find item and update quantity
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0] === itemId) {
-      const currentQty = values[i][2];
-      
-      // Update inventory
-      inventorySheet.getRange(i + 1, 3).setValue(currentQty + quantity);
-      
-      // Record usage
-      historySheet.appendRow([
-        Utilities.getUuid(),
-        itemId,
-        userEmail,
-        'RETURN',
-        quantity,
-        new Date().toISOString()
-      ]);
-      
-      return { success: true, message: 'Item returned' };
-    }
-  }
-  
-  return { success: false, message: 'Item not found' };
-}
+// handleReturnItem has been removed in favor of handleReturnRequest + handleProcessReturn
 
 // ===== CATEGORY MANAGEMENT =====
 
 function handleAddCategory(data) {
   const { categoryName } = data;
   const sheet = getSheet(SHEET_NAMES.CATEGORIES);
+  const values = sheet.getDataRange().getValues();
+  
+  const exists = values.slice(1).some(r => String(r[0]).toLowerCase() === categoryName.toLowerCase());
+  if (exists) return { success: false, message: 'Category already exists' };
   
   sheet.appendRow([categoryName]);
   return { success: true, message: 'Category added' };
@@ -503,31 +448,13 @@ function handleUploadImageOptimized(data) {
     console.log("✅ Image uploaded successfully");
     console.log("📸 Image URL: " + directLink);
     
-    // Step 3: Create temporary inventory entry with image URL
-    const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
-    const itemId = Utilities.getUuid();
-    
-    // Create a temporary row with just the image URL
-    // Other fields will be updated in the next step
-    const tempRow = [
-      itemId,
-      '[PENDING]',  // Placeholder name
-      0,            // Placeholder quantity
-      '[PENDING]',  // Placeholder category
-      '[PENDING]',  // Placeholder company
-      directLink,   // IMAGE URL (filled immediately)
-      '',           // Remarks
-      '',           // Links
-      ''            // Tags
-    ];
-    
-    inventorySheet.appendRow(tempRow);
-    console.log("📝 Temporary inventory entry created with itemId: " + itemId);
-    
-    // Step 4: Return immediately with image URL and itemId
+    // Step 3: Return immediately with image URL
+    // We NO LONGER create a [PENDING] row in Sheets.
+    // The frontend will send the complete data with this URL in the next request.
+    const tempItemId = Utilities.getUuid();
     return {
       success: true,
-      itemId: itemId,
+      itemId: tempItemId,
       imageUrl: directLink,
       message: 'Image uploaded successfully. Complete the inventory item details.'
     };
@@ -538,66 +465,7 @@ function handleUploadImageOptimized(data) {
   }
 }
 
-/**
- * NEW: handleCompleteInventoryItem
- * 
- * Completes the inventory item after image upload
- * Updates the temporary row with actual data
- * 
- * @param data {
- *   itemId: string,           // From image upload response
- *   name: string,
- *   quantity: number,
- *   category: string,
- *   company: string,
- *   remarks: string (optional),
- *   links: string (optional)
- * }
- */
-function handleCompleteInventoryItem(data) {
-  try {
-    const { itemId, name, quantity, category, company, remarks, links, tags } = data;
-    const inventorySheet = getSheet(SHEET_NAMES.INVENTORY);
-    const values = inventorySheet.getDataRange().getValues();
-    
-    // 1. Get a list of all IDs from Column A
-    const ids = values.map(r => r[0]);
-    
-    // 2. Find where our itemId is
-    const rowIndex = ids.indexOf(itemId);
-    
-    const tagsArray = Array.isArray(tags) ? tags : [];
-    
-    // 3. If found (index is not -1)
-    if (rowIndex !== -1) {
-       // Spread tags: [id, name, qty, cat, comp, img, rem, link, '', tag1, tag2, tag3...]
-       // Standard cols: 8 (A-H). Pad: 1 (I). Total standard: 9.
-       // Total width needed: 9 + tagsArray.length
-       
-       const rowData = [
-          itemId,
-          name,
-          quantity,
-          category,
-          company,
-          values[rowIndex][5], // Keep image URL
-          remarks || '',
-          links || '',
-          '', // Column I
-          ...tagsArray
-       ];
-
-       const range = inventorySheet.getRange(rowIndex + 1, 1, 1, rowData.length);
-       range.setValues([rowData]);
-
-       return { success: true, message: 'Updated successfully!' };
-    }
-    
-    return { success: false, message: 'Item ID not found' };
-  } catch (e) {
-    return { success: false, message: e.toString() };
-  }
-}
+// handleCompleteInventoryItem was removed (frontend will just call addInventoryItem)
 
 // ===== UTILITY FUNCTIONS =====
 
@@ -627,8 +495,8 @@ function handleGetCategories(data) {
 
 // 1. Fetch all users from the Sheet
 function handleGetAllUsers() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("Users");
+  const sheet = getSheet(SHEET_NAMES.USERS); // Fixed MED-6 loop bug
+  if (!sheet) return { success: false, message: 'Users sheet not found' };
   const values = sheet.getDataRange().getValues();
   
   // Skip the header row (index 0)
@@ -656,8 +524,8 @@ function handleGetAllUsers() {
 
 // 2. Update a user's status (Approve or Reject)
 function handleUpdateUserStatus(userId, newStatus) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("Users");
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  if (!sheet) return { success: false, message: 'Users sheet not found' };
   const data = sheet.getDataRange().getValues();
   
   // Find the row where the ID matches
@@ -670,8 +538,8 @@ function handleUpdateUserStatus(userId, newStatus) {
   }
 
   if (rowIndex !== -1) {
-    // Column E is index 5 (1-indexed for getRange)
-    sheet.getRange(rowIndex, 5).setValue(newStatus);
+    // Column D is index 3 (1-indexed for getRange, so 4)
+    sheet.getRange(rowIndex, 4).setValue(newStatus);
     return { success: true, message: `User status updated to ${newStatus}` };
   } else {
     return { success: false, message: "User not found" };
@@ -714,9 +582,8 @@ function handleGetRequests(data) {
       quantity: values[i][5],
       status: values[i][6],        // PENDING / APPROVED / REJECTED
       actionBy: values[i][7],      // Col H: Admin Name who approved checkout
-      returnStatus: values[i][8],  // Col I: RETURN_PENDING / APPROVED
-      // New Columns for Return Workflow
-      returnRequestStatus: values[i][8], // Using Col I for return status tracking as per request
+      returnRequestStatus: values[i][8], // Col I: RETURN_PENDING / APPROVED (Frontend expects this key)
+      returnStatus: values[i][8],  // Col I (kept for backward compatibility)
       returnTarget: values[i][9] || '',  // Col J
       returnReceiver: values[i][10] || '', // Col K: Who received it + Remarks
       returnRemarks: values[i][10] || ''   // Col K shared
@@ -865,40 +732,49 @@ function handleToggleLaptop(data) {
   const { email, status } = data; // status is 'Online' or 'Offline'
   const sheet = getSheet(SHEET_NAMES.USERS);
   const values = sheet.getDataRange().getValues();
+  const headers = values[0];
   
+  let statusCol = -1, startCol = -1, endCol = -1, totalCol = -1;
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || '').toLowerCase();
+    if (h.includes('laptop status')) statusCol = c;
+    if (h.includes('session start')) startCol = c;
+    if (h.includes('session end')) endCol = c;
+    if (h.includes('total time')) totalCol = c;
+  }
+  
+  if (statusCol === -1) statusCol = 5; // Default Col F
+  if (startCol === -1) startCol = 6;   // Default Col G
+  if (endCol === -1) endCol = 7;       // Default Col H
+  if (totalCol === -1) totalCol = 8;   // Default Col I
+
   for (let i = 1; i < values.length; i++) {
     if (values[i][0] === email) {
       const rowIndex = i + 1;
       const now = new Date();
       
-      // Update Status (Col F / Index 6)
-      sheet.getRange(rowIndex, 6).setValue(status);
+      sheet.getRange(rowIndex, statusCol + 1).setValue(status);
       
       if (status === 'Online') {
-        // Set Start Time (Col G / Index 7)
-        sheet.getRange(rowIndex, 7).setValue(now.toISOString());
+        sheet.getRange(rowIndex, startCol + 1).setValue(now.toISOString());
         return { success: true, status: 'Online', message: 'Session started' };
       } 
       else {
-        // Set End Time (Col H / Index 8)
-        sheet.getRange(rowIndex, 8).setValue(now.toISOString());
+        sheet.getRange(rowIndex, endCol + 1).setValue(now.toISOString());
         
-        // Calculate Duration
-        const startTimeStr = values[i][6]; // Col G
+        const startTimeStr = values[i][startCol];
         let addedMinutes = 0;
         
         if (startTimeStr) {
            const startTime = new Date(startTimeStr);
            const diffMs = now - startTime;
-           // Convert to minutes (round down to 2 decimals)
            addedMinutes = Math.floor(diffMs / 60000); 
         }
         
-        // Update Total Time (Col I / Index 9)
-        const currentTotal = Number(values[i][8]) || 0;
+        const currentTotal = Number(values[i][totalCol]) || 0;
         const newTotal = currentTotal + addedMinutes;
         
-        sheet.getRange(rowIndex, 9).setValue(newTotal);
+        sheet.getRange(rowIndex, totalCol + 1).setValue(newTotal);
         
         return { success: true, status: 'Offline', totalTime: newTotal, message: 'Session ended' };
       }
@@ -1040,104 +916,7 @@ function onInventoryEdit(e) {
 
 // ===== MACHINE LOGS FEATURE =====
 
-function handleGetMachineLogs(data) {
-    const machines = SHEET_NAMES.MACHINES;
-    const result = [];
-
-    // Pre-fetch Users for RFID Lookup
-    // Users Sheet: Col A = ID/Email?, Col B = Name?, ... Col J = RFID?
-    // User Prompt: "Users sheets under column J (rfid)... name is taken from that same row under col B"
-    const usersSheet = getSheet(SHEET_NAMES.USERS);
-    const usersData = usersSheet.getDataRange().getValues();
-    const rfidMap = {}; // RFID -> Name
-
-    // Skip header (row 0)
-    for (let i = 1; i < usersData.length; i++) {
-        const rfid = String(usersData[i][9] || '').trim(); // Col J is index 9
-        const name = usersData[i][1]; // Col B is index 1
-        if (rfid) {
-            rfidMap[rfid] = name;
-        }
-    }
-
-    machines.forEach(machineName => {
-        const sheet = getSheet(machineName);
-        if (!sheet) return;
-
-        const range = sheet.getDataRange();
-        const values = range.getValues();
-        // Headers: RFID(A), Name(B), Command(C), Machine(D), Start(E), Stop(F), Duration(G)
-        // Indices: 0,       1,       2,          3,          4,        5,       6
-
-        // We need to look for empty names and update them if RFID matches
-        // But we should be careful about writing back to sheet too often. 
-        // Let's collect updates.
-
-        const logs = [];
-        let isOnline = false;
-        let currentUser = '';
-
-        // Iterate rows (skip header)
-        for (let i = 1; i < values.length; i++) {
-            const row = values[i];
-            let rfid = String(row[0] || '').trim();
-            let name = row[1];
-            const command = String(row[2] || '').toUpperCase(); // Col C
-            const machineId = row[3]; // Col D
-            const start = row[4];
-            const stop = row[5];
-            const duration = row[6]; // Col G
-
-            // 1. UPDATE NAME IF MISSING
-            if (!name && rfid && rfidMap[rfid]) {
-                name = rfidMap[rfid];
-                // Update the cell in the sheet directly
-                // i + 1 is row number (1-based)
-                sheet.getRange(i + 1, 2).setValue(name); // Col B is 2
-            }
-
-            logs.push({
-                rfid,
-                name: name || 'Unknown',
-                command,
-                machineId,
-                start,
-                stop,
-                duration
-            });
-        }
-
-        // Determine Status from LAST row
-        if (logs.length > 0) {
-            const lastLog = logs[logs.length - 1];
-            // "last entry of col D is ON or GET" -> User likely meant Col C (Command)
-            // "command column C is ON or GET... OFF or PASS"
-            const status = lastLog.command;
-            if (status === 'ON' || status === 'GET') {
-                isOnline = true;
-                currentUser = lastLog.name;
-            }
-        }
-
-        result.push({
-            id: machineName,
-            name: formatMachineName(machineName), // e.g. "Laser Cutter"
-            logs: logs.reverse(), // Newest first
-            isOnline,
-            currentUser
-        });
-    });
-
-    return {
-        success: true,
-        data: result
-    };
-}
-
-function formatMachineName(str) {
-    // Simple formatter: "LaserCutter" -> "Laser Cutter"
-    return str.replace(/([A-Z])/g, ' $1').trim();
-}
+// (Legacy handleGetMachineLogs block removed, keeping the processor-based one below)
 
 // ===== MACHINE LOGIC PROCESSOR =====
 
@@ -1584,7 +1363,19 @@ function handleManageHomeContent(data) {
   }
   if (!found) sheet.appendRow(newRow);
   
-  try { syncHomeToFirebase(); } catch(e) { console.error(e); }
+  try { 
+    const firestore = getFirestore();
+    const docId = newRow[0];
+    firestore.updateDocument('home/' + docId, {
+      id: docId,
+      type: newRow[1],
+      heading: newRow[2],
+      description: newRow[3],
+      contentUrl: newRow[4],
+      lastUpdated: new Date().toISOString()
+    }, true);
+  } catch(e) { console.error('Single-doc sync failed:', e); }
+  
   return { success: true };
 }
 
@@ -1884,6 +1675,48 @@ function handleSyncRequestsToFirebase(data) {
 }
 
 /**
+ * Syncs the entire "Home" sheet to Firestore 'home' collection.
+ * Required for displaying guest-facing pages.
+ */
+function syncHomeToFirebase(fullSync = false) {
+  const firestore = getFirestore();
+  const sheet = getSheet(SHEET_NAMES.HOME);
+  if (!sheet) return { success: false, message: 'Home sheet not found' };
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return { success: true, message: 'Home sheet empty' };
+
+  // Skip header
+  const data = values.slice(1);
+  let synced = 0, errors = 0;
+
+  data.forEach((row, i) => {
+    const id = String(row[0]).trim();
+    if (!id) return;
+
+    try {
+      firestore.updateDocument('home/' + id, {
+        id: id,
+        type: String(row[1] || ''),
+        heading: String(row[2] || ''),
+        description: String(row[3] || ''),
+        contentUrl: String(row[4] || ''),
+        lastUpdated: new Date().toISOString()
+      }, true); // Create if not exists
+      synced++;
+    } catch (e) {
+      console.error('Error syncing home ID ' + id, e);
+      errors++;
+    }
+
+    // Rate limiting
+    if (i > 0 && i % 3 === 0) Utilities.sleep(400);
+  });
+
+  return { success: true, message: `Synced ${synced} home blocks (${errors} errors).` };
+}
+
+/**
  * Delete a home content block from the Home sheet and Firestore.
  */
 function handleDeleteHomeContent(data) {
@@ -2043,4 +1876,183 @@ function handleCheckSyncStatus(data) {
   }
 
   return result;
+}
+
+
+// ============================================================
+// FIREBASE SYNC RESTORATION
+// Run installTriggers() ONCE from the Apps Script editor to
+// recreate all triggers that were deleted.
+// ============================================================
+
+/**
+ * Sync all Users from the Users sheet to Firestore.
+ * Run manually or via a time-based trigger.
+ */
+function syncUsersToFirebase() {
+  const firestore = getFirestore();
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  if (!sheet) { console.error('Users sheet not found'); return; }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) { console.log('No users to sync'); return; }
+
+  const noteColIndex = values[0].indexOf('Note');
+
+  let synced = 0, errors = 0;
+  values.slice(1).forEach((row, i) => {
+    const email = String(row[1] || '').trim();
+    if (!email) return;
+
+    const userDoc = {
+      id:           String(row[0] || ''),
+      email:        email,
+      name:         String(row[2] || ''),
+      role:         String(row[3] || 'USER'),
+      status:       String(row[4] || 'PENDING'),
+      createdDate:  String(row[5] || ''),
+      laptopStatus: String(row[6] || 'Offline'),
+      totalTime:    Number(row[7]) || 0,
+      tags:         row.slice(8).filter(t => t !== ''),
+      note:         noteColIndex !== -1 ? String(row[noteColIndex] || '') : '',
+      lastUpdated:  new Date().toISOString()
+    };
+
+    try {
+      firestore.updateDocument('users/' + email, userDoc);
+    } catch (e) {
+      try { firestore.createDocument('users/' + email, userDoc); } catch (e2) { errors++; }
+    }
+    synced++;
+    if (i > 0 && i % 5 === 0) Utilities.sleep(300);
+  });
+  console.log('Synced ' + synced + ' users to Firebase (' + errors + ' errors).');
+}
+
+/**
+ * Sync all active Requests (checkouts) from the Requests sheet to Firestore.
+ * Run manually or via a time-based trigger.
+ */
+function syncRequestsToFirebase() {
+  const firestore = getFirestore();
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  if (!sheet) { console.error('Requests sheet not found'); return; }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) { console.log('No requests to sync'); return; }
+
+  const headers = values[0].map(h => String(h).trim());
+  let synced = 0, errors = 0;
+  
+  const currentIds = new Set();
+
+  values.slice(1).forEach((row, i) => {
+    const docId = String(row[0] || '').trim();
+    if (!docId) return;
+
+    currentIds.add(docId);
+
+    const requestDoc = {};
+    headers.forEach((h, idx) => {
+      if (h) requestDoc[h] = row[idx];
+    });
+    requestDoc['lastUpdated'] = new Date().toISOString();
+
+    try {
+      firestore.updateDocument('requests/' + docId, requestDoc);
+    } catch (e) {
+      try { firestore.createDocument('requests/' + docId, requestDoc); } catch (e2) { errors++; }
+    }
+    synced++;
+    if (i > 0 && i % 5 === 0) Utilities.sleep(300);
+  });
+  
+  // Cleanup deleted requests using metadata tracking (100% fail-proof)
+  // We save the last known IDs to a metadata document so we don't need getDocuments()
+  try {
+    let oldIds = [];
+    try {
+      const metaResponse = firestore.getDocument('metadata/requests_sync');
+      if (metaResponse && metaResponse.fields && metaResponse.fields.ids && metaResponse.fields.ids.arrayValue) {
+         oldIds = metaResponse.fields.ids.arrayValue.values.map(v => v.stringValue || v.integerValue);
+      } else if (metaResponse && metaResponse.ids) {
+         oldIds = metaResponse.ids; // Depending on how library parses it
+      }
+    } catch (e) {
+      // First run or metadata doc doesn't exist yet
+    }
+
+    let deletedCount = 0;
+    // Delete any old ID that is no longer in the current sheet
+    oldIds.forEach(oldId => {
+      if (!currentIds.has(String(oldId))) {
+        try { firestore.deleteDocument('requests/' + oldId); deletedCount++; } catch (e) { /* ignore */ }
+      }
+    });
+
+    // Save the new current IDs for the next sync
+    const newIdsArray = Array.from(currentIds);
+    try {
+      firestore.updateDocument('metadata/requests_sync', { ids: newIdsArray }, true);
+    } catch (e) {
+      try { firestore.createDocument('metadata/requests_sync', { ids: newIdsArray }); } catch(e2){}
+    }
+    
+    if (deletedCount > 0) {
+      console.log('Cleaned up ' + deletedCount + ' removed requests from Firebase.');
+    }
+  } catch (e) {
+    console.warn('Could not clean up deleted requests: ' + e);
+  }
+
+  console.log('Synced ' + synced + ' requests to Firebase (' + errors + ' errors).');
+}
+
+/**
+ * INSTALL ALL TRIGGERS
+ * ▶ Run this function ONCE from the Apps Script editor (Run → Run function → installTriggers)
+ * This recreates all triggers that were deleted.
+ *
+ * Triggers created:
+ *   1. syncInventoryToFirebase  — every 30 minutes (time-based)
+ *   2. syncUsersToFirebase      — every 30 minutes (time-based)
+ *   3. syncRequestsToFirebase   — every 30 minutes (time-based)
+ *   4. syncHomeToFirebase       — every 1 hour (time-based)
+ *   5. onInventoryEdit          — on spreadsheet edit (onEdit)
+ */
+function installTriggers() {
+  // Delete ALL existing triggers first to avoid duplicates
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  // Time-based: sync inventory every 30 minutes
+  ScriptApp.newTrigger('syncInventoryToFirebase')
+    .timeBased().everyMinutes(30).create();
+
+  // Time-based: sync users every 30 minutes
+  ScriptApp.newTrigger('syncUsersToFirebase')
+    .timeBased().everyMinutes(30).create();
+
+  // Time-based: sync requests every 30 minutes
+  ScriptApp.newTrigger('syncRequestsToFirebase')
+    .timeBased().everyMinutes(30).create();
+
+  // Time-based: sync home content every hour
+  ScriptApp.newTrigger('syncHomeToFirebase')
+    .timeBased().everyHours(1).create();
+
+  // Spreadsheet onEdit: sync inventory row immediately when it changes
+  ScriptApp.newTrigger('onInventoryEdit')
+    .forSpreadsheet(ss).onEdit().create();
+
+  console.log('✅ All 5 triggers installed successfully!');
+  console.log('Running initial full sync now...');
+
+  // Run an immediate full sync after installing
+  syncInventoryToFirebase();
+  syncUsersToFirebase();
+  syncHomeToFirebase(true);
+
+  console.log('✅ Initial sync complete! Firebase is now up to date.');
 }
