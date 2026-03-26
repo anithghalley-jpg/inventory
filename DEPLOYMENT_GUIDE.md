@@ -2,6 +2,19 @@
 
 This guide covers deploying the Inventory Management System to Firebase Hosting with Google Apps Script backend integration.
 
+## Production Config Checklist
+
+Set these frontend environment variables before every production build:
+
+```env
+VITE_CONVEX_URL=https://your-deployment.convex.cloud
+VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/{YOUR_WEB_APP_DEPLOYMENT}/exec
+VITE_GOOGLE_DRIVE_FOLDER_ID={YOUR_FOLDER_ID}
+```
+
+Do not rely on fallback values for hosted builds. Vite bakes these into the bundle at build time, so changing them after `pnpm build` does nothing until you rebuild.
+
 ## Prerequisites
 
 - Google Account with access to Google Cloud, Firebase, and Google Drive
@@ -48,7 +61,7 @@ pnpm install
 pnpm build
 ```
 
-This creates a `dist` folder with optimized production files.
+This creates a `dist` folder with optimized production files. If the build uses the wrong `VITE_CONVEX_URL`, the hosted login will stall after Google sign-in because the bundle will try to talk to the wrong Convex deployment.
 
 ### Step 5: Deploy to Firebase
 
@@ -146,43 +159,16 @@ E: timestamp
 
 ### Step 1: Update Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root for local builds, or set the same variables in the Firebase Hosting build environment:
 
 ```env
-VITE_APPS_SCRIPT_URL=https://script.google.com/macros/d/{YOUR_SCRIPT_ID}/userweb
+VITE_CONVEX_URL=https://your-deployment.convex.cloud
+VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+VITE_APPS_SCRIPT_URL=https://script.google.com/macros/s/{YOUR_WEB_APP_DEPLOYMENT}/exec
 VITE_GOOGLE_DRIVE_FOLDER_ID={YOUR_FOLDER_ID}
 ```
 
-### Step 2: Update AuthContext
-
-Edit `client/src/contexts/AuthContext.tsx` to use the Apps Script endpoint:
-
-```typescript
-const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL;
-
-const login = useCallback(async (email: string, name: string) => {
-  setIsLoading(true);
-  try {
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'login',
-        email,
-        name
-      })
-    });
-    const data = await response.json();
-    if (data.success) {
-      setUser(data.user);
-      localStorage.setItem(`user_${email}`, JSON.stringify(data.user));
-    }
-  } finally {
-    setIsLoading(false);
-  }
-}, []);
-```
-
-### Step 3: Rebuild and Deploy
+### Step 2: Rebuild and Deploy
 
 ```bash
 pnpm build
@@ -199,25 +185,29 @@ For production, implement real Google Sign-In:
 2. Create a new project
 3. Enable Google+ API
 4. Create OAuth 2.0 credentials (Web application)
-5. Add authorized redirect URIs:
-   - `https://inventory-management-xxxxx.web.app`
-   - `http://localhost:3000`
+5. Add **Authorized JavaScript origins** for every live frontend origin:
+   - `https://<project-id>.web.app`
+   - `https://<project-id>.firebaseapp.com`
+   - your custom domain, if attached
+   - local development origins such as `http://localhost:5173`
+6. If your OAuth setup uses redirects anywhere else, keep those Authorized redirect URIs too.
 
-### Step 2: Implement Google Sign-In
+### Step 2: Rebuild in the Correct Order
 
-Update `Login.tsx`:
+1. Confirm the Google OAuth origins are updated.
+2. Confirm the Firebase Hosting build environment has the correct `VITE_CONVEX_URL` and `VITE_GOOGLE_CLIENT_ID`.
+3. Run a fresh `pnpm build`.
+4. Run `firebase deploy --only hosting`.
 
-```typescript
-import { GoogleLogin } from '@react-oauth/google';
+### Step 3: Verify Hosted Login
 
-// In your login component
-<GoogleLogin
-  onSuccess={(credentialResponse) => {
-    const decoded = jwtDecode(credentialResponse.credential);
-    login(decoded.email, decoded.name);
-  }}
-/>
-```
+After deploy:
+
+1. Open the hosted Firebase URL.
+2. Click Google Sign-In and confirm the popup opens without an unauthorized-origin error.
+3. Complete sign-in and confirm the app leaves the login page.
+4. In the browser Network tab, verify requests go to your real Convex deployment and not `placeholder-url.convex.cloud`.
+5. Test one `USER`, one `TEAM`, and one `ADMIN` account and verify they land on the correct route.
 
 ## Part 5: Security Configuration
 

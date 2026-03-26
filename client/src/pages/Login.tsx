@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
+import { GOOGLE_CLIENT_ID } from '@/config';
 
 /**
  * Design: Modern Minimalist - Login Page.
@@ -22,8 +23,21 @@ export default function Login() {
   const { login } = useAuth();
   const [, navigate] = useLocation();
 
-  // Replace YOUR_GOOGLE_CLIENT_ID with your actual ID from Google Console
-  const GOOGLE_CLIENT_ID = "631532726702-n5v60fv80jgri9u370fv1qo26m8aab04.apps.googleusercontent.com";
+  if (!GOOGLE_CLIENT_ID) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-background to-emerald-50 px-4">
+        <Card className="card-soft max-w-lg p-8 space-y-4">
+          <h1 className="text-2xl font-display font-bold text-foreground">Google Sign-In is not configured</h1>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Set <code>VITE_GOOGLE_CLIENT_ID</code> for this deployment, rebuild the frontend, and redeploy Firebase Hosting.
+          </p>
+          <p className="text-sm leading-6 text-muted-foreground">
+            In Google Cloud Console, add your hosted Firebase domains to the OAuth client&apos;s Authorized JavaScript origins before testing login.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
