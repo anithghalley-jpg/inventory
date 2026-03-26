@@ -105,7 +105,7 @@ export default function Home() {
             transition={{ duration: 10, repeat: Infinity, repeatType: "reverse", ease: "linear" }}
             className="absolute z-0 text-white/5 font-display font-black text-6xl md:text-[8rem] lg:text-[10rem] text-center leading-none whitespace-nowrap tracking-tighter"
           >
-            AESTHETIC<br />CENTRE
+            AESTHETIC<br /> <br /> <br />CENTRE
           </motion.div>
 
           {/* Optional little stars */}

@@ -13,15 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Create Firebase Config
-        env:
-          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
-        run: |
-          if [ -z "$FIREBASE_CONFIG" ]; then
-            echo "Error: FIREBASE_CLIENT_CONFIG secret is missing or empty!"
-            exit 1
-          fi
-          echo "$FIREBASE_CONFIG" > client/src/firebase-config.json
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
       - name: Setup Node.js
@@ -30,6 +21,11 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
       - name: Install & Build
+        env:
+          VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_APPS_SCRIPT_URL: ${{ secrets.VITE_APPS_SCRIPT_URL }}
+          VITE_GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.VITE_GOOGLE_DRIVE_FOLDER_ID }}
         run: pnpm install --frozen-lockfile && pnpm run build
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:

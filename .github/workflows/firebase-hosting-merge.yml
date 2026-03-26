@@ -12,34 +12,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Write the PUBLIC Firebase config (client)
-      - name: Create Client Config
-        env:
-          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CLIENT_CONFIG }}
-        run: |
-          mkdir -p client/src
-          cat <<EOF > client/src/firebase-config.json
-          $FIREBASE_CONFIG
-          EOF
-
-      # 2. Setup pnpm
+      # 1. Setup pnpm
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      # 3. Setup Node.js
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      # 4. Install dependencies & build
+      # 3. Install dependencies & build
       - name: Install & Build
+        env:
+          VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_APPS_SCRIPT_URL: ${{ secrets.VITE_APPS_SCRIPT_URL }}
+          VITE_GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.VITE_GOOGLE_DRIVE_FOLDER_ID }}
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
 
-      # 5. Deploy to Firebase Hosting
+      # 4. Deploy to Firebase Hosting
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
