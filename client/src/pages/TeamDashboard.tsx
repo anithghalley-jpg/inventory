@@ -12,12 +12,14 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen
+    Printer, Scissors, Zap, BookOpen, XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { SCRIPT_URL } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 // Types
 interface InventoryItem {
@@ -104,8 +106,10 @@ export default function TeamDashboard() {
         }
     }, [user]);
 
-    // Track if we're using the fallback (Sheets) or Firebase
-    const [inventorySource, setInventorySource] = React.useState<'firebase' | 'sheets' | 'loading'>('loading');
+    // Track if we're using the fallback (Sheets) or Convex
+    const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
+    
+    const convexInventory = useQuery(api.inventory.getAll);
 
     // Helper: load inventory from Google Sheets (Golden Rule fallback)
     const fetchInventoryFromSheets = React.useCallback(async () => {
@@ -138,43 +142,26 @@ export default function TeamDashboard() {
         }
     }, []);
 
-    // Inventory: Firebase is primary. Sheets is the error-only fallback.
-    // No auth gate — sets up immediately like Community.tsx so Firestore connects right away.
+    // Inventory: Convex is primary. Sheets is the error-only fallback.
     useEffect(() => {
-        import('firebase/firestore').then(({ collection, query, onSnapshot }) => {
-            import('../firebase').then(({ db }) => {
-                const q = query(collection(db, 'inventory'));
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    // Firebase is source of truth — trust it even if empty
-                    const items: InventoryItem[] = [];
-                    snapshot.forEach((doc) => {
-                        const data = doc.data();
-                        items.push({
-                            id: doc.id,
-                            name: data.name,
-                            quantity: data.quantity,
-                            category: data.category,
-                            company: data.company,
-                            imageUrl: data.imageUrl,
-                            remarks: data.remarks,
-                            links: data.links,
-                            tags: Array.isArray(data.tags) ? data.tags.join(',') : (data.tags || '')
-                        });
-                    });
-                    setInventory(items);
-                    const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
-                    setCategories(['all', ...uniqueCats as string[]]);
-                    setInventorySource('firebase');
-                }, (error) => {
-                    // Real Firebase error — ONLY then fall back to Google Sheets
-                    console.warn('Firebase error — falling back to Sheets:', error.message);
-                    fetchInventoryFromSheets();
-                });
-
-                return () => unsubscribe();
-            }).catch(() => fetchInventoryFromSheets());
-        }).catch(() => fetchInventoryFromSheets());
-    }, [fetchInventoryFromSheets]);
+        if (convexInventory !== undefined) {
+            const items: InventoryItem[] = convexInventory.map(doc => ({
+                id: doc.itemId || doc._id,
+                name: doc.name,
+                quantity: doc.quantity,
+                category: doc.category,
+                company: doc.company,
+                imageUrl: doc.imageUrl,
+                remarks: doc.remarks,
+                links: doc.links,
+                tags: Array.isArray(doc.tags) ? doc.tags.join(',') : (doc.tags || '')
+            }));
+            setInventory(items);
+            const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
+            setCategories(['all', ...uniqueCats as string[]]);
+            setInventorySource('convex');
+        }
+    }, [convexInventory]);
 
     useEffect(() => {
         if (isAuthenticated && (user?.role === 'TEAM' || user?.role === 'ADMIN')) {
@@ -183,94 +170,69 @@ export default function TeamDashboard() {
     }, [isAuthenticated, user]);
 
     // Data Fetching Logic
-    const fetchAllData = async () => {
-        // Wrapper for manual refreshes
-        setIsLoading(true);
-        try {
-            await fetchUsers(); // Only fetch users manually, inventory is real-time
-        } catch (e) {
-            toast.error("Failed to load data");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const convexRequests = useQuery(api.requests.getAll);
+    const convexUsers = useQuery(api.users.getAll);
 
+    const checkoutRequestMut = useMutation(api.requests.checkoutRequest);
+    const initiateReturnMut = useMutation(api.requests.initiateReturn);
+    const processReturnMut = useMutation(api.requests.processReturn);
+    const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
+    const toggleLaptopMut = useMutation(api.users.toggleLaptop);
 
-    const fetchUsers = async () => {
-        // SECURED: Pass requesterRole
-        const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'getAllUsers',
-                requesterRole: user?.role
-            })
+    useEffect(() => {
+        if (!convexUsers || !convexRequests) return;
+        
+        setAllUsers(convexUsers.map((u: any) => ({ ...u, id: u._id })));
+
+        const vApprovers = convexUsers
+            .filter((u: any) => (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED')
+            .map((u: any) => ({ ...u, id: u._id }));
+
+        // My Active Checkouts
+        setMyItems(convexRequests.filter((r: any) =>
+            r.userEmail === user?.email &&
+            (r.status === 'APPROVED' || r.status === 'PENDING') &&
+            r.returnStatus !== 'RETURN_APPROVED' &&
+            (r.returnStatus || '').toLowerCase() !== 'yes'
+        ).map((r: any) => ({ ...r, id: r.date })));
+
+        // Incoming Returns
+        setPendingReturns(convexRequests.filter((r: any) =>
+            r.status === 'APPROVED' &&
+            r.returnStatus === 'RETURN_PENDING' &&
+            (user?.role === 'ADMIN' || r.returnTarget === user?.name)
+        ));
+
+        // Pending Checkouts
+        const teamPendingCheckouts = convexRequests.filter((r: any) => {
+            const requester = convexUsers.find((u: any) => u.email === r.userEmail);
+            const isRequesterTeam = requester?.role === 'TEAM' || requester?.role === 'ADMIN';
+            return r.status === 'PENDING' && !isRequesterTeam;
         });
-        const result = await response.json();
-        if (result.success) {
-            setAllUsers(result.users);
+        setPendingCheckouts(teamPendingCheckouts);
 
-            // Set Approvers (Admins + Approved Team)
-            // Logic moved to inside success block to handle role-based filtering dynamically
-            const validApprovers = result.users.filter((u: any) =>
-                (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
-            );
-            // Default, will be overridden below if Team
-            setApprovers(validApprovers);
-
-            // Fetch Transaction History (Secured)
-            const reqResponse = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'getRequests',
-                    requesterEmail: user?.email,
-                    requesterRole: user?.role
-                })
-            });
-            const reqResult = await reqResponse.json();
-
-            if (reqResult.success) {
-                // 1. My Active Checkouts
-                setMyItems(reqResult.requests.filter((r: any) =>
-                    r.userEmail === user?.email &&
-                    (r.status === 'APPROVED' || r.status === 'PENDING') && // Show Pending checkouts too
-                    r.returnRequestStatus !== 'RETURN_APPROVED' &&
-                    (r.returnStatus || '').toLowerCase() !== 'yes'
-                ).map((r: any) => ({ ...r, id: r.date })));
-
-                // 2. Incoming Returns (For Team/Admin to Process)
-                setPendingReturns(reqResult.requests.filter((r: any) =>
-                    r.status === 'APPROVED' &&
-                    r.returnRequestStatus === 'RETURN_PENDING' &&
-                    (user?.role === 'ADMIN' || r.returnTarget === user?.name)
-                ));
-
-                // 3. Pending Checkout Requests (For Team to Approve)
-                // RULE: Team can only approve USER requests, not other TEAM members (Admin only).
-                // RULE: Team cannot approve their own request.
-                const teamPendingCheckouts = reqResult.requests.filter((r: any) => {
-                    const requester = result.users.find((u: any) => u.email === r.userEmail);
-                    const isRequesterTeam = requester?.role === 'TEAM' || requester?.role === 'ADMIN'; // Treat Admin/Team requests as restricted
-                    return r.status === 'PENDING' && !isRequesterTeam;
-                });
-                setPendingCheckouts(teamPendingCheckouts);
-
-                // Refine Approvers for Team Members (Must return to Admin)
-                if (user?.role === 'TEAM') {
-                    setApprovers(result.users.filter((u: any) => u.role === 'ADMIN' && u.status === 'APPROVED'));
-                } else {
-                    setApprovers(result.users.filter((u: any) =>
-                        (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
-                    ));
-                }
-
-                // 3. All Active Loans (For Monitor)
-                setActiveRequests(reqResult.requests.filter((r: any) =>
-                    r.status === 'APPROVED' &&
-                    r.returnRequestStatus !== 'RETURN_APPROVED' && // Hide returned items
-                    (r.returnStatus || '').toLowerCase() !== 'yes'
-                ));
-            }
+        // Approvers Refinement
+        if (user?.role === 'TEAM') {
+            setApprovers(convexUsers
+                .filter((u: any) => u.role === 'ADMIN' && u.status === 'APPROVED')
+                .map((u: any) => ({ ...u, id: u._id })));
+        } else {
+            setApprovers(vApprovers);
         }
+
+        // Active Loans
+        setActiveRequests(convexRequests.filter((r: any) =>
+            r.status === 'APPROVED' &&
+            r.returnStatus !== 'RETURN_APPROVED' &&
+            (r.returnStatus || '').toLowerCase() !== 'yes'
+        ));
+    }, [convexUsers, convexRequests, user]);
+
+    // Keep function for the manual refresh button to not break UI
+    const fetchUsers = async () => {};
+
+    const fetchAllData = async () => {
+        toast.success("Synchronized with Convex!");
     };
 
     // Actions Handlers
@@ -283,21 +245,13 @@ export default function TeamDashboard() {
         setCheckoutQuantity('1');
 
         toast.promise(
-            fetch(SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'checkoutRequest',
-                    userEmail: user?.email,
-                    userName: user?.name,
-                    itemId: itemToRequest.id,
-                    itemName: itemToRequest.name,
-                    quantity: parseInt(qty)
-                })
-            }).then(async (res) => {
-                const result = await res.json();
-                if (!result.success) throw new Error(result.message);
-                fetchUsers();
-                return result;
+            checkoutRequestMut({
+                userEmail: user?.email || '',
+                userName: user?.name || '',
+                itemId: itemToRequest.id,
+                itemName: itemToRequest.name,
+                quantity: parseInt(qty),
+                scriptUrl: SCRIPT_URL
             }),
             {
                 loading: `Requesting ${qty} ${itemToRequest.name}(s)...`,
@@ -313,36 +267,19 @@ export default function TeamDashboard() {
         const item = { ...returnItem };
         const target = returnTarget;
 
-        // 1. Close modal immediately
         setReturnItem(null);
         setReturnTarget('');
 
-        // 2. Optimistic Update: Remove from My Items immediately
-        setMyItems(prev => prev.filter(i => i.id !== item.id));
-
         toast.promise(
-            fetch(SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'initiateReturn',
-                    date: item.id,
-                    returnTarget: target
-                })
-            }).then(async (res) => {
-                const result = await res.json();
-                if (!result.success) throw new Error(result.message);
-                // Background refresh eventually
-                // fetchAllData(); 
-                return result;
+            initiateReturnMut({
+                requestId: item.id,
+                returnTarget: target,
+                scriptUrl: SCRIPT_URL
             }),
             {
                 loading: `Returning item to ${target}...`,
                 success: `Return initiated!`,
-                error: (err) => {
-                    // Rollback
-                    fetchAllData();
-                    return `Failed: ${err.message}`;
-                }
+                error: (err) => `Failed: ${err.message}`
             }
         );
     };
@@ -353,42 +290,20 @@ export default function TeamDashboard() {
         const returnData = { ...selectedReturn };
         const remarks = returnRemarks;
 
-        // 1. Close modal immediately
         setSelectedReturn(null);
         setReturnRemarks('');
 
-        // 2. Optimistic Update (Optional: Remove from list immediately)
-        // We can keep the optimistic update for the list to feel snappy
-        setPendingReturns(prev => prev.filter(r => r.date !== returnData.date));
-        setActiveRequests(prev => prev.filter(r => r.date !== returnData.date));
-
         toast.promise(
-            fetch(SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'processReturn',
-                    date: returnData.date,
-                    receiverName: user?.name,
-                    remarks: remarks,
-                    quantity: returnData.quantity,
-                    itemId: returnData.itemId,
-                    userEmail: returnData.userEmail
-                })
-            }).then(async (res) => {
-                const result = await res.json();
-                if (!result.success) throw new Error(result.message);
-                fetchUsers();
-                // fetchInventory handled by listener
-                return result;
+            processReturnMut({
+                requestId: returnData.date,
+                approverName: user?.name || '',
+                remarks,
+                scriptUrl: SCRIPT_URL
             }),
             {
                 loading: 'Receiving item...',
                 success: 'Item successfully received!',
-                error: (err) => {
-                    // Rollback optimistic update if failed
-                    fetchUsers();
-                    return `Failed: ${err.message}`;
-                }
+                error: (err) => `Failed: ${err.message}`
             }
         );
     };
@@ -396,36 +311,54 @@ export default function TeamDashboard() {
 
     const handleApproveRequest = async (req: any) => {
         try {
-            // Optimistic Update
-            const prevCheckouts = [...pendingCheckouts];
-            setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
             toast.success("Request Approved");
-
-            await fetch(SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({
-                    action: 'approveCheckoutRequest',
-                    requestId: req.date,
-                    approverName: user?.name
-                })
+            await approveCheckoutMut({
+                requestId: req.date,
+                approverName: user?.name || '',
+                scriptUrl: SCRIPT_URL
             });
-            fetchUsers();
-            // fetchInventory(1, true); // Handled by Firestore listener
         } catch (e) {
             toast.error("Approval failed");
-            fetchUsers(); // Rollback
         }
     };
 
     const handleLaptopToggle = async (checked: boolean) => {
         const newStatus = checked ? 'Online' : 'Offline';
         setLaptopStatus(newStatus);
-        const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'toggleLaptop', email: user?.email, status: newStatus })
-        });
-        const res = await response.json();
-        if (res.success && newStatus === 'Offline') setTotalScreenTime(res.totalTime);
+        try {
+            await toggleLaptopMut({
+                email: user?.email || '',
+                isTurningOn: checked,
+                newTotal: totalScreenTime,
+                scriptUrl: SCRIPT_URL,
+            });
+            if (newStatus === 'Offline') {
+                toast.success('Session Ended.'); 
+            } else {
+                toast.success('Lab Session Started');
+            }
+            
+        } catch (e) {
+            toast.error("Status update failed");
+            setLaptopStatus(checked ? 'Offline' : 'Online');
+        }
+    };
+
+    const handleForceTurnOff = async (email: string) => {
+        const targetUser = allUsers.find(u => u.email === email);
+        toast.promise(
+            toggleLaptopMut({
+                email: email,
+                isTurningOn: false,
+                newTotal: targetUser?.totalTime || 0,
+                scriptUrl: SCRIPT_URL,
+            }),
+            {
+                loading: 'Forcing session to close...',
+                success: 'User session terminated.',
+                error: (err) => `Failed: ${err.message}`
+            }
+        );
     };
 
     // Helpers
@@ -937,17 +870,26 @@ export default function TeamDashboard() {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 {allUsers.filter(u => u.laptopStatus === 'Online').map(u => (
                                     <Card key={u.id} className="group p-5 border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-all">
-                                        <div className="flex items-center gap-4">
-                                            <div className="relative">
-                                                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-700 font-bold text-lg group-hover:bg-emerald-100 transition-colors">
-                                                    {u.name.charAt(0)}
+                                        <div className="flex items-center justify-between w-full">
+                                            <div className="flex items-center gap-4">
+                                                <div className="relative">
+                                                    <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-700 font-bold text-lg group-hover:bg-emerald-100 transition-colors">
+                                                        {u.name.charAt(0)}
+                                                    </div>
+                                                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
                                                 </div>
-                                                <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse shadow-sm"></span>
+                                                <div>
+                                                    <p className="font-bold text-slate-900">{u.name}</p>
+                                                    <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="font-bold text-slate-900">{u.name}</p>
-                                                <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
-                                            </div>
+                                            <button 
+                                                onClick={() => handleForceTurnOff(u.email)}
+                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                title="Force Turn Off"
+                                            >
+                                                <XCircle className="w-5 h-5" />
+                                            </button>
                                         </div>
                                     </Card>
                                 ))}

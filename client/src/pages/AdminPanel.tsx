@@ -22,6 +22,8 @@ import { MachineCard, MachineData } from '@/components/MachineCard';
 // 1. Add your Google Apps Script Deployment URL at the top of your component
 import { SCRIPT_URL, DRIVE_FOLDER_ID } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 interface PendingUser {
   id: string;
@@ -39,6 +41,9 @@ interface User {
   role: string;
   createdDate: string;
   tags?: string[]; // New: User tags (permissions)
+  totalTime?: number;
+  laptopStatus?: string;
+  note?: string;
 }
 
 interface InventoryItem {
@@ -67,6 +72,22 @@ interface UsageRecord {
 export default function AdminPanel() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
+  const toggleLaptopMut = useMutation(api.users.toggleLaptop);
+  const updateUserStatusMut = useMutation(api.users.updateStatus);
+  const updateUserProfileMut = useMutation(api.users.updateProfile);
+  const addInventoryItemMut = useMutation(api.inventory.addItem);
+  const updateInventoryItemMut = useMutation(api.inventory.updateItem);
+  const deleteInventoryItemMut = useMutation(api.inventory.deleteItem);
+  const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
+  const processReturnMut = useMutation(api.requests.processReturn);
+  const upsertHomeMut = useMutation(api.home.upsert);
+  const deleteHomeMut = useMutation(api.home.remove);
+  const updateAdminSettingsMut = useMutation(api.settings.updateAdmin);
+  const convexInventory = useQuery(api.inventory.getAll);
+  const convexUsers = useQuery(api.users.getAll);
+  const convexRequests = useQuery(api.requests.getAll);
+  const convexHome = useQuery(api.home.getAll);
+  const convexSettings = useQuery(api.settings.getAdmin);
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([
     {
       id: '1',
@@ -111,22 +132,105 @@ export default function AdminPanel() {
   const [homeItems, setHomeItems] = useState<any[]>([]);
   const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
   const [showAddHome, setShowAddHome] = useState(false);
+  const [allowTeamInventoryEdit, setAllowTeamInventoryEdit] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     users: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
     requests: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
-    firebaseAvailable: boolean;
+    convexAvailable: boolean;
     loading: boolean;
     credentialError?: string;
   }>({
     users: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
     requests: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
-    firebaseAvailable: true,
+    convexAvailable: true,
     loading: false,
   });
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [isLoading, setIsLoading] = useState(true);
+
+  React.useEffect(() => {
+    if (convexInventory === undefined) return;
+    const normalizedInventory = convexInventory.map((item) => ({
+      id: item.itemId,
+      name: item.name,
+      quantity: item.quantity,
+      category: item.category,
+      company: item.company,
+      imageUrl: item.imageUrl,
+      remarks: item.remarks,
+      links: item.links,
+      tags: item.tags.join(','),
+    }));
+    setInventory(normalizedInventory);
+    setIsLoading(false);
+  }, [convexInventory]);
+
+  React.useEffect(() => {
+    if (convexHome === undefined) return;
+    setHomeItems(convexHome.map((item) => ({
+      id: item.docId,
+      type: item.type,
+      heading: item.title,
+      description: item.description,
+      contentUrl: item.content,
+    })));
+  }, [convexHome]);
+
+  React.useEffect(() => {
+    if (!convexSettings) return;
+    setAllowTeamInventoryEdit(!!convexSettings.allowTeamInventory);
+  }, [convexSettings]);
+
+  React.useEffect(() => {
+    if (!convexUsers || !convexRequests) return;
+
+    const normalizedUsers = convexUsers
+      .map((u: any) => ({
+        ...u,
+        id: u.email,
+        status: u.status?.toUpperCase() || 'PENDING',
+        role: u.role?.toUpperCase() || 'USER',
+        note: u.note || '',
+      }))
+      .sort((a: User, b: User) => {
+        const priority = { PENDING: 1, APPROVED: 2, REJECTED: 3 } as const;
+        const aStatus = a.status as keyof typeof priority;
+        const bStatus = b.status as keyof typeof priority;
+        return (priority[aStatus] || 99) - (priority[bStatus] || 99);
+      });
+
+    setAllUsers(normalizedUsers);
+    setPendingUsers(
+      normalizedUsers
+        .filter((u) => u.status === 'PENDING')
+        .map((u) => ({
+          id: u.email,
+          email: u.email,
+          name: u.name,
+          createdDate: u.createdDate,
+          status: u.status as PendingUser['status'],
+        }))
+    );
+
+    const validLoans = convexRequests.filter((r: any) =>
+      r.status === 'APPROVED' &&
+      r.returnRequestStatus !== 'RETURN_APPROVED' &&
+      (r.returnStatus || '').toLowerCase() !== 'yes'
+    );
+    setActiveLoans(validLoans);
+    setActiveRequests(validLoans);
+    setPendingReturns(
+      convexRequests.filter((r: any) =>
+        r.status === 'APPROVED' &&
+        r.returnRequestStatus === 'RETURN_PENDING' &&
+        (user?.role === 'ADMIN' || r.returnTarget === user?.name)
+      )
+    );
+    setPendingCheckouts(convexRequests.filter((r: any) => r.status === 'PENDING'));
+  }, [convexRequests, convexUsers, user]);
 
   if (user?.role !== 'ADMIN' && user?.role !== 'TEAM') {
     return (
@@ -152,51 +256,42 @@ export default function AdminPanel() {
 
   const approveUser = async (userId: string) => {
     try {
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'approveUser', userId }),
+      await updateUserStatusMut({
+        email: userId,
+        status: 'APPROVED',
+        scriptUrl: SCRIPT_URL,
       });
-      const result = await response.json();
-
-      if (result.success) {
-        toast.success("User approved!");
-
-        // OPTIMIZATION: Update the local state so the UI changes instantly
-        setAllUsers(prevUsers =>
-          prevUsers.map((u) =>
-            u.id === userId ? { ...u, status: 'APPROVED' } : u
-          )
-        );
-      }
+      toast.success("User approved!");
     } catch (error) {
       toast.error("Approval failed");
     }
   };
 
   const handleForceTurnOff = async (email: string) => {
+    const targetUser = allUsers.find(u => u.email === email);
+    
+    // Optimistic UI update
+    setAllUsers(prevUsers => prevUsers.map(u => 
+      u.email === email ? { ...u, laptopStatus: 'Offline' } : u
+    ));
+
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'forceToggleLaptop',
-          userEmail: email,
-          adminName: user?.name
-        })
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
-        
-        // Optimistic UI update
-        setAllUsers(prevUsers => prevUsers.map(u => 
-          u.email === email ? { ...u, laptopStatus: 'Offline' } : u
-        ));
-        
-        return result;
+      toggleLaptopMut({
+        email: email,
+        isTurningOn: false,
+        newTotal: targetUser?.totalTime || 0,
+        scriptUrl: SCRIPT_URL,
       }),
       {
         loading: 'Forcing session to close...',
         success: 'User session terminated.',
-        error: (err) => `Failed: ${err.message}`
+        error: (err) => {
+          // Revert on error
+          setAllUsers(prevUsers => prevUsers.map(u => 
+            u.email === email ? { ...u, laptopStatus: 'Online' } : u
+          ));
+          return `Failed: ${err.message}`;
+        }
       }
     );
   };
@@ -204,17 +299,11 @@ export default function AdminPanel() {
   const handleUpdateUserNote = async (email: string, note: string) => {
     if (!email) return;
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'updateUserNote',
-          userEmail: email,
-          note: note
-        })
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
-        // We will fetch users again to get full state, or just optimistic update
+      updateUserProfileMut({
+        email,
+        note,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         setAllUsers(prevUsers => prevUsers.map(u => 
           u.email === email ? { ...u, note: note } as User : u
         ));
@@ -244,12 +333,18 @@ export default function AdminPanel() {
     const tagsArray = (tagsInput || '').split(',').map((t: string) => t.trim()).filter(Boolean);
     const payload = { ...rest, tags: tagsArray };
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'updateInventoryItem', itemId: editingItem.id, ...payload }),
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
+      updateInventoryItemMut({
+        itemId: editingItem.id,
+        name: payload.name,
+        quantity: payload.quantity,
+        category: payload.category,
+        company: payload.company,
+        imageUrl: payload.imageUrl,
+        remarks: payload.remarks || '',
+        links: payload.links || '',
+        tags: tagsArray,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         // Optimistic local update
         setInventory(prev => prev.map(i =>
           i.id === editingItem.id ? { ...i, ...payload, tags: tagsArray.join(',') } : i
@@ -265,12 +360,10 @@ export default function AdminPanel() {
   const handleDeleteInventoryItem = async (item: InventoryItem) => {
     if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'deleteInventoryItem', itemId: item.id }),
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
+      deleteInventoryItemMut({
+        itemId: item.id,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         setInventory(prev => prev.filter(i => i.id !== item.id));
         setSelectedItem(null);
         return result;
@@ -288,18 +381,13 @@ export default function AdminPanel() {
   const handleUpdateUser = async () => {
     if (!editingUserEmail) return;
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'updateUser',
-          userEmail: editingUserEmail,
-          name: editUserForm.name,
-          role: editUserForm.role,
-          note: editUserForm.note,
-        }),
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
+      updateUserProfileMut({
+        email: editingUserEmail,
+        name: editUserForm.name,
+        role: editUserForm.role as 'ADMIN' | 'USER' | 'TEAM',
+        note: editUserForm.note,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         setAllUsers(prev => prev.map(u =>
           u.email === editingUserEmail
             ? { ...u, name: editUserForm.name, role: editUserForm.role, note: editUserForm.note } as any
@@ -321,17 +409,17 @@ export default function AdminPanel() {
       if (data.success) {
         setSyncStatus({ ...data, loading: false });
       } else {
-        setSyncStatus(s => ({ ...s, loading: false, firebaseAvailable: false, credentialError: data.message }));
+        setSyncStatus(s => ({ ...s, loading: false, convexAvailable: false, credentialError: data.message }));
       }
     } catch (e) {
-      setSyncStatus(s => ({ ...s, loading: false, firebaseAvailable: false }));
+      setSyncStatus(s => ({ ...s, loading: false, convexAvailable: false }));
     }
   };
 
-  const handleSyncUsersToFirebase = async () => {
+  const handleSyncUsersToConvex = async () => {
     setSyncStatus(s => ({ ...s, loading: true }));
     toast.promise(
-      fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'syncUsersToFirebase' }) })
+      fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'syncUsersToConvex' }) })
         .then(async r => {
           const d = await r.json();
           if (!d.success) throw new Error(d.message);
@@ -339,17 +427,17 @@ export default function AdminPanel() {
         })
         .finally(() => fetchSyncStatus()), // Re-check after sync
       {
-        loading: 'Syncing users to Firebase… this may take up to 60s',
+        loading: 'Syncing users to Convex… this may take up to 60s',
         success: (d: any) => d.message || 'Users synced!',
         error: (e: any) => `Sync failed: ${e.message}`
       }
     );
   };
 
-  const handleSyncRequestsToFirebase = async () => {
+  const handleSyncRequestsToConvex = async () => {
     setSyncStatus(s => ({ ...s, loading: true }));
     toast.promise(
-      fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'syncRequestsToFirebase' }) })
+      fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'syncRequestsToConvex' }) })
         .then(async r => {
           const d = await r.json();
           if (!d.success) throw new Error(d.message);
@@ -357,7 +445,7 @@ export default function AdminPanel() {
         })
         .finally(() => fetchSyncStatus()),
       {
-        loading: 'Syncing requests to Firebase… this may take up to 60s',
+        loading: 'Syncing requests to Convex… this may take up to 60s',
         success: (d: any) => d.message || 'Requests synced!',
         error: (e: any) => `Sync failed: ${e.message}`
       }
@@ -366,24 +454,21 @@ export default function AdminPanel() {
 
   // ======== HOME CONTENT ========
   const fetchHomeContent = async () => {
-    try {
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'getHomeContent' }) });
-      const data = await res.json();
-      if (data.success) setHomeItems(data.items || []);
-    } catch (e) { console.error('Failed to fetch home content', e); }
+    return;
   };
 
   const handleSaveHomeContent = async () => {
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'manageHomeContent', ...homeForm }),
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message || 'Failed');
+      upsertHomeMut({
+        docId: homeForm.id || undefined,
+        type: homeForm.type,
+        title: homeForm.heading,
+        description: homeForm.description,
+        content: homeForm.contentUrl,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         setShowAddHome(false);
         setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
-        await fetchHomeContent();
         return result;
       }),
       { loading: 'Saving content block...', success: 'Homepage updated & synced!', error: (e) => `Failed: ${e.message}` }
@@ -393,12 +478,10 @@ export default function AdminPanel() {
   const handleDeleteHomeContent = async (id: string) => {
     if (!window.confirm('Delete this content block?')) return;
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'deleteHomeContent', id }),
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
+      deleteHomeMut({
+        docId: id,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         setHomeItems(prev => prev.filter(h => h.id !== id));
         return result;
       }),
@@ -445,73 +528,7 @@ export default function AdminPanel() {
   };
 
   const fetchUsers = async () => {
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getAllUsers' }),
-      });
-      const result = await response.json();
-      console.log("Data from Google:", result.users); // <--- ADD THIS LINE
-
-      if (result.success) {
-        // Priority: 1 for Pending (Needs attention), 2 for Approved, 3 for Rejected
-        const priority = { 'PENDING': 1, 'APPROVED': 2, 'REJECTED': 3 };
-
-        const sorted = result.users.sort((a: User, b: User) => {
-          // We cast the status to "keyof typeof priority"
-          const aStatus = a.status as keyof typeof priority;
-          const bStatus = b.status as keyof typeof priority;
-
-          return (priority[aStatus] || 99) - (priority[bStatus] || 99);
-        });
-
-        // Normalize data to ensure case-insensitive rendering
-        const normalizedUsers = result.users.map((u: User) => ({
-          ...u,
-          status: u.status?.toUpperCase() || 'PENDING',
-          role: u.role?.toUpperCase() || 'USER'
-        }));
-
-        setAllUsers(normalizedUsers);
-
-        // Fetch Requests for Active Loans
-        const reqResponse = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'getRequests' }),
-        });
-        const reqResult = await reqResponse.json();
-
-        if (reqResult.success) {
-          // Filter for active approved loans (Return Status != YES)
-          const validLoans = reqResult.requests.filter((r: any) =>
-            r.status === 'APPROVED' &&
-            r.returnRequestStatus !== 'RETURN_APPROVED' &&
-            (r.returnStatus || '').toLowerCase() !== 'yes'
-          );
-          setActiveLoans(validLoans);
-          setActiveRequests(validLoans); // Use for Current Holdings
-
-          // Filter for Pending Returns
-          // If TEAM, only show returns targeted to them. If ADMIN, show all.
-          const returns = reqResult.requests.filter((r: any) =>
-            r.status === 'APPROVED' &&
-            r.returnRequestStatus === 'RETURN_PENDING' &&
-            (user?.role === 'ADMIN' || r.returnTarget === user?.name)
-          );
-          setPendingReturns(returns);
-
-          // Filter for Pending Checkouts (New)
-          setPendingCheckouts(reqResult.requests.filter((r: any) =>
-            r.status === 'PENDING'
-          ));
-        }
-
-      } else {
-        toast.error('Failed to fetch users');
-      }
-    } catch (error) {
-      toast.error('Failed to load users');
-    }
+    return;
   };
 
   const handleProcessReturn = async () => {
@@ -527,22 +544,12 @@ export default function AdminPanel() {
     // 2. Optimistic Update (Optional) - Removed for Admin as list refresh is fast enough, but promise gives feedback
 
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'processReturn',
-          date: returnData.date,
-          receiverName: user?.name,
-          remarks: remarks,
-          quantity: returnData.quantity,
-          itemId: returnData.itemId,
-          userEmail: returnData.userEmail
-        })
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
-        fetchUsers();
-        fetchInventory();
+      processReturnMut({
+        requestId: returnData.date,
+        approverName: user?.name || '',
+        remarks,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         return result;
       }),
       {
@@ -559,18 +566,11 @@ export default function AdminPanel() {
     setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
 
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'approveCheckoutRequest',
-          requestId: req.date,
-          approverName: user?.name
-        })
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
-        fetchUsers(); // Refresh full state
-        fetchInventory(); // Refresh stock
+      approveCheckoutMut({
+        requestId: req.date,
+        approverName: user?.name || '',
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
         return result;
       }),
       {
@@ -643,33 +643,12 @@ export default function AdminPanel() {
     }
   };
 
-  // Inside AdminPanel function, before the return statement:
-  const [isLoading, setIsLoading] = useState(true);
-
-  // 1. Create the function to fetch data from the script
   const fetchInventory = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getInventory' }), // Matches backend action [4]
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        // 2. Update the inventory state with real data from Google Sheets [3]
-        setInventory(result.inventory);
-      } else {
-        toast.error('Failed to load inventory');
-      }
-    } catch (error) {
-      console.error('Fetch error:', error);
-      toast.error('Connection error while loading inventory');
-    } finally {
-      setIsLoading(false);
-    }
+    return;
   };
+
+  const isCanonicalDriveImageUrl = (value: string) =>
+    /^https:\/\/drive\.google\.com\/(uc\?export=view&id=|thumbnail\?id=)/.test(value);
 
   const processSyncQueue = async () => {
     // 1. Get latest queue from storage
@@ -699,32 +678,31 @@ export default function AdminPanel() {
 
         const uploadResult = await uploadResponse.json();
         if (uploadResult.success) {
-          // Now we just have the Drive URL. We haven't created a row yet.
+          if (!isCanonicalDriveImageUrl(uploadResult.imageUrl || '')) {
+            throw new Error('Image upload returned an invalid Google Drive URL');
+          }
           itemToSync.imageUrl = uploadResult.imageUrl;
         } else {
           throw new Error("Image upload failed: " + uploadResult.message);
         }
       } else if (itemToSync.imageUrl && !itemToSync.imageUrl.startsWith('http')) {
         itemToSync.imageUrl = ''; // Clear invalid non-data URLs
+      } else if (itemToSync.imageUrl && !isCanonicalDriveImageUrl(itemToSync.imageUrl)) {
+        throw new Error('Inventory images must use the configured Google Drive folder link');
       }
 
       // STEP 2: Add Inventory Item
-      const addResponse = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'addInventoryItem',
-          name: itemToSync.name,
-          quantity: itemToSync.quantity,
-          category: itemToSync.category,
-          company: itemToSync.company,
-          imageUrl: itemToSync.imageUrl || '',
-          remarks: itemToSync.remarks || '',
-          links: itemToSync.links || '',
-          tags: itemToSync.tagsArray || (itemToSync.tags ? itemToSync.tags.split(',') : [])
-        }),
+      const addResult = await addInventoryItemMut({
+        name: itemToSync.name,
+        quantity: itemToSync.quantity,
+        category: itemToSync.category,
+        company: itemToSync.company,
+        imageUrl: itemToSync.imageUrl || '',
+        remarks: itemToSync.remarks || '',
+        links: itemToSync.links || '',
+        tags: itemToSync.tagsArray || (itemToSync.tags ? itemToSync.tags.split(',') : []),
+        scriptUrl: SCRIPT_URL,
       });
-
-      const addResult = await addResponse.json();
 
       if (addResult.success) {
         syncedItemId = addResult.itemId;
@@ -748,8 +726,7 @@ export default function AdminPanel() {
           processSyncQueue();
         }
       } else {
-        // SERVER REJECTED (e.g. Duplicate name)
-        throw new Error(addResult.message);
+        throw new Error('Failed to add inventory item');
       }
 
       // AdminPanel.tsx approx line 261
@@ -1934,12 +1911,15 @@ export default function AdminPanel() {
                             name="toggle"
                             id="toggle"
                             className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                            checked={allowTeamInventoryEdit}
                             onChange={(e) => {
+                              const checked = e.target.checked;
+                              setAllowTeamInventoryEdit(checked);
                               toast.promise(
-                                fetch(SCRIPT_URL, {
-                                  method: 'POST',
-                                  body: JSON.stringify({ action: 'manageAdminSettings', allowTeamInventoryEdit: e.target.checked })
-                                }).then(res => res.json()),
+                                updateAdminSettingsMut({
+                                  allowTeamInventory: checked,
+                                  scriptUrl: SCRIPT_URL,
+                                }),
                                 { loading: 'Saving...', success: 'Settings updated!', error: 'Failed to update' }
                               );
                             }}
@@ -1958,19 +1938,19 @@ export default function AdminPanel() {
                   {/* DATA SYNC CARD */}
                   <Card className="p-6">
                     <h2 className="text-xl font-bold font-display mb-1 border-b pb-2 flex items-center gap-2">
-                      Firebase Data Sync
+                      Convex Data Sync
                       {syncStatus.loading && (
                         <span className="inline-block w-3 h-3 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
                       )}
                     </h2>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Manually push changed rows from Google Sheets → Firebase. Only rows that differ from the last sync are written (hash-checked).
+                      Manually push changed rows from Google Sheets → Convex. Only rows that differ from the last sync are written (hash-checked).
                     </p>
 
-                    {/* Firebase credential error banner */}
-                    {!syncStatus.firebaseAvailable && (
+                    {/* Convex credential error banner */}
+                    {!syncStatus.convexAvailable && (
                       <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
-                        ⚠️ <strong>Firebase not reachable.</strong> Check that <code>client_email</code>, <code>private_key</code>, and <code>project_id</code> are set in your Apps Script → Project Settings → Script Properties.
+                        ⚠️ <strong>Convex not reachable.</strong> Check that <code>client_email</code>, <code>private_key</code>, and <code>project_id</code> are set in your Apps Script → Project Settings → Script Properties.
                         {syncStatus.credentialError && <div className="mt-1 font-mono break-all">{syncStatus.credentialError}</div>}
                       </div>
                     )}
@@ -1980,17 +1960,17 @@ export default function AdminPanel() {
                         {/* Users sync button */}
                         <Button
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-                          onClick={handleSyncUsersToFirebase}
-                          disabled={syncStatus.loading || !syncStatus.firebaseAvailable || syncStatus.users.unsyncedRows === 0}
+                          onClick={handleSyncUsersToConvex}
+                          disabled={syncStatus.loading || !syncStatus.convexAvailable || syncStatus.users.unsyncedRows === 0}
                         >
                           <UsersIcon className="w-4 h-4 mr-2" />
-                          Sync Users → Firebase
+                          Sync Users → Convex
                           {syncStatus.users.unsyncedRows > 0 && (
                             <span className="ml-2 bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                               {syncStatus.users.unsyncedRows} unsynced
                             </span>
                           )}
-                          {syncStatus.users.unsyncedRows === 0 && syncStatus.firebaseAvailable && !syncStatus.loading && (
+                          {syncStatus.users.unsyncedRows === 0 && syncStatus.convexAvailable && !syncStatus.loading && (
                             <span className="ml-2 text-[10px] opacity-70">✓ Up to date</span>
                           )}
                         </Button>
@@ -2003,17 +1983,17 @@ export default function AdminPanel() {
                         {/* Requests sync button */}
                         <Button
                           className="w-full bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
-                          onClick={handleSyncRequestsToFirebase}
-                          disabled={syncStatus.loading || !syncStatus.firebaseAvailable || syncStatus.requests.unsyncedRows === 0}
+                          onClick={handleSyncRequestsToConvex}
+                          disabled={syncStatus.loading || !syncStatus.convexAvailable || syncStatus.requests.unsyncedRows === 0}
                         >
                           <Download className="w-4 h-4 mr-2" />
-                          Sync Requests → Firebase
+                          Sync Requests → Convex
                           {syncStatus.requests.unsyncedRows > 0 && (
                             <span className="ml-2 bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                               {syncStatus.requests.unsyncedRows} unsynced
                             </span>
                           )}
-                          {syncStatus.requests.unsyncedRows === 0 && syncStatus.firebaseAvailable && !syncStatus.loading && (
+                          {syncStatus.requests.unsyncedRows === 0 && syncStatus.convexAvailable && !syncStatus.loading && (
                             <span className="ml-2 text-[10px] opacity-70">✓ Up to date</span>
                           )}
                         </Button>

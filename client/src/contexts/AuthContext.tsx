@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { useConvex, useMutation } from "convex/react";
 
-// ============================================================================
-// GOOGLE APPS SCRIPT CONFIGURATION
-// ============================================================================
-// Replace this URL with your deployed Apps Script Web App URL
-import { SCRIPT_URL as APPS_SCRIPT_URL } from '@/config';
+import { api } from "../../../convex/_generated/api";
+import { SCRIPT_URL } from '@/config';
 
 export interface User {
   id: string;
@@ -30,6 +28,32 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const APPROVAL_PRIORITY: Record<User['status'], number> = {
+  REJECTED: 0,
+  PENDING: 1,
+  APPROVED: 2,
+};
+
+const ROLE_PRIORITY: Record<User['role'], number> = {
+  USER: 0,
+  TEAM: 1,
+  ADMIN: 2,
+};
+
+function normalizeUser(data: any): User {
+  return {
+    id: data._id || data.id || data.email,
+    email: data.email,
+    name: data.name,
+    role: data.role?.toUpperCase() || 'USER',
+    status: data.status?.toUpperCase() || 'PENDING',
+    createdDate: data.createdDate || new Date().toISOString(),
+    laptopStatus: data.laptopStatus || 'Offline',
+    totalTime: data.totalTime || 0,
+    tags: Array.isArray(data.tags) ? data.tags : (data.tags ? String(data.tags).split(',').map((tag: string) => tag.trim()).filter(Boolean) : [])
+  };
+}
+
 /**
  * AuthProvider Component
  * 
@@ -47,6 +71,56 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const convex = useConvex();
+  const loginMutation = useMutation(api.users.login);
+  const upsertFromSheetSnapshotMutation = useMutation(api.users.upsertFromSheetSnapshot);
+
+  const maybeHydrateFromSheet = useCallback(async (email: string, name: string, currentUser?: User | null) => {
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'login',
+        email,
+        name,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Google Server Error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!data.success || !data.user) {
+      return currentUser ?? null;
+    }
+
+    const sheetUser = normalizeUser(data.user);
+    const shouldPromoteFromSheet =
+      !currentUser ||
+      ROLE_PRIORITY[sheetUser.role] > ROLE_PRIORITY[currentUser.role] ||
+      APPROVAL_PRIORITY[sheetUser.status] > APPROVAL_PRIORITY[currentUser.status];
+
+    if (!shouldPromoteFromSheet) {
+      return currentUser;
+    }
+
+    const syncResult = await upsertFromSheetSnapshotMutation({
+      email: sheetUser.email,
+      name: sheetUser.name,
+      role: sheetUser.role,
+      status: sheetUser.status,
+      createdDate: sheetUser.createdDate,
+      laptopStatus: sheetUser.laptopStatus,
+      sessionStart: (data.user.sessionStart || '') as string,
+      sessionEnd: (data.user.sessionEnd || '') as string,
+      totalTime: sheetUser.totalTime,
+      rfid: (data.user.rfid || '') as string,
+      myPageLink: (data.user.myPageLink || '') as string,
+      tags: sheetUser.tags,
+      note: (data.user.note || '') as string,
+    });
+
+    return syncResult.user ? normalizeUser(syncResult.user) : sheetUser;
+  }, [upsertFromSheetSnapshotMutation]);
 
   /**
    * login - Authenticates user with Google Apps Script backend
@@ -64,53 +138,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (email: string, name: string): Promise<User> => {
     setIsLoading(true);
     try {
-      const response = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'login',
-          email: email.trim(),
-          name: name.trim()
-        })
+      const normalizedEmail = email.trim();
+      const result = await loginMutation({
+        email: normalizedEmail,
+        name: name.trim(),
+        scriptUrl: SCRIPT_URL,
       });
-
-      // 2. Check for network errors
-      if (!response.ok) {
-        throw new Error(`Google Server Error: ${response.status}`);
+      if (!result.success || !result.user) {
+        throw new Error('Unauthorized access');
+      }
+      let userData = normalizeUser(result.user);
+      if (userData.role === 'USER' && userData.status !== 'APPROVED') {
+        const hydratedUser = await maybeHydrateFromSheet(normalizedEmail, name.trim(), userData);
+        if (hydratedUser) {
+          userData = hydratedUser;
+        }
       }
 
-      const data = await response.json();
-
-      // 3. Logic check (Did handleLogin return success?)
-      if (data.success && data.user) {
-        const userData: User = {
-          id: data.user.id || data.user.email,
-          email: data.user.email,
-          name: data.user.name,
-          role: data.user.role?.toUpperCase() || 'USER', // Normalize to uppercase
-          status: data.user.status?.toUpperCase() || 'PENDING', // Normalize to uppercase
-          createdDate: data.user.createdDate || new Date().toISOString(),
-          laptopStatus: data.user.laptopStatus || 'Offline',
-          totalTime: data.user.totalTime || 0,
-          tags: Array.isArray(data.user.tags) ? data.user.tags : (data.user.tags ? data.user.tags.split(',') : [])
-        };
-
-        setUser(userData);
-        localStorage.setItem(`user_${email}`, JSON.stringify(userData));
-        localStorage.setItem('active_session_email', email); // For persistence
-
-        console.log(`Logged in as ${userData.role}`);
-        return userData;
-
-      } else {
-        throw new Error(data.message || 'Unauthorized access');
-      }
+      setUser(userData);
+      localStorage.setItem(`user_${normalizedEmail}`, JSON.stringify(userData));
+      localStorage.setItem('active_session_email', normalizedEmail);
+      return userData;
     } catch (error) {
       console.error('❌ Login error:', error);
       throw error;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loginMutation, maybeHydrateFromSheet]);
 
   /**
    * logout - Clears user session
@@ -162,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 1. Session Restoration on Mount
   React.useEffect(() => {
+    let isMounted = true;
     const activeEmail = localStorage.getItem('active_session_email');
     if (activeEmail) {
       const storedUser = localStorage.getItem(`user_${activeEmail}`);
@@ -171,24 +227,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(parsedUser);
           console.log('🔄 Session restored for:', parsedUser.email);
 
-          // Verify with backend silently to ensure status hasn't changed (e.g. they were rejected)
-          fetch(APPS_SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'login', email: parsedUser.email, name: parsedUser.name })
-          })
-            .then(r => r.json())
-            .then(data => {
-              if (data.success) {
-                // Update with fresh data from server
-                const freshUser = { ...parsedUser, ...data.user };
+          convex
+            .query(api.users.getUserByEmail, { email: parsedUser.email })
+            .then((freshUserData) => {
+              if (!isMounted) return;
+              if (freshUserData) {
+                const freshUser = normalizeUser(freshUserData);
                 setUser(freshUser);
                 localStorage.setItem(`user_${activeEmail}`, JSON.stringify(freshUser));
               } else {
-                // User might have been deleted or rejected
                 logout();
               }
             })
-            .catch(e => {
+            .catch((e) => {
               console.warn('Silent auth verify failed (offline?), keeping cached session', e);
             });
 
@@ -199,7 +250,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     setIsLoading(false);
-  }, [logout]);
+    return () => {
+      isMounted = false;
+    };
+  }, [convex, logout]);
 
 
 

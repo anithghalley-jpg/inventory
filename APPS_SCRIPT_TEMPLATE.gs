@@ -50,6 +50,65 @@ function getSheet(sheetName) {
   return ss.getSheetByName(sheetName);
 }
 
+function getOrCreateSheet(sheetName) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+}
+
+function ensureHeaderColumn(sheet, headerName) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 1).getValues()[0];
+  let index = headers.indexOf(headerName);
+  if (index === -1) {
+    index = headers.length;
+    sheet.getRange(1, index + 1).setValue(headerName);
+  }
+  return index;
+}
+
+function findRowIndexByValue(values, keyColIndex, keyValue) {
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][keyColIndex] || '').trim() === String(keyValue).trim()) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+function computeUserSyncHash(userData) {
+  return computeMd5Hash(JSON.stringify({
+    email: String(userData.email || ''),
+    name: String(userData.name || ''),
+    role: String(userData.role || 'USER'),
+    status: String(userData.status || 'PENDING'),
+    createdDate: String(userData.createdDate || ''),
+    laptopStatus: String(userData.laptopStatus || 'Offline'),
+    sessionStart: String(userData.sessionStart || ''),
+    sessionEnd: String(userData.sessionEnd || ''),
+    totalTime: Number(userData.totalTime) || 0,
+    rfid: String(userData.rfid || ''),
+    myPageLink: String(userData.myPageLink || ''),
+    tags: Array.isArray(userData.tags) ? userData.tags : [],
+    note: String(userData.note || ''),
+  }));
+}
+
+function computeRequestSyncHash(requestData) {
+  return computeMd5Hash(JSON.stringify({
+    date: String(requestData.date || ''),
+    userEmail: String(requestData.userEmail || ''),
+    userName: String(requestData.userName || ''),
+    itemId: String(requestData.itemId || ''),
+    itemName: String(requestData.itemName || ''),
+    quantity: Number(requestData.quantity) || 0,
+    status: String(requestData.status || 'PENDING'),
+    actionBy: String(requestData.actionBy || ''),
+    returnStatus: String(requestData.returnStatus || ''),
+    returnTarget: String(requestData.returnTarget || ''),
+    returnReceiver: String(requestData.returnReceiver || ''),
+    returnRemarks: String(requestData.returnRemarks || ''),
+  }));
+}
+
 // CORS Headers
 function setCorsHeaders(output) {
   return output
@@ -160,17 +219,47 @@ function doPost(e) {
       case 'updateUser':
         response = handleUpdateUser(data);
         break;
-      case 'syncUsersToFirebase':
-        response = handleSyncUsersToFirebase(data);
+      case 'syncUsersToConvex':
+        response = handleSyncUsersToConvex(data);
         break;
-      case 'syncRequestsToFirebase':
-        response = handleSyncRequestsToFirebase(data);
+      case 'syncRequestsToConvex':
+        response = handleSyncRequestsToConvex(data);
         break;
       case 'deleteHomeContent':
         response = handleDeleteHomeContent(data);
         break;
       case 'checkSyncStatus':
         response = handleCheckSyncStatus(data);
+        break;
+      case 'upsertUserRow':
+        response = handleUpsertUserRow(data);
+        break;
+      case 'deleteUserRow':
+        response = handleDeleteUserRow(data);
+        break;
+      case 'upsertRequestRow':
+        response = handleUpsertRequestRow(data);
+        break;
+      case 'deleteRequestRow':
+        response = handleDeleteRequestRow(data);
+        break;
+      case 'upsertInventoryRow':
+        response = handleUpsertInventoryRow(data);
+        break;
+      case 'deleteInventoryRow':
+        response = handleDeleteInventoryRowRow(data);
+        break;
+      case 'upsertHomeRow':
+        response = handleUpsertHomeRow(data);
+        break;
+      case 'deleteHomeRow':
+        response = handleDeleteHomeRow(data);
+        break;
+      case 'upsertSettingsRow':
+        response = handleUpsertSettingsRow(data);
+        break;
+      case 'deleteSettingsRow':
+        response = handleDeleteSettingsRow(data);
         break;
       default:
         response = { success: false, message: 'Unknown action' };
@@ -199,8 +288,8 @@ function handleLogin(data) {
   const sheet = getSheet(SHEET_NAMES.USERS);
   const values = sheet.getDataRange().getValues();
   
-  // Check if user exists
-  for (let i = 1; i < values.length; i++) {
+  // Check if user exists (search from bottom to get latest entry)
+  for (let i = values.length - 1; i >= 1; i--) {
     if (values[i][0] === email) {
       return {
         success: true,
@@ -212,8 +301,13 @@ function handleLogin(data) {
           status: values[i][3],
           createdDate: values[i][4],
           laptopStatus: values[i][5] || 'Offline',
+          sessionStart: values[i][6] || '',
+          sessionEnd: values[i][7] || '',
           totalTime: values[i][8] || 0,
-          tags: values[i].slice(10).filter(t => t !== '') // New: User Tags
+          rfid: values[i][9] || '',
+          myPageLink: values[i][10] || '',
+          note: values[i][11] || '',
+          tags: values[i].slice(12).filter(t => t !== '')
         }
       };
     }
@@ -429,6 +523,9 @@ function handleUploadImageOptimized(data) {
   try {
     console.log("🖼️ Starting optimized image upload");
     const { fileName, mimeType, content, folderId } = data;
+    if (!folderId) {
+      return { success: false, message: 'Missing Google Drive folderId' };
+    }
     
     // Step 1: Upload image to Google Drive
     const folder = DriveApp.getFolderById(folderId);
@@ -443,7 +540,7 @@ function handleUploadImageOptimized(data) {
     
     // Step 2: Create shareable link
     const fileId = file.getId();
-    const directLink = "https://drive.google.com/thumbnail?id=" + fileId;
+    const directLink = "https://drive.google.com/uc?export=view&id=" + fileId;
     
     console.log("✅ Image uploaded successfully");
     console.log("📸 Image URL: " + directLink);
@@ -455,6 +552,7 @@ function handleUploadImageOptimized(data) {
     return {
       success: true,
       itemId: tempItemId,
+      fileId: fileId,
       imageUrl: directLink,
       message: 'Image uploaded successfully. Complete the inventory item details.'
     };
@@ -498,12 +596,16 @@ function handleGetAllUsers() {
   const sheet = getSheet(SHEET_NAMES.USERS); // Fixed MED-6 loop bug
   if (!sheet) return { success: false, message: 'Users sheet not found' };
   const values = sheet.getDataRange().getValues();
+  const headers = values[0] || [];
+  let noteColIndex = headers.indexOf('Note');
+  if (noteColIndex === -1) noteColIndex = headers.indexOf('Admin Note');
+  const hashColIndex = headers.indexOf('Sync Hash');
   
   // Skip the header row (index 0)
   // Skip the header row (index 0)
   const users = values.slice(1).map(row => {
-    // Collect tags from Column K (Index 10) onwards
-    const tags = row.slice(10).filter(t => t !== '');
+    const tagsStart = Math.max(noteColIndex + 1, 12);
+    const tags = row.slice(tagsStart, hashColIndex === -1 ? undefined : hashColIndex).filter(t => t !== '');
     
     return {
       email: row[0],
@@ -512,10 +614,13 @@ function handleGetAllUsers() {
       status: row[3] || 'PENDING',
       createdDate: row[4],
       laptopStatus: row[5] || 'Offline', // Col F: Status
-      // sessionStart: row[6],           // Col G: Start
-      // sessionEnd: row[7],             // Col H: End
+      sessionStart: row[6] || '',
+      sessionEnd: row[7] || '',
       totalTime: row[8] || 0,            // Col I: Total Time (mins)
-      tags: tags                         // New: User Tags
+      rfid: row[9] || '',
+      myPageLink: row[10] || '',
+      tags: tags,                        // New: User Tags
+      note: noteColIndex !== -1 ? (row[noteColIndex] || '') : '',
     };
   });
 
@@ -540,6 +645,14 @@ function handleUpdateUserStatus(userId, newStatus) {
   if (rowIndex !== -1) {
     // Column D is index 3 (1-indexed for getRange, so 4)
     sheet.getRange(rowIndex, 4).setValue(newStatus);
+    try {
+      const headers = data[0] || [];
+      let noteColIndex = headers.indexOf('Note');
+      if (noteColIndex === -1) noteColIndex = headers.indexOf('Admin Note');
+      if (noteColIndex === -1) noteColIndex = 11;
+      const rowData = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      syncSingleUser(userId, rowData, noteColIndex);
+    } catch (e) { console.error(e); }
     return { success: true, message: `User status updated to ${newStatus}` };
   } else {
     return { success: false, message: "User not found" };
@@ -584,13 +697,18 @@ function handleGetRequests(data) {
       actionBy: values[i][7],      // Col H: Admin Name who approved checkout
       returnRequestStatus: values[i][8], // Col I: RETURN_PENDING / APPROVED (Frontend expects this key)
       returnStatus: values[i][8],  // Col I (kept for backward compatibility)
-      returnTarget: values[i][9] || '',  // Col J
-      returnReceiver: values[i][10] || '', // Col K: Who received it + Remarks
-      returnRemarks: values[i][10] || ''   // Col K shared
+      returnTarget: values[i][9] || '',  // Col J: Return Request target
+      returnReceiver: values[i][10] || '', // Col K: receiver
+      returnRemarks: values[i][11] || ''   // Col L: remarks
     });
   }
   
   return { success: true, requests: requests };
+}
+
+function toIsoString(val) {
+  if (val instanceof Date) return val.toISOString();
+  return String(val || '');
 }
 
 // 1. Approve Checkout Request (Admin/Team)
@@ -603,7 +721,7 @@ function handleApproveCheckoutRequest(data) {
   
   for (let i = 1; i < values.length; i++) {
     // Check Date/ID matches (Col A)
-    if (String(values[i][0]) === String(requestId)) {
+    if (toIsoString(values[i][0]) === String(requestId)) {
       
       // Check Inventory Stock first
       const itemId = values[i][3];
@@ -645,7 +763,7 @@ function handleReturnRequest(data) {
   const values = sheet.getDataRange().getValues();
   
   for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]) === String(date)) {
+    if (toIsoString(values[i][0]) === String(date)) {
       // Col J (Index 9): Return Target (Set logic as per requirement)
       // User Requirement: "marking col I as pending"
       
@@ -677,7 +795,7 @@ function handleProcessReturn(data) {
   // 1. Update Request Sheet
   let reqFound = false;
   for (let i = 1; i < reqValues.length; i++) {
-    if (String(reqValues[i][0]) === String(date)) {
+    if (toIsoString(reqValues[i][0]) === String(date)) {
       const row = i + 1;
       
       // Requirement: "whoever approves the name will be recorded in col K with a remarks"
@@ -685,9 +803,10 @@ function handleProcessReturn(data) {
       // Col I (Index 8): Return Status (Approved/Closed) -> 'RETURN_APPROVED'
       reqSheet.getRange(row, 9).setValue('RETURN_APPROVED');
       
-      // Col K (Index 10): Approver Name + Remarks
-      const entry = `${receiverName}${remarks ? ': ' + remarks : ''}`;
-      reqSheet.getRange(row, 11).setValue(entry);
+      // Col K (Index 10): Receiver Name
+      reqSheet.getRange(row, 11).setValue(receiverName || '');
+      // Col L (Index 11): Remarks
+      reqSheet.getRange(row, 12).setValue(remarks || '');
       
       reqFound = true;
       break;
@@ -737,10 +856,10 @@ function handleToggleLaptop(data) {
   let statusCol = -1, startCol = -1, endCol = -1, totalCol = -1;
   for (let c = 0; c < headers.length; c++) {
     const h = String(headers[c] || '').toLowerCase();
-    if (h.includes('laptop status')) statusCol = c;
-    if (h.includes('session start')) startCol = c;
-    if (h.includes('session end')) endCol = c;
-    if (h.includes('total time')) totalCol = c;
+    if (h.includes('laptop status') || h === 'laptops') statusCol = c;
+    if (h.includes('session start') || h === 'screenstart') startCol = c;
+    if (h.includes('session end') || h === 'screenend') endCol = c;
+    if (h.includes('total time') || h === 'screentime') totalCol = c;
   }
   
   if (statusCol === -1) statusCol = 5; // Default Col F
@@ -802,113 +921,171 @@ function handleToggleLaptop(data) {
  */
 
 // Configuration
-const FIREBASE_CONFIG = {
-  // These will be read from Script Properties for security
-  email: '', 
-  key: '',
-  projectId: ''
+const CONVEX_CONFIG = {
+  // Read from Script Properties
+  url: ''
 };
 
-function getFirestore() {
+function getConvexUrl() {
   const props = PropertiesService.getScriptProperties();
-  const email = props.getProperty('client_email');
-  const key = props.getProperty('private_key');
-  const projectId = props.getProperty('project_id');
-  
-  if (!email || !key || !projectId) {
-    throw new Error('Missing Firebase credentials. Check Script Properties.');
+  const url = props.getProperty('CONVEX_SITE_URL');
+  if (!url) {
+    throw new Error('Missing CONVEX_SITE_URL in Script Properties. Please add your Convex HTTP Actions URL.');
   }
-  // FIX: Sanitize key to handle newline characters correctly (This is the important part!)
-  const sanitizedKey = key.replace(/\\n/g, '\n');
-  return FirestoreApp.getFirestore(email, sanitizedKey, projectId);
+  return url;
+}
+
+function postToConvex(path, payload) {
+  const url = getConvexUrl();
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  const response = UrlFetchApp.fetch(url + path, options);
+  if (response.getResponseCode() !== 200) {
+    throw new Error('Convex sync failed: ' + response.getContentText());
+  }
+  return JSON.parse(response.getContentText());
 }
 
 /**
- * Syncs the entire "Inventory" sheet to Firestore.
+ * Syncs the entire "Inventory" sheet to Convex.
  * Run this manually or set up a time-based trigger (e.g., every hour).
  */
-function syncInventoryToFirebase() {
-  const firestore = getFirestore();
-  const sheet = getSheet(SHEET_NAMES.INVENTORY); // Uses helper from APPS_SCRIPT_TEMPLATE.gs
+function syncInventoryToConvex() {
+  const sheet = getSheet(SHEET_NAMES.INVENTORY);
   const values = sheet.getDataRange().getValues();
   
   // Skip header
   const data = values.slice(1);
-  const batchData = {};
+  const items = [];
   
   data.forEach(row => {
-    const itemId = row[0];
+    const itemId = String(row[0] || '').trim();
     if (itemId) {
-      // Extract tags (Column J onwards)
-      const tags = row.slice(9).filter(t => t !== '');
-      
-      const item = {
-        name: row[1],
-        quantity: typeof row[2] === 'number' ? row[2] : 0,
-        category: row[3],
-        company: row[4],
-        imageUrl: row[5],
-        remarks: row[6],
-        links: row[7],
-        tags: tags,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      // Update specific document
-      // Use helper to add to batch if library supports it, or individual updates
-      // FirestoreApp doesn't support massive batches easily, but let's try updateDocument
-      try {
-        firestore.updateDocument('inventory/' + itemId, item);
-      } catch (e) {
-        // If document doesn't exist, create it
-        firestore.createDocument('inventory/' + itemId, item);
-      }
+      const tags = row.slice(9).map(t => String(t)).filter(t => t !== '');
+      items.push({
+        itemId: itemId,
+        name: String(row[1] || ''),
+        quantity: typeof row[2] === 'number' ? row[2] : Number(row[2]) || 0,
+        category: String(row[3] || ''),
+        company: String(row[4] || ''),
+        imageUrl: String(row[5] || ''),
+        remarks: String(row[6] || ''),
+        links: String(row[7] || ''),
+        tags: tags
+      });
     }
   });
   
-  console.log('Synced ' + data.length + ' items to Firebase.');
+  if (items.length > 0) {
+    postToConvex('/syncTable', { table: 'inventory', data: items });
+  }
+  
+  console.log('Synced ' + items.length + ' items to Convex.');
 }
 
 /**
  * OPTIONAL: Trigger-based sync
  * Can be attached to onEdit, but be careful with quotas.
  */
-function onInventoryEdit(e) {
+/**
+ * UNIVERSAL ON-EDIT TRIGGER
+ * Synchronizes single row edits from ANY sheet instantly to Convex
+ */
+function onUniversalEdit(e) {
+  if (!e || !e.source) return;
   const sheet = e.source.getActiveSheet();
-  if (sheet.getName() !== SHEET_NAMES.INVENTORY) return;
+  const sheetName = sheet.getName();
   
-  // Only sync the specific row that changed
-  const range = e.range;
-  const row = range.getRow();
+  // 1. Identify which table to sync
+  let tableName = '';
+  let keyField = '';
+  if (sheetName === SHEET_NAMES.INVENTORY) { tableName = 'inventory'; keyField = 'itemId'; }
+  else if (sheetName === SHEET_NAMES.USERS) { tableName = 'users'; keyField = 'email'; }
+  else if (sheetName === SHEET_NAMES.REQUESTS) { tableName = 'requests'; keyField = 'date'; }
+  else if (sheetName === SHEET_NAMES.HOME) { tableName = 'home'; keyField = 'docId'; }
   
-  if (row <= 1) return; // Header
+  if (!tableName) return;
   
+  const row = e.range.getRow();
+  if (row <= 1) return; // Ignore headers
+  
+  // 2. Fetch headers and row data
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const values = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const itemId = values[0];
   
-  if (itemId) {
-    const firestore = getFirestore();
-    const tags = values.slice(9).filter(t => t !== '');
-    
-    const item = {
-        name: values[1],
-        quantity: typeof values[2] === 'number' ? values[2] : 0,
-        category: values[3],
-        company: values[4],
-        imageUrl: values[5],
-        remarks: values[6],
-        links: values[7],
-        tags: tags,
-        lastUpdated: new Date().toISOString()
+  // 3. Map keys
+  const getConvexKeyMap = (tName) => {
+    const maps = {
+      'inventory': {
+        'Item ID': 'itemId', 'Name': 'name', 'Quantity': 'quantity', 'Category': 'category',
+        'Company': 'company', 'Image URL': 'imageUrl', 'Remarks': 'remarks', 'Links': 'links', 'Tags': 'tags'
+      },
+      'users': {
+        'Email': 'email', 'Name': 'name', 'Role': 'role', 'Status': 'status', 
+        'Created Date': 'createdDate', 'laptops': 'laptopStatus', 'Laptop Status': 'laptopStatus',
+        'screenStart': 'sessionStart', 'screenEnd': 'sessionEnd',
+        'Screentime': 'totalTime', 'Total Time (min)': 'totalTime',
+        'rfid': 'rfid', 'My Page Link': 'myPageLink',
+        'Tags': 'tags', 'Note': 'note', 'Admin Note': 'note'
+      },
+      'requests': {
+        'Date': 'date', 'User Email': 'userEmail', 'User Name': 'userName', 
+        'Item ID': 'itemId', 'Item Name': 'itemName', 'Quantity': 'quantity',
+        'Status': 'status', 'Action By': 'actionBy', 'Return Status': 'returnStatus',
+        'Return Request': 'returnTarget', 'Return Target': 'returnTarget',
+        'Received by': 'returnReceiver', 'Return Receiver': 'returnReceiver',
+        'Remarks': 'returnRemarks'
+      },
+      'home': {
+        'Doc ID': 'docId', 'Title': 'title', 'Description': 'description',
+        'Type': 'type', 'Content': 'content', 'Order': 'order', 
+        'Visibility': 'visibility', 'Target Audience': 'targetAudience'
+      }
     };
+    return maps[tName] || {};
+  };
+  
+  const map = getConvexKeyMap(tableName);
+  let item = {};
+  let keyValue = '';
+  
+  headers.forEach((header, index) => {
+    const key = map[header];
+    if (!key) return; // Skip columns not mapped to Convex
     
-    // Update single document
-    try {
-      firestore.updateDocument('inventory/' + itemId, item);
-      console.log('Updated item ' + itemId);
-    } catch (e) {
-      console.error('Error updating item ' + itemId + ': ' + e.toString());
+    let val = values[index];
+    if (val === '') {
+       if (key === 'quantity' || key === 'totalTime' || key === 'order') val = 0;
+       else if (key === 'visibility') val = false;
+       else val = '';
     }
+    
+    // Type casting
+    if (key === 'tags') {
+       item[key] = values.slice(index).map(t => String(t)).filter(t => t !== '');
+    } else if (key === 'quantity' || key === 'totalTime' || key === 'order') {
+       item[key] = Number(val) || 0;
+    } else if (key === 'visibility') {
+       item[key] = (String(val).toLowerCase() === 'true' || val === true);
+    } else {
+       if (key !== 'tags') item[key] = String(val);
+    }
+    
+    if (key === keyField) keyValue = item[key];
+  });
+  
+  if (!keyValue) return; // Cannot sync an item without a primary key
+  
+  // 4. Push to Convex
+  try {
+    postToConvex('/syncRow', { table: tableName, key: keyField, keyValue: keyValue, data: item });
+    console.log(`Universally synced ${tableName} row: ${keyValue}`);
+  } catch (err) {
+    console.error(`Universally sync failed for ${tableName}: ${err}`);
   }
 }
 
@@ -1179,10 +1356,10 @@ function handleForceToggleLaptop(data) {
   let laptopStatusCol = 0, sessionStartCol = 0, sessionEndCol = 0, totalTimeCol = 0;
   for (let c = 0; c < headers.length; c++) {
     const h = String(headers[c] || '').toLowerCase();
-    if (h.includes('laptop status')) laptopStatusCol = c;
-    if (h.includes('session start')) sessionStartCol = c;
-    if (h.includes('session end')) sessionEndCol = c;
-    if (h.includes('total time')) totalTimeCol = c;
+    if (h.includes('laptop status') || h === 'laptops') laptopStatusCol = c;
+    if (h.includes('session start') || h === 'screenstart') sessionStartCol = c;
+    if (h.includes('session end') || h === 'screenend') sessionEndCol = c;
+    if (h.includes('total time') || h === 'screentime') totalTimeCol = c;
   }
 
   for (let i = 1; i < values.length; i++) {
@@ -1212,23 +1389,9 @@ function handleForceToggleLaptop(data) {
       // We will manually sync the user back to Firestore to ensure UI updates immediately
       const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues()[0];
       const tags = rowData.slice(hashColIndex !== -1 ? hashColIndex + 1 : 13).filter(t => t !== '');
-      const userData = {
-        email: userEmail,
-        name: rowData[1],
-        role: rowData[2] || 'USER',
-        status: rowData[3] || 'PENDING',
-        createdDate: rowData[4],
-        laptopStatus: 'Offline',
-        totalTime: newTotal,
-        myPageLink: rowData[10] || '',
-        note: rowData[11] || '',
-        tags: tags,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      const firestore = getFirestore();
-      try { firestore.updateDocument('users/' + userEmail, userData); } 
-      catch (e) { firestore.createDocument('users/' + userEmail, userData); }
+      // Re-use Convex sync helper
+      const noteColIndex = headers.indexOf('Note') !== -1 ? headers.indexOf('Note') : (headers.indexOf('Admin Note') !== -1 ? headers.indexOf('Admin Note') : 11);
+      try { syncSingleUser(userEmail, rowData, noteColIndex); } catch (e) { console.error(e); }
 
       return { success: true, message: `Forced turn off by ${adminName}` };
     }
@@ -1263,23 +1426,7 @@ function handleUpdateUserNote(data) {
       const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues()[0];
       const hashColIndex = headers.indexOf('Sync Hash');
       const tags = rowData.slice(hashColIndex !== -1 ? hashColIndex + 1 : 13).filter(t => t !== '');
-      const userData = {
-        email: userEmail,
-        name: rowData[1],
-        role: rowData[2],
-        status: rowData[3],
-        createdDate: rowData[4],
-        laptopStatus: rowData[5],
-        totalTime: rowData[8] || 0,
-        myPageLink: rowData[10] || '',
-        note: note, // NEW NOTE!
-        tags: tags,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      const firestore = getFirestore();
-      try { firestore.updateDocument('users/' + userEmail, userData); } 
-      catch (e) { firestore.createDocument('users/' + userEmail, userData); }
+      try { syncSingleUser(userEmail, rowData, noteColIndex); } catch(e) { console.error(e); }
 
       return { success: true };
     }
@@ -1297,11 +1444,10 @@ function handleManageAdminSettings(data) {
   try { sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings'); } catch(e){}
   
   if (!sheet) {
-    const firestore = getFirestore();
-    const doc = { allowTeamInventoryEdit: !!allowTeamInventoryEdit };
-    try { firestore.updateDocument('settings/admin', doc); }
-    catch (e) { firestore.createDocument('settings/admin', doc); }
-    return { success: true, warning: 'Saved to Firestore only. Create "Settings" sheet to persist.' };
+    const doc = { adminSettingsTitle: 'admin', allowTeamInventory: !!allowTeamInventoryEdit };
+    try { postToConvex('/syncRow', { table: 'settings', key: 'adminSettingsTitle', keyValue: 'admin', data: doc }); }
+    catch (e) {}
+    return { success: true, warning: 'Saved to Convex only. Create "Settings" sheet to persist.' };
   }
   
   const values = sheet.getDataRange().getValues();
@@ -1317,7 +1463,7 @@ function handleManageAdminSettings(data) {
     sheet.appendRow(['allowTeamInventoryEdit', String(allowTeamInventoryEdit)]);
   }
   
-  try { syncSettingsToFirebase(); } catch(e) {}
+  try { postToConvex('/syncRow', { table: 'settings', key: 'adminSettingsTitle', keyValue: 'admin', data: { adminSettingsTitle: 'admin', allowTeamInventory: !!allowTeamInventoryEdit } }); } catch(e) {}
   return { success: true };
 }
 
@@ -1364,16 +1510,17 @@ function handleManageHomeContent(data) {
   if (!found) sheet.appendRow(newRow);
   
   try { 
-    const firestore = getFirestore();
-    const docId = newRow[0];
-    firestore.updateDocument('home/' + docId, {
-      id: docId,
-      type: newRow[1],
-      heading: newRow[2],
-      description: newRow[3],
-      contentUrl: newRow[4],
-      lastUpdated: new Date().toISOString()
-    }, true);
+    const docId = String(newRow[0]);
+    postToConvex('/syncRow', { table: 'home', key: 'docId', keyValue: docId, data: {
+      docId: docId,
+      type: String(newRow[1] || ''),
+      title: String(newRow[2] || ''),
+      description: String(newRow[3] || ''),
+      content: String(newRow[4] || ''),
+      order: 1,
+      visibility: true,
+      targetAudience: 'public'
+    } });
   } catch(e) { console.error('Single-doc sync failed:', e); }
   
   return { success: true };
@@ -1430,7 +1577,7 @@ function handleUpdateInventoryItem(data) {
       sheet.getRange(i + 1, 1, 1, rowData.length).setValues([rowData]);
 
       // Sync to Firebase
-      try { syncSingleInventoryItem(itemId, rowData); } catch (e) { console.error('Firebase sync error: ' + e); }
+      try { syncSingleInventoryItem(itemId, rowData); } catch (e) { console.error('Convex sync error: ' + e); }
 
       return { success: true, message: 'Item updated successfully' };
     }
@@ -1453,11 +1600,10 @@ function handleDeleteInventoryItem(data) {
     if (String(values[i][0]).trim() === String(itemId).trim()) {
       sheet.deleteRow(i + 1);
 
-      // Delete from Firestore
+      // Delete from Convex
       try {
-        const firestore = getFirestore();
-        firestore.deleteDocument('inventory/' + itemId);
-      } catch (e) { console.error('Firebase delete error: ' + e); }
+        postToConvex('/deleteRow', { table: 'inventory', key: 'itemId', keyValue: String(itemId) });
+      } catch (e) { console.error('Convex delete error: ' + e); }
 
       return { success: true, message: 'Item deleted' };
     }
@@ -1494,7 +1640,7 @@ function handleUpdateUser(data) {
       try {
         const rowData = sheet.getRange(i + 1, 1, 1, sheet.getLastColumn()).getValues()[0];
         syncSingleUser(userEmail, rowData, noteColIndex);
-      } catch (e) { console.error('Firebase sync error: ' + e); }
+      } catch (e) { console.error('Convex sync error: ' + e); }
 
       return { success: true, message: 'User updated successfully' };
     }
@@ -1508,86 +1654,68 @@ function handleUpdateUser(data) {
  * return a readable message instead of crashing the whole request.
  * OPTIMISED: Skips rows whose MD5 hash hasn't changed since last sync.
  */
-function handleSyncUsersToFirebase(data) {
-  // 1. Validate Firebase credentials first — surface helpful error immediately
-  let firestore;
-  try {
-    firestore = getFirestore();
-  } catch (credErr) {
-    return { success: false, message: 'Firebase credentials error: ' + credErr.toString() + '. Check Script Properties (client_email, private_key, project_id).' };
+function handleSyncUsersToConvex(data) {
+  try { getConvexUrl(); } catch (credErr) {
+    return { success: false, message: 'Convex credentials error: ' + credErr.toString() };
   }
 
   const sheet = getSheet(SHEET_NAMES.USERS);
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
 
-  // Locate key columns
   let hashColIndex = headers.indexOf('Sync Hash');
   let noteColIndex = headers.indexOf('Note');
   if (noteColIndex === -1) noteColIndex = headers.indexOf('Admin Note');
   if (noteColIndex === -1) noteColIndex = 11;
 
-  // If there is no Sync Hash column, create one at the end
   if (hashColIndex === -1) {
     hashColIndex = headers.length;
     sheet.getRange(1, hashColIndex + 1).setValue('Sync Hash');
   }
 
-  let synced = 0;
-  let skipped = 0;
-  let errors = 0;
+  let synced = 0, skipped = 0, errors = 0;
   const startTime = Date.now();
-  const MAX_RUNTIME_MS = 270000; // 4.5 minutes — GAS limit is 6 min
+  const MAX_RUNTIME_MS = 270000;
 
   for (let i = 1; i < values.length; i++) {
-    // Safety: stop if approaching GAS 6-min wall
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
-      return { success: true, partial: true, message: `Timeout safety stop. Synced ${synced}, skipped ${skipped}, errors ${errors}. Re-run to continue.` };
+      return { success: true, partial: true, message: `Timeout safety stop. Synced ${synced}, skipped ${skipped}, errors ${errors}.` };
     }
 
     const row = values[i];
     const email = String(row[0] || '').trim();
     if (!email) continue;
 
-    const tagsStart = hashColIndex > 0 ? hashColIndex + 1 : 13;
-    const tags = row.slice(tagsStart).filter(t => t !== '' && t !== undefined);
+    const tagsStart = Math.max(noteColIndex + 1, 12);
+    const tags = row.slice(tagsStart, hashColIndex === -1 ? undefined : hashColIndex).map(t => String(t)).filter(t => t !== '');
 
     const userData = {
       email: email,
-      name: row[1] || '',
-      role: row[2] || 'USER',
-      status: row[3] || 'PENDING',
-      createdDate: row[4] ? String(row[4]) : '',
-      laptopStatus: row[5] || 'Offline',
+      name: String(row[1] || ''),
+      role: String(row[2] || 'USER'),
+      status: String(row[3] || 'PENDING'),
+      createdDate: String(row[4] || ''),
+      laptopStatus: String(row[5] || 'Offline'),
+      sessionStart: String(row[6] || ''),
+      sessionEnd: String(row[7] || ''),
       totalTime: Number(row[8]) || 0,
-      myPageLink: row[10] || '',
-      note: row[noteColIndex] || '',
+      rfid: String(row[9] || ''),
+      myPageLink: String(row[10] || ''),
       tags: tags,
-      lastUpdated: new Date().toISOString()
+      note: noteColIndex !== -1 ? String(row[noteColIndex] || '') : '',
     };
 
-    // MD5-based change detection — skip unchanged rows
-    const rowPayload = JSON.stringify({ ...userData, lastUpdated: '' }); // exclude timestamp from hash
-    const currentHash = computeMd5Hash(rowPayload);
+    const currentHash = computeUserSyncHash(userData);
     const storedHash = String(row[hashColIndex] || '');
 
-    if (currentHash === storedHash) {
-      skipped++;
-      continue; // Row hasn't changed — no need to write to Firebase
-    }
+    if (currentHash === storedHash) { skipped++; continue; }
 
     try {
-      try { firestore.updateDocument('users/' + email, userData); }
-      catch (e) { firestore.createDocument('users/' + email, userData); }
-      // Write new hash back to sheet so we skip it next run
+      postToConvex('/syncRow', { table: 'users', key: 'email', keyValue: String(email), data: userData });
       sheet.getRange(i + 1, hashColIndex + 1).setValue(currentHash);
       synced++;
-    } catch (rowErr) {
-      errors++;
-      console.error('Failed to sync user ' + email + ': ' + rowErr);
-    }
+    } catch (rowErr) { errors++; console.error(rowErr); }
 
-    // Rate limiting — stay well within Firebase quota
     if (i % 3 === 0) Utilities.sleep(400);
   }
 
@@ -1599,16 +1727,13 @@ function handleSyncUsersToFirebase(data) {
  * FIXED: Credential errors return early with a readable message.
  * OPTIMISED: MD5 hash-based change detection.
  */
-function handleSyncRequestsToFirebase(data) {
-  let firestore;
-  try {
-    firestore = getFirestore();
-  } catch (credErr) {
-    return { success: false, message: 'Firebase credentials error: ' + credErr.toString() + '. Check Script Properties.' };
+function handleSyncRequestsToConvex(data) {
+  try { getConvexUrl(); } catch (credErr) {
+    return { success: false, message: 'Convex credentials error: ' + credErr.toString() };
   }
 
   const sheet = getSheet(SHEET_NAMES.REQUESTS);
-  if (!sheet) return { success: false, message: 'Requests sheet not found. Check SHEET_NAMES.REQUESTS.' };
+  if (!sheet) return { success: false, message: 'Requests sheet not found.' };
 
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
@@ -1619,9 +1744,7 @@ function handleSyncRequestsToFirebase(data) {
     sheet.getRange(1, hashColIndex + 1).setValue('Sync Hash');
   }
 
-  let synced = 0;
-  let skipped = 0;
-  let errors = 0;
+  let synced = 0, skipped = 0, errors = 0;
   const startTime = Date.now();
 
   for (let i = 1; i < values.length; i++) {
@@ -1635,38 +1758,29 @@ function handleSyncRequestsToFirebase(data) {
 
     const reqData = {
       date: requestId,
-      userEmail: row[1] || '',
-      userName: row[2] || '',
-      itemId: row[3] || '',
-      itemName: row[4] || '',
+      userEmail: String(row[1] || ''),
+      userName: String(row[2] || ''),
+      itemId: String(row[3] || ''),
+      itemName: String(row[4] || ''),
       quantity: Number(row[5]) || 0,
-      status: row[6] || 'PENDING',
-      actionBy: row[7] || '',
-      returnRequestStatus: row[8] || '',
-      returnTarget: row[9] || '',
-      returnReceiver: row[10] || '',
-      lastUpdated: new Date().toISOString()
+      status: String(row[6] || 'PENDING'),
+      actionBy: String(row[7] || ''),
+      returnStatus: String(row[8] || ''),
+      returnTarget: String(row[9] || ''),
+      returnReceiver: String(row[10] || ''),
+      returnRemarks: String(row[11] || '')
     };
 
-    const docId = requestId.replace(/[:/]/g, '_');
-    const rowPayload = JSON.stringify({ ...reqData, lastUpdated: '' });
-    const currentHash = computeMd5Hash(rowPayload);
+    const currentHash = computeRequestSyncHash(reqData);
     const storedHash = String(row[hashColIndex] || '');
 
-    if (currentHash === storedHash) {
-      skipped++;
-      continue;
-    }
+    if (currentHash === storedHash) { skipped++; continue; }
 
     try {
-      try { firestore.updateDocument('requests/' + docId, reqData); }
-      catch (e) { firestore.createDocument('requests/' + docId, reqData); }
+      postToConvex('/syncRow', { table: 'requests', key: 'date', keyValue: requestId, data: reqData });
       sheet.getRange(i + 1, hashColIndex + 1).setValue(currentHash);
       synced++;
-    } catch (rowErr) {
-      errors++;
-      console.error('Failed to sync request ' + requestId + ': ' + rowErr);
-    }
+    } catch (rowErr) { errors++; console.error(rowErr); }
 
     if (i % 3 === 0) Utilities.sleep(400);
   }
@@ -1678,8 +1792,7 @@ function handleSyncRequestsToFirebase(data) {
  * Syncs the entire "Home" sheet to Firestore 'home' collection.
  * Required for displaying guest-facing pages.
  */
-function syncHomeToFirebase(fullSync = false) {
-  const firestore = getFirestore();
+function syncHomeToConvex(fullSync = false) {
   const sheet = getSheet(SHEET_NAMES.HOME);
   if (!sheet) return { success: false, message: 'Home sheet not found' };
 
@@ -1695,14 +1808,18 @@ function syncHomeToFirebase(fullSync = false) {
     if (!id) return;
 
     try {
-      firestore.updateDocument('home/' + id, {
-        id: id,
+      const homeDoc = {
+        docId: id,
         type: String(row[1] || ''),
-        heading: String(row[2] || ''),
+        title: String(row[2] || ''),
         description: String(row[3] || ''),
-        contentUrl: String(row[4] || ''),
-        lastUpdated: new Date().toISOString()
-      }, true); // Create if not exists
+        content: String(row[4] || ''),
+        order: 1,
+        visibility: true,
+        targetAudience: 'public'
+      };
+      
+      postToConvex('/syncRow', { table: 'home', key: 'docId', keyValue: id, data: homeDoc });
       synced++;
     } catch (e) {
       console.error('Error syncing home ID ' + id, e);
@@ -1731,13 +1848,253 @@ function handleDeleteHomeContent(data) {
     if (String(values[i][0]) === String(id)) {
       sheet.deleteRow(i + 1);
       try {
-        const firestore = getFirestore();
-        firestore.deleteDocument('home/' + id);
-      } catch (e) { console.error('Firebase delete error: ' + e); }
+        postToConvex('/deleteRow', { table: 'home', key: 'docId', keyValue: String(id) });
+      } catch (e) { console.error('Convex delete error: ' + e); }
       return { success: true };
     }
   }
   return { success: false, message: 'Content block not found' };
+}
+
+// ===== GENERIC CONVEX -> SHEETS ROW SYNC =====
+
+function handleUpsertUserRow(data) {
+  const { email } = data;
+  if (!email) return { success: false, message: 'Missing email' };
+
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  if (!sheet) return { success: false, message: 'Users sheet not found' };
+
+  let values = sheet.getDataRange().getValues();
+  let noteColIndex = values[0].indexOf('Note');
+  if (noteColIndex === -1) noteColIndex = values[0].indexOf('Admin Note');
+  if (noteColIndex === -1) {
+    noteColIndex = ensureHeaderColumn(sheet, 'Admin Note');
+    values = sheet.getDataRange().getValues();
+  }
+
+  let hashColIndex = values[0].indexOf('Sync Hash');
+  if (hashColIndex === -1) {
+    hashColIndex = ensureHeaderColumn(sheet, 'Sync Hash');
+    values = sheet.getDataRange().getValues();
+  }
+
+  const tags = Array.isArray(data.tags) ? data.tags : [];
+  const tagsStartIndex = Math.max(noteColIndex + 1, 12);
+  if (hashColIndex < tagsStartIndex + tags.length) {
+    sheet.insertColumnsBefore(hashColIndex + 1, tagsStartIndex + tags.length - hashColIndex);
+    values = sheet.getDataRange().getValues();
+    hashColIndex = values[0].indexOf('Sync Hash');
+  }
+
+  let rowIndex = findRowIndexByValue(values, 0, email);
+  if (rowIndex === -1) {
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  const existingRow = rowIndex <= values.length ? values[rowIndex - 1].slice() : [];
+  const rowLength = Math.max(sheet.getLastColumn(), hashColIndex + 1);
+  const row = new Array(rowLength).fill('');
+  for (let i = 0; i < rowLength; i++) {
+    row[i] = existingRow[i] || '';
+  }
+
+  row[0] = String(email);
+  row[1] = String(data.name || '');
+  row[2] = String(data.role || 'USER');
+  row[3] = String(data.status || 'PENDING');
+  row[4] = String(data.createdDate || '');
+  row[5] = String(data.laptopStatus || 'Offline');
+  row[6] = String(data.sessionStart || '');
+  row[7] = String(data.sessionEnd || '');
+  row[8] = Number(data.totalTime) || 0;
+  row[9] = String(data.rfid || '');
+  row[10] = String(data.myPageLink || '');
+  row[noteColIndex] = String(data.note || '');
+
+  for (let i = tagsStartIndex; i < hashColIndex; i++) {
+    row[i] = '';
+  }
+  tags.forEach((tag, index) => {
+    row[tagsStartIndex + index] = String(tag);
+  });
+  row[hashColIndex] = computeUserSyncHash({
+    ...data,
+    tags,
+  });
+
+  sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  return { success: true };
+}
+
+function handleDeleteUserRow(data) {
+  const { email } = data;
+  if (!email) return { success: false, message: 'Missing email' };
+  const sheet = getSheet(SHEET_NAMES.USERS);
+  if (!sheet) return { success: false, message: 'Users sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, email);
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
+}
+
+function handleUpsertRequestRow(data) {
+  const { date } = data;
+  if (!date) return { success: false, message: 'Missing request date' };
+
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  if (!sheet) return { success: false, message: 'Requests sheet not found' };
+  let values = sheet.getDataRange().getValues();
+  let hashColIndex = values[0].indexOf('Sync Hash');
+  if (hashColIndex === -1) {
+    hashColIndex = ensureHeaderColumn(sheet, 'Sync Hash');
+    values = sheet.getDataRange().getValues();
+    hashColIndex = values[0].indexOf('Sync Hash');
+  }
+
+  let rowIndex = findRowIndexByValue(values, 0, date);
+  if (rowIndex === -1) {
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  const rowLength = Math.max(sheet.getLastColumn(), hashColIndex + 1, 11);
+  const row = new Array(rowLength).fill('');
+  row[0] = String(date);
+  row[1] = String(data.userEmail || '');
+  row[2] = String(data.userName || '');
+  row[3] = String(data.itemId || '');
+  row[4] = String(data.itemName || '');
+  row[5] = Number(data.quantity) || 0;
+  row[6] = String(data.status || 'PENDING');
+  row[7] = String(data.actionBy || '');
+  row[8] = String(data.returnStatus || '');
+  row[9] = String(data.returnTarget || '');
+  row[10] = String(data.returnReceiver || '');
+  row[11] = String(data.returnRemarks || '');
+  row[hashColIndex] = computeRequestSyncHash(data);
+
+  sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  return { success: true };
+}
+
+function handleDeleteRequestRow(data) {
+  const { date } = data;
+  if (!date) return { success: false, message: 'Missing request date' };
+  const sheet = getSheet(SHEET_NAMES.REQUESTS);
+  if (!sheet) return { success: false, message: 'Requests sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, date);
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
+}
+
+function handleUpsertInventoryRow(data) {
+  const { itemId } = data;
+  if (!itemId) return { success: false, message: 'Missing itemId' };
+
+  const sheet = getSheet(SHEET_NAMES.INVENTORY);
+  if (!sheet) return { success: false, message: 'Inventory sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  let rowIndex = findRowIndexByValue(values, 0, itemId);
+  if (rowIndex === -1) {
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  const row = [
+    String(itemId),
+    String(data.name || ''),
+    Number(data.quantity) || 0,
+    String(data.category || ''),
+    String(data.company || ''),
+    String(data.imageUrl || ''),
+    String(data.remarks || ''),
+    String(data.links || ''),
+    '',
+    ...(Array.isArray(data.tags) ? data.tags : []).map((tag) => String(tag)),
+  ];
+
+  const clearLength = Math.max(sheet.getLastColumn(), row.length);
+  sheet.getRange(rowIndex, 1, 1, clearLength).clearContent();
+  sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  return { success: true };
+}
+
+function handleDeleteInventoryRowRow(data) {
+  const { itemId } = data;
+  if (!itemId) return { success: false, message: 'Missing itemId' };
+  const sheet = getSheet(SHEET_NAMES.INVENTORY);
+  if (!sheet) return { success: false, message: 'Inventory sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, itemId);
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
+}
+
+function handleUpsertHomeRow(data) {
+  const { docId } = data;
+  if (!docId) return { success: false, message: 'Missing docId' };
+  const sheet = getSheet(SHEET_NAMES.HOME);
+  if (!sheet) return { success: false, message: 'Home sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  let rowIndex = findRowIndexByValue(values, 0, docId);
+  if (rowIndex === -1) {
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  const row = [
+    String(docId),
+    String(data.type || ''),
+    String(data.title || ''),
+    String(data.description || ''),
+    String(data.content || ''),
+  ];
+  sheet.getRange(rowIndex, 1, 1, 5).setValues([row]);
+  return { success: true };
+}
+
+function handleDeleteHomeRow(data) {
+  const { docId } = data;
+  if (!docId) return { success: false, message: 'Missing docId' };
+  const sheet = getSheet(SHEET_NAMES.HOME);
+  if (!sheet) return { success: false, message: 'Home sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, docId);
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
+}
+
+function handleUpsertSettingsRow(data) {
+  const sheet = getOrCreateSheet('Settings');
+  const values = sheet.getDataRange().getValues();
+  let rowIndex = findRowIndexByValue(values, 0, 'allowTeamInventoryEdit');
+  if (rowIndex === -1) {
+    if (sheet.getLastRow() === 0) {
+      sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+    } else if (sheet.getLastRow() === 1 && sheet.getLastColumn() < 2) {
+      sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+    }
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  sheet.getRange(rowIndex, 1, 1, 2).setValues([[
+    'allowTeamInventoryEdit',
+    String(!!data.allowTeamInventory),
+  ]]);
+  return { success: true };
+}
+
+function handleDeleteSettingsRow(data) {
+  const sheet = getSheet('Settings');
+  if (!sheet) return { success: true };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, 'allowTeamInventoryEdit');
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
 }
 
 // ===== FIREBASE PER-DOC SYNC HELPERS =====
@@ -1748,21 +2105,19 @@ function handleDeleteHomeContent(data) {
  * @param {Array} rowData - Array representing the sheet row values
  */
 function syncSingleInventoryItem(itemId, rowData) {
-  const firestore = getFirestore();
-  const tags = rowData.slice(9).filter(t => t !== '');
+  const tags = rowData.slice(9).map(t => String(t)).filter(t => t !== '');
   const item = {
-    name: rowData[1],
+    itemId: String(itemId),
+    name: String(rowData[1] || ''),
     quantity: typeof rowData[2] === 'number' ? rowData[2] : Number(rowData[2]) || 0,
-    category: rowData[3],
-    company: rowData[4],
-    imageUrl: rowData[5],
-    remarks: rowData[6] || '',
-    links: rowData[7] || '',
-    tags: tags,
-    lastUpdated: new Date().toISOString()
+    category: String(rowData[3] || ''),
+    company: String(rowData[4] || ''),
+    imageUrl: String(rowData[5] || ''),
+    remarks: String(rowData[6] || ''),
+    links: String(rowData[7] || ''),
+    tags: tags
   };
-  try { firestore.updateDocument('inventory/' + itemId, item); }
-  catch (e) { firestore.createDocument('inventory/' + itemId, item); }
+  postToConvex('/syncRow', { table: 'inventory', key: 'itemId', keyValue: String(itemId), data: item });
 }
 
 /**
@@ -1772,24 +2127,27 @@ function syncSingleInventoryItem(itemId, rowData) {
  * @param {number} noteColIndex
  */
 function syncSingleUser(email, rowData, noteColIndex) {
-  const firestore = getFirestore();
   const tagsStart = noteColIndex + 1;
-  const tags = rowData.slice(tagsStart > 13 ? tagsStart : 13).filter(t => t !== '');
+  const tags = rowData
+    .slice(tagsStart > 12 ? tagsStart : 12)
+    .map(t => String(t))
+    .filter(t => t !== '' && !/^[a-f0-9]{32}$/i.test(t));
   const userData = {
-    email: email,
-    name: rowData[1] || '',
-    role: rowData[2] || 'USER',
-    status: rowData[3] || 'PENDING',
-    createdDate: rowData[4] || '',
-    laptopStatus: rowData[5] || 'Offline',
+    email: String(email),
+    name: String(rowData[1] || ''),
+    role: String(rowData[2] || 'USER'),
+    status: String(rowData[3] || 'PENDING'),
+    createdDate: String(rowData[4] || ''),
+    laptopStatus: String(rowData[5] || 'Offline'),
+    sessionStart: String(rowData[6] || ''),
+    sessionEnd: String(rowData[7] || ''),
     totalTime: Number(rowData[8]) || 0,
-    myPageLink: rowData[10] || '',
-    note: rowData[noteColIndex] || '',
+    rfid: String(rowData[9] || ''),
+    myPageLink: String(rowData[10] || ''),
     tags: tags,
-    lastUpdated: new Date().toISOString()
+    note: noteColIndex !== -1 ? String(rowData[noteColIndex] || '') : '',
   };
-  try { firestore.updateDocument('users/' + email, userData); }
-  catch (e) { firestore.createDocument('users/' + email, userData); }
+  postToConvex('/syncRow', { table: 'users', key: 'email', keyValue: String(email), data: userData });
 }
 
 // ===== MD5 HASH HELPER =====
@@ -1819,15 +2177,15 @@ function handleCheckSyncStatus(data) {
     success: true,
     users: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
     requests: { sheetRows: 0, unsyncedRows: 0, canCheck: true },
-    firebaseAvailable: false
+    convexAvailable: false
   };
 
-  // Check Firebase connectivity
+  // Check Convex connectivity
   try {
-    getFirestore(); // Just test credentials — don't read anything
-    result.firebaseAvailable = true;
+    getConvexUrl();
+    result.convexAvailable = true;
   } catch (e) {
-    result.firebaseAvailable = false;
+    result.convexAvailable = false;
     result.credentialError = e.toString();
   }
 
@@ -1889,123 +2247,68 @@ function handleCheckSyncStatus(data) {
  * Sync all Users from the Users sheet to Firestore.
  * Run manually or via a time-based trigger.
  */
-function syncUsersToFirebase() {
-  const firestore = getFirestore();
+function syncUsersToConvex() {
   const sheet = getSheet(SHEET_NAMES.USERS);
   if (!sheet) { console.error('Users sheet not found'); return; }
 
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) { console.log('No users to sync'); return; }
 
-  const noteColIndex = values[0].indexOf('Note');
+  const noteColIndex = values[0].indexOf('Note') !== -1 ? values[0].indexOf('Note') : 11;
 
   let synced = 0, errors = 0;
   values.slice(1).forEach((row, i) => {
-    const email = String(row[1] || '').trim();
+    const email = String(row[0] || '').trim();
     if (!email) return;
 
-    const userDoc = {
-      id:           String(row[0] || ''),
-      email:        email,
-      name:         String(row[2] || ''),
-      role:         String(row[3] || 'USER'),
-      status:       String(row[4] || 'PENDING'),
-      createdDate:  String(row[5] || ''),
-      laptopStatus: String(row[6] || 'Offline'),
-      totalTime:    Number(row[7]) || 0,
-      tags:         row.slice(8).filter(t => t !== ''),
-      note:         noteColIndex !== -1 ? String(row[noteColIndex] || '') : '',
-      lastUpdated:  new Date().toISOString()
-    };
-
     try {
-      firestore.updateDocument('users/' + email, userDoc);
-    } catch (e) {
-      try { firestore.createDocument('users/' + email, userDoc); } catch (e2) { errors++; }
-    }
-    synced++;
+      syncSingleUser(email, row, noteColIndex);
+      synced++;
+    } catch (e) { errors++; }
     if (i > 0 && i % 5 === 0) Utilities.sleep(300);
   });
-  console.log('Synced ' + synced + ' users to Firebase (' + errors + ' errors).');
+  console.log('Synced ' + synced + ' users to Convex (' + errors + ' errors).');
 }
 
 /**
  * Sync all active Requests (checkouts) from the Requests sheet to Firestore.
  * Run manually or via a time-based trigger.
  */
-function syncRequestsToFirebase() {
-  const firestore = getFirestore();
+function syncRequestsToConvex() {
   const sheet = getSheet(SHEET_NAMES.REQUESTS);
   if (!sheet) { console.error('Requests sheet not found'); return; }
 
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) { console.log('No requests to sync'); return; }
 
-  const headers = values[0].map(h => String(h).trim());
   let synced = 0, errors = 0;
-  
-  const currentIds = new Set();
 
   values.slice(1).forEach((row, i) => {
     const docId = String(row[0] || '').trim();
     if (!docId) return;
 
-    currentIds.add(docId);
-
-    const requestDoc = {};
-    headers.forEach((h, idx) => {
-      if (h) requestDoc[h] = row[idx];
-    });
-    requestDoc['lastUpdated'] = new Date().toISOString();
+    const reqData = {
+      date: String(docId),
+      userEmail: String(row[1] || ''),
+      userName: String(row[2] || ''),
+      itemId: String(row[3] || ''),
+      itemName: String(row[4] || ''),
+      quantity: Number(row[5]) || 0,
+      status: String(row[6] || 'PENDING'),
+      actionBy: String(row[7] || ''),
+      returnStatus: String(row[8] || ''),
+      returnTarget: String(row[9] || ''),
+      returnReceiver: String(row[10] || '')
+    };
 
     try {
-      firestore.updateDocument('requests/' + docId, requestDoc);
-    } catch (e) {
-      try { firestore.createDocument('requests/' + docId, requestDoc); } catch (e2) { errors++; }
-    }
-    synced++;
+      postToConvex('/syncRow', { table: 'requests', key: 'date', keyValue: String(docId), data: reqData });
+      synced++;
+    } catch (e) { errors++; }
     if (i > 0 && i % 5 === 0) Utilities.sleep(300);
   });
   
-  // Cleanup deleted requests using metadata tracking (100% fail-proof)
-  // We save the last known IDs to a metadata document so we don't need getDocuments()
-  try {
-    let oldIds = [];
-    try {
-      const metaResponse = firestore.getDocument('metadata/requests_sync');
-      if (metaResponse && metaResponse.fields && metaResponse.fields.ids && metaResponse.fields.ids.arrayValue) {
-         oldIds = metaResponse.fields.ids.arrayValue.values.map(v => v.stringValue || v.integerValue);
-      } else if (metaResponse && metaResponse.ids) {
-         oldIds = metaResponse.ids; // Depending on how library parses it
-      }
-    } catch (e) {
-      // First run or metadata doc doesn't exist yet
-    }
-
-    let deletedCount = 0;
-    // Delete any old ID that is no longer in the current sheet
-    oldIds.forEach(oldId => {
-      if (!currentIds.has(String(oldId))) {
-        try { firestore.deleteDocument('requests/' + oldId); deletedCount++; } catch (e) { /* ignore */ }
-      }
-    });
-
-    // Save the new current IDs for the next sync
-    const newIdsArray = Array.from(currentIds);
-    try {
-      firestore.updateDocument('metadata/requests_sync', { ids: newIdsArray }, true);
-    } catch (e) {
-      try { firestore.createDocument('metadata/requests_sync', { ids: newIdsArray }); } catch(e2){}
-    }
-    
-    if (deletedCount > 0) {
-      console.log('Cleaned up ' + deletedCount + ' removed requests from Firebase.');
-    }
-  } catch (e) {
-    console.warn('Could not clean up deleted requests: ' + e);
-  }
-
-  console.log('Synced ' + synced + ' requests to Firebase (' + errors + ' errors).');
+  console.log('Synced ' + synced + ' requests to Convex (' + errors + ' errors).');
 }
 
 /**
@@ -2018,7 +2321,7 @@ function syncRequestsToFirebase() {
  *   2. syncUsersToFirebase      — every 30 minutes (time-based)
  *   3. syncRequestsToFirebase   — every 30 minutes (time-based)
  *   4. syncHomeToFirebase       — every 1 hour (time-based)
- *   5. onInventoryEdit          — on spreadsheet edit (onEdit)
+ *   5. onUniversalEdit          — on spreadsheet edit (onEdit)
  */
 function installTriggers() {
   // Delete ALL existing triggers first to avoid duplicates
@@ -2026,33 +2329,18 @@ function installTriggers() {
 
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 
-  // Time-based: sync inventory every 30 minutes
-  ScriptApp.newTrigger('syncInventoryToFirebase')
-    .timeBased().everyMinutes(30).create();
-
-  // Time-based: sync users every 30 minutes
-  ScriptApp.newTrigger('syncUsersToFirebase')
-    .timeBased().everyMinutes(30).create();
-
-  // Time-based: sync requests every 30 minutes
-  ScriptApp.newTrigger('syncRequestsToFirebase')
-    .timeBased().everyMinutes(30).create();
-
-  // Time-based: sync home content every hour
-  ScriptApp.newTrigger('syncHomeToFirebase')
-    .timeBased().everyHours(1).create();
-
-  // Spreadsheet onEdit: sync inventory row immediately when it changes
-  ScriptApp.newTrigger('onInventoryEdit')
-    .forSpreadsheet(ss).onEdit().create();
+  ScriptApp.newTrigger('syncInventoryToConvex').timeBased().everyMinutes(30).create();
+  ScriptApp.newTrigger('syncUsersToConvex').timeBased().everyMinutes(30).create();
+  ScriptApp.newTrigger('syncRequestsToConvex').timeBased().everyMinutes(30).create();
+  ScriptApp.newTrigger('syncHomeToConvex').timeBased().everyHours(1).create();
+  ScriptApp.newTrigger('onUniversalEdit').forSpreadsheet(ss).onEdit().create();
 
   console.log('✅ All 5 triggers installed successfully!');
   console.log('Running initial full sync now...');
 
-  // Run an immediate full sync after installing
-  syncInventoryToFirebase();
-  syncUsersToFirebase();
-  syncHomeToFirebase(true);
+  syncInventoryToConvex();
+  syncUsersToConvex();
+  syncHomeToConvex(true);
 
-  console.log('✅ Initial sync complete! Firebase is now up to date.');
+  console.log('✅ Initial sync complete! Convex is now up to date.');
 }

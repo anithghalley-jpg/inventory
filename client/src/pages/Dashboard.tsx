@@ -20,6 +20,8 @@ import { toast } from 'sonner';
  */
 
 import { SCRIPT_URL } from '@/config';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 interface InventoryItem {
   id: string;
@@ -96,13 +98,13 @@ export default function Dashboard() {
 
   // 1. Fetch Data on Mount
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchRequestsAndUsers();
-    }
+    // Data is now fetched reactively via Convex useQuery
   }, [isAuthenticated]);
 
-  // Track if we're using the fallback (Sheets) or Firebase
-  const [inventorySource, setInventorySource] = React.useState<'firebase' | 'sheets' | 'loading'>('loading');
+  // Track if we're using the fallback (Sheets) or Convex
+  const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
+  
+  const convexInventory = useQuery(api.inventory.getAll);
 
   // Helper: load inventory from Google Sheets (Golden Rule fallback)
   const fetchInventoryFromSheets = React.useCallback(async () => {
@@ -135,101 +137,52 @@ export default function Dashboard() {
     }
   }, []);
 
-  // 2. Inventory: Firebase is primary. Sheets is the error-only fallback.
-  // No auth gate — sets up immediately like Community.tsx so Firestore connects right away.
+  // 2. Inventory: Convex is primary. Sheets is the error-only fallback.
   useEffect(() => {
-    import('firebase/firestore').then(({ collection, query, onSnapshot }) => {
-      import('../firebase').then(({ db }) => {
-        const q = query(collection(db, 'inventory'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-          // Firebase is the source of truth — trust it even if empty
-          const items: InventoryItem[] = [];
-          snapshot.forEach((doc) => {
-            const data = doc.data();
-            items.push({
-              id: doc.id,
-              name: data.name,
-              quantity: data.quantity,
-              category: data.category,
-              company: data.company,
-              imageUrl: data.imageUrl,
-              remarks: data.remarks,
-              links: data.links,
-              tags: Array.isArray(data.tags) ? data.tags.join(',') : (data.tags || '')
-            });
-          });
-          setInventory(items);
-          const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
-          setCategories(['all', ...uniqueCats as string[]]);
-          setInventorySource('firebase');
-        }, (error) => {
-          // Real Firebase error (quota exceeded, permission denied)
-          console.warn('Firebase error — falling back to Sheets:', error.message);
-          fetchInventoryFromSheets();
-        });
-
-        return () => unsubscribe();
-      }).catch(() => fetchInventoryFromSheets());
-    }).catch(() => fetchInventoryFromSheets());
-  }, [fetchInventoryFromSheets]);
-
-  const fetchRequestsAndUsers = async () => {
-    // setIsLoading(true); // Don't set global loading true as inventory comes separately
-    try {
-      // Fetch Requests (New Logic for My Items)
-      const reqResponse = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getRequests' }),
-      });
-      const reqResult = await reqResponse.json();
-
-      // Fetch Users for Approver List (Admin + Team)
-      const usersResponse = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getAllUsers' })
-      });
-      const usersResult = await usersResponse.json();
-      if (usersResult.success) {
-        // 1. Approvers (Admins/Team)
-        const qualifiedApprovers = usersResult.users.filter((u: any) =>
-          (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
-        );
-        setApprovers(qualifiedApprovers);
-
-        // 2. Directory (Only Approved Users)
-        const directoryUsers = usersResult.users.filter((u: any) => u.status === 'APPROVED');
-        setAllUsers(directoryUsers);
-      }
-
-      // We need inventory to format items with images. 
-      // If inventory is not yet loaded from Firebase, we might miss images.
-      // But MyItems logic relies on matching IDs.
-      // We can update MyItems when either Requests OR Inventory changes.
-      // For now, let's just save the raw requests and format them in a useEffect that watches both.
-
-      // Actually, to minimalize changes, let's keep the formatting logic here 
-      // but we might miss images if inventory isn't ready. 
-      // However, we can just use the item details from the request if available, 
-      // or we rely on the component re-rendering when inventory updates?
-      // No, setMyItems creates a new state.
-
-      // Better approach: Store raw requests in state, and derive `myItems` view from `requests` + `inventory`.
-      // But `myItems` is state.
-      // Let's just set it here. The image might be missing initially.
-
-
-      if (reqResult.success) {
-        setRequests(reqResult.requests);
-      }
-
-
-    } catch (error) {
-      console.error("Failed to fetch data", error);
-      toast.error("Failed to load history");
-    } finally {
-      setIsLoading(false);
+    if (convexInventory !== undefined) {
+      const items: InventoryItem[] = convexInventory.map(doc => ({
+        id: doc.itemId || doc._id,
+        name: doc.name,
+        quantity: doc.quantity,
+        category: doc.category,
+        company: doc.company,
+        imageUrl: doc.imageUrl,
+        remarks: doc.remarks,
+        links: doc.links,
+        tags: Array.isArray(doc.tags) ? doc.tags.join(',') : (doc.tags || '')
+      }));
+      setInventory(items);
+      const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
+      setCategories(['all', ...uniqueCats as string[]]);
+      setInventorySource('convex');
     }
-  };
+  }, [convexInventory]);
+
+  const convexRequests = useQuery(api.requests.getAll);
+  const convexUsers = useQuery(api.users.getAll);
+  const initiateReturnMut = useMutation(api.requests.initiateReturn);
+  const checkoutRequestMut = useMutation(api.requests.checkoutRequest);
+  const toggleLaptopMut = useMutation(api.users.toggleLaptop);
+
+  useEffect(() => {
+    if (convexRequests) {
+      setRequests(convexRequests as any);
+    }
+  }, [convexRequests]);
+
+  useEffect(() => {
+    if (convexUsers) {
+      const qualifiedApprovers = convexUsers.filter((u: any) =>
+        (u.role === 'ADMIN' || u.role === 'TEAM') && u.status === 'APPROVED'
+      );
+      setApprovers(qualifiedApprovers);
+
+      const directoryUsers = convexUsers.filter((u: any) => u.status === 'APPROVED');
+      setAllUsers(directoryUsers);
+    }
+  }, [convexUsers]);
+
+
 
   // Helper to process items (can be called when inventory updates too)
   const processMyItems = (requests: any[], currentInventory: InventoryItem[]) => {
@@ -284,18 +237,10 @@ export default function Dashboard() {
     setReturnTarget('');
 
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'initiateReturn',
-          date: item.id, // ID
-          returnTarget: target
-        })
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
-        fetchRequestsAndUsers();
-        return result;
+      initiateReturnMut({
+        requestId: item.id,
+        returnTarget: target,
+        scriptUrl: SCRIPT_URL
       }),
       {
         loading: `Initiating return to ${target}...`,
@@ -319,22 +264,13 @@ export default function Dashboard() {
 
     // 2. Show loading/success/error flow
     toast.promise(
-      fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'checkoutRequest',
-          userEmail: user?.email,
-          userName: user?.name,
-          itemId: itemToRequest.id,
-          itemName: itemToRequest.name,
-          quantity: parseInt(qty),
-        }),
-      }).then(async (res) => {
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message);
-        // Refresh handled below
-        fetchRequestsAndUsers();
-        return result;
+      checkoutRequestMut({
+        userEmail: user?.email || '',
+        userName: user?.name || '',
+        itemId: itemToRequest.id,
+        itemName: itemToRequest.name,
+        quantity: parseInt(qty),
+        scriptUrl: SCRIPT_URL
       }).finally(() => {
         setIsCheckingOut(false);
       }),
@@ -383,24 +319,13 @@ export default function Dashboard() {
     setLaptopStatus(newStatus);
 
     try {
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'toggleLaptop',
-          email: user?.email,
-          status: newStatus
-        }),
+      await toggleLaptopMut({
+        email: user?.email || '',
+        isTurningOn: checked,
+        newTotal: totalScreenTime,
+        scriptUrl: SCRIPT_URL,
       });
-      const result = await response.json();
-
-      if (result.success) {
-        if (newStatus === 'Offline' && result.totalTime) {
-          setTotalScreenTime(result.totalTime);
-          toast.success(`Session Ended. Total time: ${formatTime(result.totalTime)}`);
-        } else {
-          toast.success('Lab Session Started');
-        }
-      }
+      toast.success(checked ? 'Lab Session Started' : 'Lab Session Ended');
     } catch (error) {
       console.error("Failed to toggle laptop", error);
       toast.error("Failed to update status");

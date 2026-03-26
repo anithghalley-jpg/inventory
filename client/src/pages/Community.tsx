@@ -4,6 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion } from "framer-motion";
 import { PlayCircle, Users } from "lucide-react";
 import { SCRIPT_URL } from "@/config";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 interface HomeContent {
   id: string;
@@ -17,7 +19,9 @@ interface HomeContent {
 export default function Community() {
   const [homeData, setHomeData] = useState<HomeContent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [dataSource, setDataSource] = useState<'firebase' | 'sheets' | 'loading'>('loading');
+  const [dataSource, setDataSource] = useState<'convex' | 'sheets' | 'loading'>('loading');
+
+  const convexHomeData = useQuery(api.home.getAll);
 
   // Home content: Firebase is primary. Sheets is the error-only fallback.
   const fetchFromSheets = useCallback(async () => {
@@ -39,27 +43,18 @@ export default function Community() {
   }, []);
 
   useEffect(() => {
-    // Try Firebase first (dynamic import — never crashes at module load)
-    import('firebase/firestore').then(({ collection, onSnapshot }) => {
-      import('../firebase').then(({ db }) => {
-        const unsub = onSnapshot(collection(db, 'home'), (snapshot) => {
-          // Firebase is source of truth — trust it even if empty
-          const data: HomeContent[] = [];
-          snapshot.forEach(doc => {
-            data.push({ id: doc.id, ...doc.data() } as HomeContent);
-          });
-          setHomeData(data);
-          setDataSource('firebase');
-          setIsLoading(false);
-        }, (err) => {
-          // Real Firebase error — only THEN fall back to Sheets
-          console.warn('Firebase home error — falling back to Sheets:', err.message);
-          fetchFromSheets();
-        });
-        return () => unsub();
-      }).catch(() => fetchFromSheets());
-    }).catch(() => fetchFromSheets());
-  }, [fetchFromSheets]);
+    if (convexHomeData !== undefined) {
+      const data: HomeContent[] = convexHomeData.map(doc => ({
+        ...doc,
+        id: doc.docId || doc._id,
+        contentUrl: doc.content || '',
+        heading: doc.title || '',
+      })) as unknown as HomeContent[];
+      setHomeData(data);
+      setDataSource('convex');
+      setIsLoading(false);
+    }
+  }, [convexHomeData]);
 
   // TRA Students Videos only
   const traVideos = homeData.filter(item => item.type && item.type.toLowerCase() === 'video');
