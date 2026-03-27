@@ -331,6 +331,75 @@ function FloatingHeroPlate({
   );
 }
 
+/**
+ * Mobile flip-card back-face media. Detects each image's natural aspect ratio
+ * so the preview height adapts to the actual content dimensions.
+ */
+function MobileFabCardMedia({
+  student,
+  embedUrl,
+}: {
+  student: FabAcademyContent;
+  embedUrl: string;
+}) {
+  const [aspectRatio, setAspectRatio] = useState(16 / 9);
+
+  useEffect(() => {
+    // Videos always embed at 16:9
+    if (student.videoUrl) {
+      setAspectRatio(16 / 9);
+      return;
+    }
+
+    const candidates = buildDriveImageCandidates(student.imageUrl);
+    if (candidates.length === 0) return;
+
+    let cancelled = false;
+    let i = 0;
+
+    const tryNext = () => {
+      if (cancelled || i >= candidates.length) return;
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          // Clamp to reasonable range: portrait 0.5 to wide 1.8
+          setAspectRatio(Math.min(1.8, Math.max(0.5, img.naturalWidth / img.naturalHeight)));
+        }
+      };
+      img.onerror = () => {
+        i += 1;
+        tryNext();
+      };
+      img.src = candidates[i];
+    };
+
+    tryNext();
+    return () => {
+      cancelled = true;
+    };
+  }, [student.imageUrl, student.videoUrl]);
+
+  return (
+    <div className="relative w-full" style={{ aspectRatio }}>
+      {student.videoUrl && embedUrl ? (
+        <iframe
+          src={embedUrl}
+          allow="autoplay; encrypted-media"
+          allowFullScreen
+          className="absolute inset-0 h-full w-full border-0"
+        />
+      ) : (
+        <MediaImage
+          imageUrl={student.imageUrl}
+          alt={student.studentName}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+    </div>
+  );
+}
+
 export default function Community() {
   const [homeData, setHomeData] = useState<HomeContent[]>([]);
   const [fabAcademyData, setFabAcademyData] = useState<FabAcademyContent[]>([]);
@@ -338,6 +407,7 @@ export default function Community() {
   const [fabPreviewMode, setFabPreviewMode] = useState<"image" | "video">("image");
   const [fabPreviewAspectRatio, setFabPreviewAspectRatio] = useState(16 / 9);
   const [fabGraduateScrollHeight, setFabGraduateScrollHeight] = useState<number | null>(null);
+  const [mobileFabFlippedId, setMobileFabFlippedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [dataSource, setDataSource] = useState<"convex" | "sheets" | "loading">("loading");
   const [activeTab, setActiveTab] = useState<CommunityTab>("fab-academy");
@@ -614,6 +684,13 @@ export default function Community() {
     setFabPreviewMode("image");
   };
 
+  const handleMobileCardTap = (studentId: string) => {
+    // Flip the tapped card; unflip if already flipped
+    setMobileFabFlippedId((current) => (current === studentId ? null : studentId));
+    setSelectedFabCardId(studentId);
+    setFabPreviewMode("image");
+  };
+
   const handleSelectTab = (tab: CommunityTab) => {
     setActiveTab(tab);
     contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -739,241 +816,378 @@ export default function Community() {
                       </p>
                     </div>
                   ) : (
-                    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr),1px,minmax(320px,0.84fr)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:overflow-hidden">
-                      <div ref={fabPreviewSectionRef} className="relative z-20 space-y-6 xl:col-start-1 xl:row-start-1 xl:pr-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                            Selected Graduate
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => cycleFabStudent(-1)}
-                              className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
-                            >
-                              Previous
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => cycleFabStudent(1)}
-                              className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
-                            >
-                              Next
-                            </button>
-                          </div>
-                        </div>
-
-                        <motion.div
-                          key={`${selectedFabStudent.id}-${fabPreviewMode}`}
-                          initial={reducedMotion ? undefined : { opacity: 0, y: 12 }}
-                          animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-                          transition={{ duration: 0.35, ease: "easeOut" }}
-                          className="space-y-4"
-                        >
-                          <div className="max-w-[560px]">
-                            <div
-                              className="relative overflow-hidden rounded-[28px] border border-white/60 bg-[#09131a] shadow-[0_26px_60px_rgba(15,23,42,0.16)]"
-                              style={{ aspectRatio: fabPreviewAspectRatio }}
-                            >
-                              {isFabVideoVisible && selectedFabEmbedUrl ? (
-                                <iframe
-                                  src={selectedFabEmbedUrl}
-                                  allow="autoplay; encrypted-media"
-                                  allowFullScreen
-                                  className="absolute inset-0 h-full w-full border-0"
-                                />
-                              ) : (
-                                <MediaImage
-                                  imageUrl={selectedFabStudent.imageUrl}
-                                  alt={selectedFabStudent.studentName}
-                                  className="absolute inset-0 h-full w-full object-cover"
-                                />
-                              )}
-                            </div>
-                            <div className="community-screen-shadow mt-2 h-6 w-[58%]" />
-                          </div>
-                        </motion.div>
-                      </div>
-
-                      <div className="relative z-10 hidden xl:row-span-2 xl:block bg-[linear-gradient(180deg,transparent,rgba(203,213,225,0.95),transparent)]" />
-
-                      <div className="relative z-10 xl:col-start-3 xl:row-span-2 xl:row-start-1">
-                        <div ref={fabGraduateHeaderRef} className="mb-2 xl:pl-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                            Fab Academy Graduates
-                          </p>
-                        </div>
-
-                        <div
-                          ref={fabGraduateListRef}
-                          className="space-y-4 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
-                          style={fabGraduateScrollHeight ? { height: `${fabGraduateScrollHeight}px` } : undefined}
-                        >
+                    <>
+                      {/* ── MOBILE LAYOUT (hidden on xl+) ─────────────────────────────── */}
+                      <div className="xl:hidden">
+                        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                          Fab Academy Graduates
+                        </p>
+                        <div className="space-y-4">
                           {fabAcademyData.map((student, idx) => {
-                            const isSelected = student.id === selectedFabStudent.id;
-                            const isShowingVideo = isFabVideoVisible && isSelected;
+                            const isFlipped = mobileFabFlippedId === student.id;
+                            const embedUrl = getEmbedUrl(student.videoUrl);
 
                             return (
-                              <motion.article
+                              <motion.div
                                 key={student.id}
-                                layout
-                                initial={reducedMotion ? undefined : { opacity: 0, y: 14 }}
-                                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-                                viewport={{ once: true, margin: "-80px" }}
-                                transition={{ duration: 0.35, ease: "easeOut", delay: idx * 0.03 }}
-                                className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 ${isSelected ? "border-emerald-300 bg-white/68 shadow-[0_18px_36px_rgba(16,185,129,0.12)]" : "border-white/60 bg-white/34 hover:border-emerald-200 hover:bg-white/48"}`}
+                                initial={reducedMotion ? undefined : { opacity: 0, y: 16 }}
+                                animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                                transition={{ duration: 0.35, ease: "easeOut", delay: idx * 0.04 }}
+                                style={{ perspective: "1000px" }}
                               >
-                                <div className="grid grid-cols-[108px,minmax(0,1fr)] gap-4">
-                                  <div className="relative h-[120px] overflow-hidden rounded-[18px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
-                                    <MediaImage
-                                      imageUrl={student.imageUrl}
-                                      alt={student.studentName}
-                                      className="absolute inset-0 h-full w-full object-contain p-1 transition-transform duration-500 group-hover:scale-[1.02]"
-                                    />
+                                {/* Card wrapper — 3-D flip container.
+                                     Height is driven by whichever face is
+                                     position:relative at any given moment.
+                                     When NOT flipped: front is relative → sets height.
+                                     When flipped:     back  is relative → sets height. */}
+                                <div
+                                  style={{
+                                    transformStyle: "preserve-3d",
+                                    transition: "transform 0.55s cubic-bezier(0.4,0,0.2,1)",
+                                    transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                                    position: "relative",
+                                  }}
+                                >
+                                  {/* FRONT — graduate detail card */}
+                                  <div
+                                    style={{
+                                      backfaceVisibility: "hidden",
+                                      WebkitBackfaceVisibility: "hidden",
+                                      // When flipped: remove from flow so back face can drive height
+                                      position: isFlipped ? "absolute" : "relative",
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                    }}
+                                    className="rounded-[22px] border border-white/60 bg-white/52 p-4 backdrop-blur"
+                                  >
+                                    <div className="flex items-start gap-4">
+                                      <div className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-[16px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
+                                        <MediaImage
+                                          imageUrl={student.imageUrl}
+                                          alt={student.studentName}
+                                          className="absolute inset-0 h-full w-full object-contain p-1"
+                                        />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">
+                                            {student.fabYear || "Fab"}
+                                          </span>
+                                        </div>
+                                        <h3 className="mt-2 text-base font-bold leading-tight text-slate-900">
+                                          {student.studentName}
+                                        </h3>
+                                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-500">
+                                          {student.remarks || "Project details coming soon."}
+                                        </p>
+                                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMobileCardTap(student.id)}
+                                            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors active:bg-emerald-700"
+                                          >
+                                            <PlayCircle className="h-3.5 w-3.5" />
+                                            Preview
+                                          </button>
+                                          {student.documentationUrl && (
+                                            <a
+                                              href={student.documentationUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                                            >
+                                              Docs
+                                              <ArrowUpRight className="h-3 w-3" />
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
                                   </div>
 
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">
-                                        {student.fabYear || "Fab"}
-                                      </span>
-                                      {isSelected && (
-                                        <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                                          Selected
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <h3 className="mt-3 text-base font-bold leading-tight text-slate-900 md:text-lg">
-                                      {student.studentName}
-                                    </h3>
-                                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
-                                      {student.remarks || "Project details will appear here soon."}
-                                    </p>
-
-                                    <div className="mt-4 flex flex-wrap gap-2">
+                                  {/* BACK — preview screen.
+                                       Pre-rotated 180° so it faces forward when the
+                                       container is flipped. When not flipped it is
+                                       absolute (zero flow height). When flipped it is
+                                       relative so its content drives the container height. */}
+                                  <div
+                                    style={{
+                                      backfaceVisibility: "hidden",
+                                      WebkitBackfaceVisibility: "hidden",
+                                      transform: "rotateY(180deg)",
+                                      // When not flipped: absolute (no flow) → front drives height
+                                      // When flipped:     relative           → back drives height
+                                      position: isFlipped ? "relative" : "absolute",
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                    }}
+                                    className="rounded-[22px] border border-emerald-300 bg-[#09131a] shadow-[0_18px_40px_rgba(16,185,129,0.15)] overflow-hidden"
+                                  >
+                                    {/* Media — height adapts to real image/video ratio */}
+                                    <MobileFabCardMedia student={student} embedUrl={embedUrl} />
+                                    {/* Footer on back */}
+                                    <div className="flex items-center justify-between px-4 py-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-bold text-white">{student.studentName}</p>
+                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                                          Fab Academy {student.fabYear}
+                                        </p>
+                                      </div>
                                       <button
                                         type="button"
-                                        onClick={() => selectFabStudent(student.id)}
-                                        className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                                        onClick={() => handleMobileCardTap(student.id)}
+                                        className="ml-4 shrink-0 rounded-full border border-white/25 bg-white/12 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-colors active:bg-white/20"
                                       >
-                                        Preview
+                                        Back
                                       </button>
-                                      {student.videoUrl && (
-                                        <button
-                                          type="button"
-                                          onClick={() => selectFabStudent(student.id, isShowingVideo ? "image" : "video")}
-                                          className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
-                                        >
-                                          {isShowingVideo ? "See less" : "Show more"}
-                                        </button>
-                                      )}
                                     </div>
                                   </div>
                                 </div>
-                              </motion.article>
+                              </motion.div>
                             );
                           })}
                         </div>
                       </div>
 
-                      <div ref={fabSelectedDetailsRef} className="space-y-3 xl:col-start-1 xl:row-start-2 xl:pr-3">
-                        <div className="relative max-w-[680px] rounded-[26px] border border-white/50 bg-white/38 px-4 pb-5 pt-6 shadow-[0_12px_24px_rgba(15,23,42,0.03)] backdrop-blur md:px-5">
-                          <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-[0_10px_24px_rgba(15,23,42,0.16)] md:left-5 md:h-20 md:w-20">
-                            <MediaImage
-                              imageUrl={selectedFabStudent.imageUrl}
-                              alt={selectedFabStudent.studentName}
-                              className="absolute inset-0 h-full w-full object-cover"
-                            />
+                      {/* ── DESKTOP LAYOUT (hidden below xl) ─────────────────────────── */}
+                      <div className="hidden xl:grid gap-8 xl:grid-cols-[minmax(0,0.82fr),1px,minmax(320px,0.84fr)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:overflow-hidden">
+                        <div ref={fabPreviewSectionRef} className="relative z-20 space-y-6 xl:col-start-1 xl:row-start-1 xl:pr-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Selected Graduate
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => cycleFabStudent(-1)}
+                                className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                              >
+                                Previous
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => cycleFabStudent(1)}
+                                className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                              >
+                                Next
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="pl-20 md:pl-24">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.26em] text-amber-700">
-                                Fab Academy {selectedFabStudent.fabYear || "Scholar"}
-                              </span>
-                              {isFabVideoVisible ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setFabPreviewMode("image")}
-                                  className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-emerald-700"
+                          <motion.div
+                            key={`${selectedFabStudent.id}-${fabPreviewMode}`}
+                            initial={reducedMotion ? undefined : { opacity: 0, y: 12 }}
+                            animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                            transition={{ duration: 0.35, ease: "easeOut" }}
+                            className="space-y-4"
+                          >
+                            <div className="max-w-[560px]">
+                              <div
+                                className="relative overflow-hidden rounded-[28px] border border-white/60 bg-[#09131a] shadow-[0_26px_60px_rgba(15,23,42,0.16)]"
+                                style={{ aspectRatio: fabPreviewAspectRatio }}
+                              >
+                                {isFabVideoVisible && selectedFabEmbedUrl ? (
+                                  <iframe
+                                    src={selectedFabEmbedUrl}
+                                    allow="autoplay; encrypted-media"
+                                    allowFullScreen
+                                    className="absolute inset-0 h-full w-full border-0"
+                                  />
+                                ) : (
+                                  <MediaImage
+                                    imageUrl={selectedFabStudent.imageUrl}
+                                    alt={selectedFabStudent.studentName}
+                                    className="absolute inset-0 h-full w-full object-cover"
+                                  />
+                                )}
+                              </div>
+                              <div className="community-screen-shadow mt-2 h-6 w-[58%]" />
+                            </div>
+                          </motion.div>
+                        </div>
+
+                        <div className="relative z-10 hidden xl:row-span-2 xl:block bg-[linear-gradient(180deg,transparent,rgba(203,213,225,0.95),transparent)]" />
+
+                        <div className="relative z-10 xl:col-start-3 xl:row-span-2 xl:row-start-1">
+                          <div ref={fabGraduateHeaderRef} className="mb-2 xl:pl-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Fab Academy Graduates
+                            </p>
+                          </div>
+
+                          <div
+                            ref={fabGraduateListRef}
+                            className="space-y-4 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
+                            style={fabGraduateScrollHeight ? { height: `${fabGraduateScrollHeight}px` } : undefined}
+                          >
+                            {fabAcademyData.map((student, idx) => {
+                              const isSelected = student.id === selectedFabStudent.id;
+                              const isShowingVideo = isFabVideoVisible && isSelected;
+
+                              return (
+                                <motion.article
+                                  key={student.id}
+                                  layout
+                                  initial={reducedMotion ? undefined : { opacity: 0, y: 14 }}
+                                  whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                                  viewport={{ once: true, margin: "-80px" }}
+                                  transition={{ duration: 0.35, ease: "easeOut", delay: idx * 0.03 }}
+                                  className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 ${isSelected ? "border-emerald-300 bg-white/68 shadow-[0_18px_36px_rgba(16,185,129,0.12)]" : "border-white/60 bg-white/34 hover:border-emerald-200 hover:bg-white/48"}`}
                                 >
-                                  See image preview
-                                  <ChevronUp className="h-4 w-4" />
-                                </button>
-                              ) : (
-                                selectedFabStudent.videoUrl && (
+                                  <div className="grid grid-cols-[108px,minmax(0,1fr)] gap-4">
+                                    <div className="relative h-[120px] overflow-hidden rounded-[18px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
+                                      <MediaImage
+                                        imageUrl={student.imageUrl}
+                                        alt={student.studentName}
+                                        className="absolute inset-0 h-full w-full object-contain p-1 transition-transform duration-500 group-hover:scale-[1.02]"
+                                      />
+                                    </div>
+
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">
+                                          {student.fabYear || "Fab"}
+                                        </span>
+                                        {isSelected && (
+                                          <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
+                                            Selected
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <h3 className="mt-3 text-base font-bold leading-tight text-slate-900 md:text-lg">
+                                        {student.studentName}
+                                      </h3>
+                                      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
+                                        {student.remarks || "Project details will appear here soon."}
+                                      </p>
+
+                                      <div className="mt-4 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => selectFabStudent(student.id)}
+                                          className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                                        >
+                                          Preview
+                                        </button>
+                                        {student.videoUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={() => selectFabStudent(student.id, isShowingVideo ? "image" : "video")}
+                                            className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                                          >
+                                            {isShowingVideo ? "See less" : "Show more"}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </motion.article>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div ref={fabSelectedDetailsRef} className="space-y-3 xl:col-start-1 xl:row-start-2 xl:pr-3">
+                          <div className="relative max-w-[680px] rounded-[26px] border border-white/50 bg-white/38 px-4 pb-5 pt-6 shadow-[0_12px_24px_rgba(15,23,42,0.03)] backdrop-blur md:px-5">
+                            <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-[0_10px_24px_rgba(15,23,42,0.16)] md:left-5 md:h-20 md:w-20">
+                              <MediaImage
+                                imageUrl={selectedFabStudent.imageUrl}
+                                alt={selectedFabStudent.studentName}
+                                className="absolute inset-0 h-full w-full object-cover"
+                              />
+                            </div>
+
+                            <div className="pl-20 md:pl-24">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.26em] text-amber-700">
+                                  Fab Academy {selectedFabStudent.fabYear || "Scholar"}
+                                </span>
+                                {isFabVideoVisible ? (
                                   <button
                                     type="button"
-                                    onClick={() => setFabPreviewMode("video")}
+                                    onClick={() => setFabPreviewMode("image")}
                                     className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-emerald-700"
                                   >
-                                    Show video
-                                    <ChevronDown className="h-4 w-4" />
+                                    See image preview
+                                    <ChevronUp className="h-4 w-4" />
                                   </button>
-                                )
-                              )}
-                            </div>
+                                ) : (
+                                  selectedFabStudent.videoUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setFabPreviewMode("video")}
+                                      className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-emerald-700"
+                                    >
+                                      Show video
+                                      <ChevronDown className="h-4 w-4" />
+                                    </button>
+                                  )
+                                )}
+                              </div>
 
-                            <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
-                              {selectedFabStudent.studentName}
-                            </h3>
-                            <p className="mt-3 text-sm leading-7 text-slate-600 md:text-base">
-                              {selectedFabStudent.remarks || "Project details will appear here soon."}
-                            </p>
+                              <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+                                {selectedFabStudent.studentName}
+                              </h3>
+                              <p className="mt-3 text-sm leading-7 text-slate-600 md:text-base">
+                                {selectedFabStudent.remarks || "Project details will appear here soon."}
+                              </p>
 
-                            <div className="mt-4 flex flex-wrap gap-3">
-                              {selectedFabStudent.documentationUrl && (
-                                <a
-                                  href={selectedFabStudent.documentationUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
-                                >
-                                  Open Documentation
-                                  <ArrowUpRight className="h-4 w-4" />
-                                </a>
-                              )}
+                              <div className="mt-4 flex flex-wrap gap-3">
+                                {selectedFabStudent.documentationUrl && (
+                                  <a
+                                    href={selectedFabStudent.documentationUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+                                  >
+                                    Open Documentation
+                                    <ArrowUpRight className="h-4 w-4" />
+                                  </a>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="w-full space-y-3 xl:col-span-3 xl:row-start-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                            Graduate Carousel
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {selectedFabIndex + 1} / {fabAcademyData.length}
-                          </p>
-                        </div>
-                        <div className="flex gap-3 overflow-x-auto pb-2 xl:pr-2">
-                          {fabAcademyData.map((student) => {
-                            const isSelected = student.id === selectedFabStudent.id;
+                        <div className="w-full space-y-3 xl:col-span-3 xl:row-start-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Graduate Carousel
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {selectedFabIndex + 1} / {fabAcademyData.length}
+                            </p>
+                          </div>
+                          <div className="flex gap-3 overflow-x-auto pb-2 xl:pr-2">
+                            {fabAcademyData.map((student) => {
+                              const isSelected = student.id === selectedFabStudent.id;
 
-                            return (
-                              <button
-                                key={student.id}
-                                type="button"
-                                onClick={() => selectFabStudent(student.id)}
-                                className={`relative h-24 min-w-[110px] overflow-hidden rounded-[20px] border transition-colors ${isSelected ? "border-emerald-400 shadow-[0_16px_34px_rgba(16,185,129,0.18)]" : "border-white/70 bg-white/80 hover:border-emerald-200"}`}
-                              >
-                                <MediaImage
-                                  imageUrl={student.imageUrl}
-                                  alt={student.studentName}
-                                  className="absolute inset-0 h-full w-full object-cover"
-                                />
-                                <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.66))]" />
-                                <div className="absolute inset-x-3 bottom-2 text-left text-white">
-                                  <p className="truncate text-xs font-semibold">{student.studentName}</p>
-                                </div>
-                              </button>
-                            );
-                          })}
+                              return (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  onClick={() => selectFabStudent(student.id)}
+                                  className={`relative h-24 min-w-[110px] overflow-hidden rounded-[20px] border transition-colors ${isSelected ? "border-emerald-400 shadow-[0_16px_34px_rgba(16,185,129,0.18)]" : "border-white/70 bg-white/80 hover:border-emerald-200"}`}
+                                >
+                                  <MediaImage
+                                    imageUrl={student.imageUrl}
+                                    alt={student.studentName}
+                                    className="absolute inset-0 h-full w-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.66))]" />
+                                  <div className="absolute inset-x-3 bottom-2 text-left text-white">
+                                    <p className="truncate text-xs font-semibold">{student.studentName}</p>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </>
                   )}
                 </TabsContent>
 
@@ -990,7 +1204,7 @@ export default function Community() {
                       <p className="mt-2 text-slate-500">Video features will appear here once added by the admin.</p>
                     </div>
                   ) : (
-                    <div className="mt-4 space-y-20 md:space-y-28">
+                    <div className="mt-4 space-y-12 md:space-y-24">
                       {traVideos.map((video, idx) => {
                         const isEven = idx % 2 === 0;
                         const embedLink = getEmbedUrl(video.contentUrl);
@@ -1000,12 +1214,13 @@ export default function Community() {
                             key={video.id}
                             initial={reducedMotion ? undefined : { opacity: 0, y: 24 }}
                             whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-                            viewport={{ once: true, margin: "-100px" }}
+                            viewport={{ once: true, margin: "-80px" }}
                             transition={{ duration: 0.55, ease: "easeOut" }}
-                            className={`flex flex-col items-center gap-8 md:gap-16 ${isEven ? "md:flex-row" : "md:flex-row-reverse"}`}
+                            className={`flex flex-col gap-6 md:items-center md:gap-16 ${isEven ? "md:flex-row" : "md:flex-row-reverse"}`}
                           >
+                            {/* Video — always full-width on mobile, half on desktop */}
                             <div className="w-full md:w-1/2">
-                              <div className="relative aspect-video overflow-hidden rounded-[28px] bg-black shadow-[0_32px_70px_rgba(15,23,42,0.14)]">
+                              <div className="relative aspect-video overflow-hidden rounded-[24px] bg-black shadow-[0_24px_56px_rgba(15,23,42,0.14)]">
                                 {embedLink ? (
                                   <iframe
                                     src={embedLink}
@@ -1021,15 +1236,16 @@ export default function Community() {
                               </div>
                             </div>
 
+                            {/* Text — stacks below video on mobile */}
                             <div className={`w-full md:w-1/2 ${isEven ? "md:pr-8" : "md:pl-8"}`}>
                               <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.26em] text-emerald-700">
                                 {video.type || "TRA Students"}
                               </span>
-                              <h3 className="mt-5 text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
+                              <h3 className="mt-4 text-2xl font-bold leading-tight text-slate-900 md:mt-5 md:text-4xl">
                                 {video.heading}
                               </h3>
-                              <div className="mt-4 h-1 w-14 rounded-full bg-emerald-500" />
-                              <p className="mt-5 text-base leading-8 text-slate-600 md:text-lg">
+                              <div className="mt-3 h-1 w-12 rounded-full bg-emerald-500 md:mt-4 md:w-14" />
+                              <p className="mt-4 text-sm leading-7 text-slate-600 md:mt-5 md:text-lg md:leading-8">
                                 {video.description}
                               </p>
                             </div>
