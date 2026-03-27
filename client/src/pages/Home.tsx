@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Link } from "wouter";
 import {
   Telescope, Palette, Hammer, Scissors,
-  Music, Activity, Scale, Sparkles, Gem, Cpu, Code2, ArrowRight, ArrowLeft
+  Music, Activity, Scale, Sparkles, Gem, Cpu, Code2, ArrowRight, ArrowLeft, Menu, X
 } from "lucide-react";
 
 const PLANETS = [
@@ -24,6 +24,7 @@ export default function Home() {
   const [isSpaceHovered, setIsSpaceHovered] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const aspectsSectionRef = useRef<HTMLElement>(null);
 
   const handleGlobeClick = (aspectName: string) => {
@@ -56,41 +57,105 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans overflow-x-hidden">
       {/* Navigation Bar */}
-      <header className={`fixed top-0 left-0 w-full p-4 md:px-8 md:py-6 z-50 flex items-center justify-between pointer-events-auto transition-all duration-500 ${isScrolled ? 'bg-background/90 backdrop-blur-md border-b border-border/50 text-slate-900 py-3 md:py-4 shadow-sm' : isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
+      <header className={`fixed top-0 left-0 w-full z-50 pointer-events-auto transition-all duration-500 ${isScrolled ? 'bg-background/90 backdrop-blur-md border-b border-border/50 shadow-sm' : ''}`}>
 
-        {/* Left: Logo (Two lines, varied fonts) */}
-        <Link href="/">
-          <div className="flex flex-col cursor-pointer group">
-            <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-500 transition-colors">AESTHETIC</span>
-            <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 group-hover:text-emerald-400 transition-colors mt-0.5 uppercase">Centre</span>
-          </div>
-        </Link>
+        {/* ── Top bar ───────────────────────────────────────────────── */}
+        <div className={`px-4 md:px-8 py-4 md:py-6 flex items-center justify-between transition-all duration-500 ${isScrolled ? 'py-3 md:py-4' : ''} ${isScrolled ? 'text-slate-900' : isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
 
-        {/* Center: Navigation Links */}
-        <div className="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
-          <Link href="/community">
-            <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
-              Community
-            </button>
-          </Link>
+          {/* Left: Logo */}
           <Link href="/">
-            <button className={`text-sm font-semibold tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
-              Aesthetic Centre
-            </button>
+            <div className="flex flex-col cursor-pointer group">
+              <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-500 transition-colors">AESTHETIC</span>
+              <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 group-hover:text-emerald-400 transition-colors mt-0.5 uppercase">Centre</span>
+            </div>
           </Link>
-          <Link href="/learning">
-            <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
-              Learning
+
+          {/* Center: Navigation Links — desktop only */}
+          <div className="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+            <Link href="/community">
+              <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                Community
+              </button>
+            </Link>
+            <Link href="/">
+              <button className={`text-sm font-semibold tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
+                Aesthetic Centre
+              </button>
+            </Link>
+            <Link href="/learning">
+              <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                Learning
+              </button>
+            </Link>
+          </div>
+
+          {/* Right: Sign In (desktop) + hamburger (mobile) */}
+          <div className="flex items-center gap-3">
+            <Link href="/login">
+              <button className={`hidden md:inline-flex px-6 py-2.5 text-white text-sm font-semibold rounded-full shadow-md transition-all hover:scale-105 active:scale-95 ${isSpaceHovered ? 'bg-white/20 hover:bg-white/30 backdrop-blur-md' : 'bg-slate-900 hover:bg-slate-800'}`}>
+                Sign In
+              </button>
+            </Link>
+            {/* Hamburger — mobile only */}
+            <button
+              type="button"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              onClick={() => setMobileMenuOpen((o) => !o)}
+              className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors md:hidden ${
+                isSpaceHovered
+                  ? "border-white/30 bg-white/10 text-white backdrop-blur active:bg-white/20"
+                  : "border-slate-200 bg-white/80 text-slate-700 active:bg-slate-100"
+              }`}
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
-          </Link>
+          </div>
         </div>
 
-        {/* Right: Login Button */}
-        <Link href="/login">
-          <button className={`px-6 py-2.5 text-white text-sm font-semibold rounded-full shadow-md transition-all hover:scale-105 active:scale-95 ${isSpaceHovered ? 'bg-white/20 hover:bg-white/30 backdrop-blur-md' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
-            Sign In
-          </button>
-        </Link>
+        {/* ── Mobile drawer ─────────────────────────────────────────── */}
+        <motion.div
+          initial={false}
+          animate={mobileMenuOpen ? { height: "auto", opacity: 1 } : { height: 0, opacity: 0 }}
+          transition={{ duration: 0.28, ease: "easeInOut" }}
+          className="overflow-hidden border-t border-white/60 bg-white/95 backdrop-blur-xl md:hidden"
+        >
+          <nav className="flex flex-col gap-1 px-4 py-4">
+            <Link href="/community">
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-medium tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+              >
+                Community
+              </button>
+            </Link>
+            <Link href="/">
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-semibold tracking-wide text-slate-900 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                Aesthetic Centre
+              </button>
+            </Link>
+            <Link href="/learning">
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-medium tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+              >
+                Learning
+              </button>
+            </Link>
+            <div className="mt-2 border-t border-slate-100 pt-3">
+              <Link href="/login">
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white shadow-sm transition-colors active:bg-slate-800"
+                >
+                  Sign In
+                </button>
+              </Link>
+            </div>
+          </nav>
+        </motion.div>
       </header>
 
       {/* Hero Section */}

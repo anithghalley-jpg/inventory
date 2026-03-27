@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowUpRight, ChevronDown, ChevronUp, PlayCircle, Users } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, Menu, PlayCircle, Users, X } from "lucide-react";
 import { SCRIPT_URL } from "@/config";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -411,6 +411,7 @@ export default function Community() {
   const [isLoading, setIsLoading] = useState(true);
   const [dataSource, setDataSource] = useState<"convex" | "sheets" | "loading">("loading");
   const [activeTab, setActiveTab] = useState<CommunityTab>("fab-academy");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const reducedMotion = useReducedMotion();
   const contentRef = useRef<HTMLDivElement>(null);
   const fabGraduateListRef = useRef<HTMLDivElement>(null);
@@ -699,7 +700,9 @@ export default function Community() {
   return (
     <div className="min-h-screen bg-[#f6f5f1] font-sans text-slate-900">
       <header className="sticky top-0 z-50 border-b border-white/65 bg-white/78 shadow-[0_8px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+        {/* ── Top bar ───────────────────────────────────────────────────── */}
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-8">
+          {/* Logo */}
           <Link href="/">
             <div className="flex cursor-pointer flex-col group">
               <span className="font-display text-xl font-black leading-none tracking-tight transition-colors group-hover:text-emerald-500">
@@ -711,6 +714,7 @@ export default function Community() {
             </div>
           </Link>
 
+          {/* Desktop centre nav */}
           <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-12 md:flex">
             <Link href="/community">
               <button className="text-sm font-semibold tracking-wide text-slate-900">Community</button>
@@ -727,12 +731,69 @@ export default function Community() {
             </Link>
           </div>
 
-          <Link href="/login">
-            <button className="rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:scale-105 hover:bg-emerald-700 active:scale-95">
-              Sign In
+          {/* Right side: Sign In (desktop) + hamburger (mobile) */}
+          <div className="flex items-center gap-3">
+            <Link href="/login">
+              <button className="hidden rounded-full bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:scale-105 hover:bg-slate-800 active:scale-95 md:inline-flex">
+                Sign In
+              </button>
+            </Link>
+            {/* Hamburger — mobile only */}
+            <button
+              type="button"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              onClick={() => setMobileMenuOpen((o) => !o)}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-700 shadow-sm transition-colors active:bg-slate-100 md:hidden"
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
-          </Link>
+          </div>
         </div>
+
+        {/* ── Mobile drawer ─────────────────────────────────────────────── */}
+        <motion.div
+          initial={false}
+          animate={mobileMenuOpen ? { height: "auto", opacity: 1 } : { height: 0, opacity: 0 }}
+          transition={{ duration: 0.28, ease: "easeInOut" }}
+          className="overflow-hidden border-t border-white/60 bg-white/90 backdrop-blur-xl md:hidden"
+        >
+          <nav className="flex flex-col gap-1 px-4 py-4">
+            <Link href="/community">
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-semibold tracking-wide text-slate-900 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                Community
+              </button>
+            </Link>
+            <Link href="/">
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-medium tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+              >
+                Aesthetic Centre
+              </button>
+            </Link>
+            <Link href="/learning">
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-medium tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+              >
+                Learning
+              </button>
+            </Link>
+            <div className="mt-2 border-t border-slate-100 pt-3">
+              <Link href="/login">
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full rounded-full bg-slate-900 py-3 text-sm font-semibold text-white shadow-sm transition-colors active:bg-slate-800"
+                >
+                  Sign In
+                </button>
+              </Link>
+            </div>
+          </nav>
+        </motion.div>
       </header>
 
       <main className="mx-auto flex w-full max-w-7xl flex-col px-4 pb-24 pt-6 sm:px-6 lg:px-8">
