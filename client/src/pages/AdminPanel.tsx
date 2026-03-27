@@ -69,6 +69,16 @@ interface UsageRecord {
   timestamp: string;
 }
 
+interface FabAcademyEntry {
+  id: string;
+  studentName: string;
+  imageUrl: string;
+  fabYear: string;
+  videoUrl: string;
+  documentationUrl: string;
+  remarks: string;
+}
+
 export default function AdminPanel() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
@@ -82,11 +92,14 @@ export default function AdminPanel() {
   const processReturnMut = useMutation(api.requests.processReturn);
   const upsertHomeMut = useMutation(api.home.upsert);
   const deleteHomeMut = useMutation(api.home.remove);
+  const upsertFabAcademyMut = useMutation(api.fabAcademy.upsert);
+  const deleteFabAcademyMut = useMutation(api.fabAcademy.remove);
   const updateAdminSettingsMut = useMutation(api.settings.updateAdmin);
   const convexInventory = useQuery(api.inventory.getAll);
   const convexUsers = useQuery(api.users.getAll);
   const convexRequests = useQuery(api.requests.getAll);
   const convexHome = useQuery(api.home.getAll);
+  const convexFabAcademy = useQuery(api.fabAcademy.getAll);
   const convexSettings = useQuery(api.settings.getAdmin);
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([
     {
@@ -132,6 +145,18 @@ export default function AdminPanel() {
   const [homeItems, setHomeItems] = useState<any[]>([]);
   const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
   const [showAddHome, setShowAddHome] = useState(false);
+  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy'>('tra-students');
+  const [fabAcademyItems, setFabAcademyItems] = useState<FabAcademyEntry[]>([]);
+  const [fabAcademyForm, setFabAcademyForm] = useState({
+    id: '',
+    studentName: '',
+    imageUrl: '',
+    fabYear: '',
+    videoUrl: '',
+    documentationUrl: '',
+    remarks: '',
+  });
+  const [showAddFabAcademy, setShowAddFabAcademy] = useState(false);
   const [allowTeamInventoryEdit, setAllowTeamInventoryEdit] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     users: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
@@ -183,6 +208,21 @@ export default function AdminPanel() {
     if (!convexSettings) return;
     setAllowTeamInventoryEdit(!!convexSettings.allowTeamInventory);
   }, [convexSettings]);
+
+  React.useEffect(() => {
+    if (convexFabAcademy === undefined) return;
+    setFabAcademyItems(
+      convexFabAcademy.map((item) => ({
+        id: item.entryId,
+        studentName: item.studentName,
+        imageUrl: item.imageUrl,
+        fabYear: item.fabYear,
+        videoUrl: item.videoUrl,
+        documentationUrl: item.documentationUrl,
+        remarks: item.remarks,
+      }))
+    );
+  }, [convexFabAcademy]);
 
   React.useEffect(() => {
     if (!convexUsers || !convexRequests) return;
@@ -486,6 +526,57 @@ export default function AdminPanel() {
         return result;
       }),
       { loading: 'Deleting...', success: 'Content block deleted.', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const resetFabAcademyForm = () => {
+    setFabAcademyForm({
+      id: '',
+      studentName: '',
+      imageUrl: '',
+      fabYear: '',
+      videoUrl: '',
+      documentationUrl: '',
+      remarks: '',
+    });
+  };
+
+  const handleSaveFabAcademyContent = async () => {
+    if (!fabAcademyForm.studentName.trim()) {
+      toast.error('Student name is required.');
+      return;
+    }
+
+    toast.promise(
+      upsertFabAcademyMut({
+        entryId: fabAcademyForm.id || undefined,
+        studentName: fabAcademyForm.studentName.trim(),
+        imageUrl: fabAcademyForm.imageUrl.trim(),
+        fabYear: fabAcademyForm.fabYear.trim(),
+        videoUrl: fabAcademyForm.videoUrl.trim(),
+        documentationUrl: fabAcademyForm.documentationUrl.trim(),
+        remarks: fabAcademyForm.remarks.trim(),
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
+        setShowAddFabAcademy(false);
+        resetFabAcademyForm();
+        return result;
+      }),
+      { loading: 'Saving Fab Academy profile...', success: 'Fab Academy entry synced!', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const handleDeleteFabAcademyContent = async (entryId: string) => {
+    if (!window.confirm('Delete this Fab Academy entry?')) return;
+    toast.promise(
+      deleteFabAcademyMut({
+        entryId,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
+        setFabAcademyItems((prev) => prev.filter((item) => item.id !== entryId));
+        return result;
+      }),
+      { loading: 'Deleting Fab Academy entry...', success: 'Fab Academy entry deleted.', error: (e) => `Failed: ${e.message}` }
     );
   };
 
@@ -2027,95 +2118,200 @@ export default function AdminPanel() {
                     <Button
                       size="sm"
                       className="bg-emerald-600 hover:bg-emerald-700"
-                      onClick={() => { setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' }); setShowAddHome(true); }}
+                      onClick={() => {
+                        if (guestContentTab === 'fab-academy') {
+                          resetFabAcademyForm();
+                          setShowAddFabAcademy(true);
+                        } else {
+                          setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
+                          setShowAddHome(true);
+                        }
+                      }}
                     >
-                      <Plus className="w-4 h-4 mr-1" /> Add Block
+                      <Plus className="w-4 h-4 mr-1" /> {guestContentTab === 'fab-academy' ? 'Add Fab Academy Entry' : 'Add Block'}
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Manage dynamic content shown on the public guest homepage.
+                    Manage public community content for TRA Students and Fab Academy showcases.
                   </p>
 
-                  {/* Add / Edit Form */}
-                  {showAddHome && (
-                    <div className="mb-4 p-4 border rounded-xl bg-muted/20 space-y-3">
-                      <h3 className="font-semibold text-sm">{homeForm.id ? 'Edit Block' : 'New Content Block'}</h3>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">Type</label>
-                        <select
-                          value={homeForm.type}
-                          onChange={e => setHomeForm(f => ({ ...f, type: e.target.value }))}
-                          className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background mt-1"
-                        >
-                          <option value="text_block">Text Block</option>
-                          <option value="banner">Banner</option>
-                          <option value="link">Link</option>
-                          <option value="gallery">Gallery</option>
-                          <option value="video">Video</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">Heading</label>
-                        <Input className="mt-1" value={homeForm.heading} onChange={e => setHomeForm(f => ({ ...f, heading: e.target.value }))} placeholder="Main title" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">Description</label>
-                        <textarea
-                          className="w-full mt-1 text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
-                          rows={3}
-                          value={homeForm.description}
-                          onChange={e => setHomeForm(f => ({ ...f, description: e.target.value }))}
-                          placeholder="Body text..."
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">Content URL (image/link)</label>
-                        <Input className="mt-1" value={homeForm.contentUrl} onChange={e => setHomeForm(f => ({ ...f, contentUrl: e.target.value }))} placeholder="https://..." />
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1" onClick={() => setShowAddHome(false)}>Cancel</Button>
-                        <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveHomeContent}>Save & Sync</Button>
-                      </div>
-                    </div>
-                  )}
+                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy')}>
+                    <TabsList className="grid w-full max-w-md grid-cols-2 p-1 bg-slate-200/50 mb-4">
+                      <TabsTrigger value="tra-students" className="rounded-md font-medium">TRA Students</TabsTrigger>
+                      <TabsTrigger value="fab-academy" className="rounded-md font-medium">Fab Academy</TabsTrigger>
+                    </TabsList>
 
-                  {/* Content Blocks List */}
-                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                    {homeItems.length === 0 ? (
-                      <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
-                        No content blocks yet. Click "Add Block" to create one.
-                      </div>
-                    ) : homeItems.map(item => (
-                      <div key={item.id} className="p-3 border rounded-lg bg-muted/20 flex justify-between items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{item.type}</span>
-                            <span className="font-medium text-sm truncate">{item.heading}</span>
+                    <TabsContent value="tra-students" className="space-y-4">
+                      {showAddHome && (
+                        <div className="mb-4 p-4 border rounded-xl bg-muted/20 space-y-3">
+                          <h3 className="font-semibold text-sm">{homeForm.id ? 'Edit Block' : 'New Content Block'}</h3>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Type</label>
+                            <select
+                              value={homeForm.type}
+                              onChange={e => setHomeForm(f => ({ ...f, type: e.target.value }))}
+                              className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background mt-1"
+                            >
+                              <option value="text_block">Text Block</option>
+                              <option value="banner">Banner</option>
+                              <option value="link">Link</option>
+                              <option value="gallery">Gallery</option>
+                              <option value="video">Video</option>
+                            </select>
                           </div>
-                          {item.description && <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>}
-                          {item.contentUrl && <p className="text-[10px] text-blue-500 truncate mt-1">{item.contentUrl}</p>}
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Heading</label>
+                            <Input className="mt-1" value={homeForm.heading} onChange={e => setHomeForm(f => ({ ...f, heading: e.target.value }))} placeholder="Main title" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Description</label>
+                            <textarea
+                              className="w-full mt-1 text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                              rows={3}
+                              value={homeForm.description}
+                              onChange={e => setHomeForm(f => ({ ...f, description: e.target.value }))}
+                              placeholder="Body text..."
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Content URL (image/link)</label>
+                            <Input className="mt-1" value={homeForm.contentUrl} onChange={e => setHomeForm(f => ({ ...f, contentUrl: e.target.value }))} placeholder="https://..." />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowAddHome(false)}>Cancel</Button>
+                            <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveHomeContent}>Save & Sync</Button>
+                          </div>
                         </div>
-                        <div className="flex gap-1 shrink-0">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            onClick={() => { setHomeForm({ ...item }); setShowAddHome(true); }}
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                            onClick={() => handleDeleteHomeContent(item.id)}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
+                      )}
+
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        {homeItems.length === 0 ? (
+                          <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
+                            No content blocks yet. Click "Add Block" to create one.
+                          </div>
+                        ) : homeItems.map(item => (
+                          <div key={item.id} className="p-3 border rounded-lg bg-muted/20 flex justify-between items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{item.type}</span>
+                                <span className="font-medium text-sm truncate">{item.heading}</span>
+                              </div>
+                              {item.description && <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>}
+                              {item.contentUrl && <p className="text-[10px] text-blue-500 truncate mt-1">{item.contentUrl}</p>}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => { setHomeForm({ ...item }); setShowAddHome(true); }}
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => handleDeleteHomeContent(item.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </TabsContent>
+
+                    <TabsContent value="fab-academy" className="space-y-4">
+                      {showAddFabAcademy && (
+                        <div className="mb-4 p-4 border rounded-xl bg-muted/20 space-y-3">
+                          <h3 className="font-semibold text-sm">{fabAcademyForm.id ? 'Edit Fab Academy Entry' : 'New Fab Academy Entry'}</h3>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Student Name</label>
+                            <Input className="mt-1" value={fabAcademyForm.studentName} onChange={e => setFabAcademyForm(f => ({ ...f, studentName: e.target.value }))} placeholder="Student full name" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Google Drive Image Link</label>
+                            <Input className="mt-1" value={fabAcademyForm.imageUrl} onChange={e => setFabAcademyForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://drive.google.com/..." />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Fab Academy Year</label>
+                            <Input className="mt-1" value={fabAcademyForm.fabYear} onChange={e => setFabAcademyForm(f => ({ ...f, fabYear: e.target.value }))} placeholder="2026" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Project Video Link</label>
+                            <Input className="mt-1" value={fabAcademyForm.videoUrl} onChange={e => setFabAcademyForm(f => ({ ...f, videoUrl: e.target.value }))} placeholder="https://drive.google.com/..." />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Project Documentation Link</label>
+                            <Input className="mt-1" value={fabAcademyForm.documentationUrl} onChange={e => setFabAcademyForm(f => ({ ...f, documentationUrl: e.target.value }))} placeholder="https://..." />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Remarks</label>
+                            <textarea
+                              className="w-full mt-1 text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                              rows={4}
+                              value={fabAcademyForm.remarks}
+                              onChange={e => setFabAcademyForm(f => ({ ...f, remarks: e.target.value }))}
+                              placeholder="Short profile, project summary, fabrication highlights..."
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowAddFabAcademy(false)}>Cancel</Button>
+                            <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveFabAcademyContent}>Save & Sync</Button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        {fabAcademyItems.length === 0 ? (
+                          <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
+                            No Fab Academy entries yet. Click "Add Fab Academy Entry" to create one.
+                          </div>
+                        ) : fabAcademyItems.map((item) => (
+                          <div key={item.id} className="p-3 border rounded-lg bg-muted/20 flex justify-between items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{item.fabYear || 'Fab Academy'}</span>
+                                <span className="font-medium text-sm truncate">{item.studentName}</span>
+                              </div>
+                              {item.remarks && <p className="text-xs text-muted-foreground line-clamp-2">{item.remarks}</p>}
+                              {item.documentationUrl && <p className="text-[10px] text-blue-500 truncate mt-1">{item.documentationUrl}</p>}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => {
+                                  setFabAcademyForm({
+                                    id: item.id,
+                                    studentName: item.studentName,
+                                    imageUrl: item.imageUrl,
+                                    fabYear: item.fabYear,
+                                    videoUrl: item.videoUrl,
+                                    documentationUrl: item.documentationUrl,
+                                    remarks: item.remarks,
+                                  });
+                                  setShowAddFabAcademy(true);
+                                }}
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => handleDeleteFabAcademyContent(item.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 </Card>
 
               </div>

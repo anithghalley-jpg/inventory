@@ -55,6 +55,16 @@ export default defineSchema({
     visibility: v.boolean(),
     targetAudience: v.string(),
   }).index("by_docId", ["docId"]),
+
+  fabAcademy: defineTable({
+    entryId: v.string(),
+    studentName: v.string(),
+    imageUrl: v.string(),
+    fabYear: v.string(),
+    videoUrl: v.string(),
+    documentationUrl: v.string(),
+    remarks: v.string(),
+  }).index("by_entryId", ["entryId"]),
   
   settings: defineTable({
     adminSettingsTitle: v.string(),
@@ -70,6 +80,7 @@ export default defineSchema({
       v.literal("requests"),
       v.literal("inventory"),
       v.literal("home"),
+      v.literal("fabAcademy"),
       v.literal("settings"),
     ),
     entityKey: v.string(),

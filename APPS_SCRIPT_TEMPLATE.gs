@@ -23,6 +23,7 @@
  * 2. Replace the default Code.gs with this template
  * 3. Create Google Sheets with the following sheet names:
  *    - Users
+ *    - Fab Academy
  *    - Inventory
  *    - UsageHistory
  *    - Categories
@@ -36,6 +37,7 @@ const SPREADSHEET_ID = '1-Ybi9I5P20ss6P1-dsA6UkcHa591o_Tq83jVrfSMaWE'; // Replac
 const SHEET_NAMES = {
   USERS: 'Users',
   HOME : 'Home',
+  FAB_ACADEMY: 'Fab Academy',
   INVENTORY: 'Inventory',
   USAGE_HISTORY: 'UsageHistory',
   CATEGORIES: 'Categories',
@@ -107,6 +109,39 @@ function computeRequestSyncHash(requestData) {
     returnReceiver: String(requestData.returnReceiver || ''),
     returnRemarks: String(requestData.returnRemarks || ''),
   }));
+}
+
+function computeFabAcademySyncHash(entryData) {
+  return computeMd5Hash(JSON.stringify({
+    entryId: String(entryData.entryId || ''),
+    studentName: String(entryData.studentName || ''),
+    imageUrl: String(entryData.imageUrl || ''),
+    fabYear: String(entryData.fabYear || ''),
+    videoUrl: String(entryData.videoUrl || ''),
+    documentationUrl: String(entryData.documentationUrl || ''),
+    remarks: String(entryData.remarks || ''),
+  }));
+}
+
+function ensureFabAcademyHeaders(sheet) {
+  const expectedHeaders = [
+    'Entry ID',
+    'Student Name',
+    'Image URL',
+    'Fab Academy Year',
+    'Project Video URL',
+    'Documentation URL',
+    'Remarks',
+    'Sync Hash',
+  ];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+    return expectedHeaders;
+  }
+
+  expectedHeaders.forEach((header) => ensureHeaderColumn(sheet, header));
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }
 
 // CORS Headers
@@ -201,6 +236,9 @@ function doPost(e) {
       case 'getHomeContent':
         response = handleGetHomeContent(data);
         break;
+      case 'getFabAcademyContent':
+        response = handleGetFabAcademyContent(data);
+        break;
       case 'manageHomeContent':
         response = handleManageHomeContent(data);
         break;
@@ -254,6 +292,12 @@ function doPost(e) {
         break;
       case 'deleteHomeRow':
         response = handleDeleteHomeRow(data);
+        break;
+      case 'upsertFabAcademyRow':
+        response = handleUpsertFabAcademyRow(data);
+        break;
+      case 'deleteFabAcademyRow':
+        response = handleDeleteFabAcademyRow(data);
         break;
       case 'upsertSettingsRow':
         response = handleUpsertSettingsRow(data);
@@ -1007,6 +1051,7 @@ function onUniversalEdit(e) {
   else if (sheetName === SHEET_NAMES.USERS) { tableName = 'users'; keyField = 'email'; }
   else if (sheetName === SHEET_NAMES.REQUESTS) { tableName = 'requests'; keyField = 'date'; }
   else if (sheetName === SHEET_NAMES.HOME) { tableName = 'home'; keyField = 'docId'; }
+  else if (sheetName === SHEET_NAMES.FAB_ACADEMY) { tableName = 'fabAcademy'; keyField = 'entryId'; }
   
   if (!tableName) return;
   
@@ -1044,6 +1089,15 @@ function onUniversalEdit(e) {
         'Doc ID': 'docId', 'Title': 'title', 'Description': 'description',
         'Type': 'type', 'Content': 'content', 'Order': 'order', 
         'Visibility': 'visibility', 'Target Audience': 'targetAudience'
+      },
+      'fabAcademy': {
+        'Entry ID': 'entryId',
+        'Student Name': 'studentName',
+        'Image URL': 'imageUrl',
+        'Fab Academy Year': 'fabYear',
+        'Project Video URL': 'videoUrl',
+        'Documentation URL': 'documentationUrl',
+        'Remarks': 'remarks'
       }
     };
     return maps[tName] || {};
@@ -1543,6 +1597,27 @@ function handleGetHomeContent(data) {
   return { success: true, items };
 }
 
+function handleGetFabAcademyContent(data) {
+  const sheet = getSheet(SHEET_NAMES.FAB_ACADEMY);
+  if (!sheet) return { success: true, items: [] };
+  ensureFabAcademyHeaders(sheet);
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return { success: true, items: [] };
+
+  const items = values.slice(1).map((row) => ({
+    entryId: String(row[0] || ''),
+    studentName: String(row[1] || ''),
+    imageUrl: String(row[2] || ''),
+    fabYear: String(row[3] || ''),
+    videoUrl: String(row[4] || ''),
+    documentationUrl: String(row[5] || ''),
+    remarks: String(row[6] || ''),
+  })).filter((item) => item.entryId);
+
+  return { success: true, items };
+}
+
 // ===== NEW: ADMIN EDIT & SYNC HANDLERS =====
 
 /**
@@ -1833,6 +1908,60 @@ function syncHomeToConvex(fullSync = false) {
   return { success: true, message: `Synced ${synced} home blocks (${errors} errors).` };
 }
 
+function syncFabAcademyToConvex(fullSync = false) {
+  const sheet = getSheet(SHEET_NAMES.FAB_ACADEMY);
+  if (!sheet) return { success: false, message: 'Fab Academy sheet not found' };
+
+  const headers = ensureFabAcademyHeaders(sheet);
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return { success: true, message: 'Fab Academy sheet empty' };
+
+  let hashColIndex = headers.indexOf('Sync Hash');
+  if (hashColIndex === -1) {
+    hashColIndex = ensureHeaderColumn(sheet, 'Sync Hash');
+  }
+
+  let synced = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  values.slice(1).forEach((row, index) => {
+    const entryId = String(row[0] || '').trim();
+    if (!entryId) return;
+
+    const entryData = {
+      entryId: entryId,
+      studentName: String(row[1] || ''),
+      imageUrl: String(row[2] || ''),
+      fabYear: String(row[3] || ''),
+      videoUrl: String(row[4] || ''),
+      documentationUrl: String(row[5] || ''),
+      remarks: String(row[6] || ''),
+    };
+
+    const currentHash = computeFabAcademySyncHash(entryData);
+    const storedHash = String(row[hashColIndex] || '');
+
+    if (!fullSync && currentHash === storedHash) {
+      skipped++;
+      return;
+    }
+
+    try {
+      postToConvex('/syncRow', { table: 'fabAcademy', key: 'entryId', keyValue: entryId, data: entryData });
+      sheet.getRange(index + 2, hashColIndex + 1).setValue(currentHash);
+      synced++;
+    } catch (e) {
+      errors++;
+      console.error('Error syncing Fab Academy entry ' + entryId, e);
+    }
+
+    if (index > 0 && index % 3 === 0) Utilities.sleep(400);
+  });
+
+  return { success: true, message: `Synced ${synced} Fab Academy entries (${skipped} unchanged, ${errors} errors).` };
+}
+
 /**
  * Delete a home content block from the Home sheet and Firestore.
  */
@@ -2062,6 +2191,54 @@ function handleDeleteHomeRow(data) {
   if (!sheet) return { success: false, message: 'Home sheet not found' };
   const values = sheet.getDataRange().getValues();
   const rowIndex = findRowIndexByValue(values, 0, docId);
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
+}
+
+function handleUpsertFabAcademyRow(data) {
+  const { entryId } = data;
+  if (!entryId) return { success: false, message: 'Missing entryId' };
+
+  const sheet = getOrCreateSheet(SHEET_NAMES.FAB_ACADEMY);
+  let headers = ensureFabAcademyHeaders(sheet);
+  let values = sheet.getDataRange().getValues();
+  let hashColIndex = headers.indexOf('Sync Hash');
+  if (hashColIndex === -1) {
+    hashColIndex = ensureHeaderColumn(sheet, 'Sync Hash');
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    values = sheet.getDataRange().getValues();
+    hashColIndex = headers.indexOf('Sync Hash');
+  }
+
+  let rowIndex = findRowIndexByValue(values, 0, entryId);
+  if (rowIndex === -1) {
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  const rowLength = Math.max(sheet.getLastColumn(), hashColIndex + 1, 8);
+  const row = new Array(rowLength).fill('');
+  row[0] = String(entryId);
+  row[1] = String(data.studentName || '');
+  row[2] = String(data.imageUrl || '');
+  row[3] = String(data.fabYear || '');
+  row[4] = String(data.videoUrl || '');
+  row[5] = String(data.documentationUrl || '');
+  row[6] = String(data.remarks || '');
+  row[hashColIndex] = computeFabAcademySyncHash(data);
+
+  sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+  return { success: true };
+}
+
+function handleDeleteFabAcademyRow(data) {
+  const { entryId } = data;
+  if (!entryId) return { success: false, message: 'Missing entryId' };
+
+  const sheet = getSheet(SHEET_NAMES.FAB_ACADEMY);
+  if (!sheet) return { success: false, message: 'Fab Academy sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, entryId);
   if (rowIndex === -1) return { success: true };
   sheet.deleteRow(rowIndex);
   return { success: true };
@@ -2321,7 +2498,8 @@ function syncRequestsToConvex() {
  *   2. syncUsersToFirebase      — every 30 minutes (time-based)
  *   3. syncRequestsToFirebase   — every 30 minutes (time-based)
  *   4. syncHomeToFirebase       — every 1 hour (time-based)
- *   5. onUniversalEdit          — on spreadsheet edit (onEdit)
+ *   5. syncFabAcademyToConvex   — every 1 hour (time-based)
+ *   6. onUniversalEdit          — on spreadsheet edit (onEdit)
  */
 function installTriggers() {
   // Delete ALL existing triggers first to avoid duplicates
@@ -2333,14 +2511,16 @@ function installTriggers() {
   ScriptApp.newTrigger('syncUsersToConvex').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('syncRequestsToConvex').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('syncHomeToConvex').timeBased().everyHours(1).create();
+  ScriptApp.newTrigger('syncFabAcademyToConvex').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('onUniversalEdit').forSpreadsheet(ss).onEdit().create();
 
-  console.log('✅ All 5 triggers installed successfully!');
+  console.log('✅ All 6 triggers installed successfully!');
   console.log('Running initial full sync now...');
 
   syncInventoryToConvex();
   syncUsersToConvex();
   syncHomeToConvex(true);
+  syncFabAcademyToConvex(true);
 
   console.log('✅ Initial sync complete! Convex is now up to date.');
 }

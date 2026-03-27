@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { motion } from "framer-motion";
-import { PlayCircle, Users } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowUpRight, ChevronDown, ChevronUp, PlayCircle, Users } from "lucide-react";
 import { SCRIPT_URL } from "@/config";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -16,27 +16,379 @@ interface HomeContent {
   lastUpdated?: string;
 }
 
+interface FabAcademyContent {
+  id: string;
+  studentName: string;
+  imageUrl: string;
+  fabYear: string;
+  videoUrl: string;
+  documentationUrl: string;
+  remarks: string;
+}
+
+type CommunityTab = "fab-academy" | "tra-students";
+type PlateDepth = "background" | "midground" | "foreground";
+
+type HeroPlate = {
+  id: string;
+  tab: CommunityTab;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  kind: "image" | "video";
+  depth: PlateDepth;
+  placement: string;
+  width: number;
+  height: number;
+  rotate: number;
+  tilt: number;
+  driftX: number;
+  driftY: number;
+  duration: number;
+  parallax: number;
+  front: boolean;
+};
+
+const DIAMOND_CLIP = "polygon(8% 0, 92% 0, 100% 11%, 100% 89%, 92% 100%, 8% 100%, 0 89%, 0 11%)";
+const INNER_DIAMOND_CLIP = "polygon(9% 0, 91% 0, 100% 12%, 100% 88%, 91% 100%, 9% 100%, 0 88%, 0 12%)";
+
+const HERO_PLATE_LAYOUTS: Omit<HeroPlate, "id" | "tab" | "title" | "subtitle" | "imageUrl" | "kind">[] = [
+  {
+    depth: "background",
+    placement: "hidden xl:block left-[4%] top-[11%]",
+    width: 220,
+    height: 160,
+    rotate: -10,
+    tilt: -8,
+    driftX: 22,
+    driftY: 16,
+    duration: 31,
+    parallax: 18,
+    front: false,
+  },
+  {
+    depth: "midground",
+    placement: "left-[7%] top-[40%]",
+    width: 196,
+    height: 196,
+    rotate: -7,
+    tilt: -4,
+    driftX: 18,
+    driftY: 15,
+    duration: 22,
+    parallax: 26,
+    front: false,
+  },
+  {
+    depth: "foreground",
+    placement: "hidden md:block left-[14%] top-[24%]",
+    width: 138,
+    height: 112,
+    rotate: -6,
+    tilt: 6,
+    driftX: 14,
+    driftY: 12,
+    duration: 16,
+    parallax: 34,
+    front: true,
+  },
+  {
+    depth: "midground",
+    placement: "right-[9%] top-[14%]",
+    width: 224,
+    height: 168,
+    rotate: 8,
+    tilt: 4,
+    driftX: 20,
+    driftY: 14,
+    duration: 24,
+    parallax: 24,
+    front: false,
+  },
+  {
+    depth: "foreground",
+    placement: "hidden lg:block right-[11%] top-[31%]",
+    width: 128,
+    height: 128,
+    rotate: 6,
+    tilt: -5,
+    driftX: 12,
+    driftY: 10,
+    duration: 15,
+    parallax: 32,
+    front: true,
+  },
+  {
+    depth: "background",
+    placement: "hidden md:block right-[6%] bottom-[13%]",
+    width: 240,
+    height: 180,
+    rotate: 10,
+    tilt: 7,
+    driftX: 24,
+    driftY: 17,
+    duration: 28,
+    parallax: 18,
+    front: false,
+  },
+  {
+    depth: "midground",
+    placement: "left-[18%] bottom-[8%]",
+    width: 186,
+    height: 140,
+    rotate: -4,
+    tilt: 5,
+    driftX: 16,
+    driftY: 12,
+    duration: 20,
+    parallax: 24,
+    front: false,
+  },
+];
+
+function getDriveFileId(url: string) {
+  const fileMatch = url.match(/\/d\/([^/]+)/);
+  if (fileMatch?.[1]) return fileMatch[1];
+  const idMatch = url.match(/[?&]id=([^&]+)/);
+  if (idMatch?.[1]) return idMatch[1];
+  return "";
+}
+
+function buildDriveImageCandidates(url: string) {
+  if (!url) return [];
+  const fileId = getDriveFileId(url);
+  const candidates = [
+    fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200` : "",
+    fileId ? `https://drive.google.com/uc?export=view&id=${fileId}` : "",
+    fileId ? `https://lh3.googleusercontent.com/d/${fileId}=w1200` : "",
+    url,
+  ].filter(Boolean);
+  return Array.from(new Set(candidates));
+}
+
+function buildMediaCoverCandidates(url: string) {
+  if (!url) return [];
+  const fileId = getDriveFileId(url);
+  const candidates = [
+    fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200` : "",
+    fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000` : "",
+    ...buildDriveImageCandidates(url),
+  ].filter(Boolean);
+  return Array.from(new Set(candidates));
+}
+
+function MediaImage({
+  imageUrl,
+  alt,
+  className,
+}: {
+  imageUrl: string;
+  alt: string;
+  className: string;
+}) {
+  const candidates = buildDriveImageCandidates(imageUrl);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [imageUrl]);
+
+  if (candidates.length === 0 || candidateIndex >= candidates.length) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+        <Users className="w-12 h-12" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={candidates[candidateIndex]}
+      alt={alt}
+      className={className}
+      onError={() => setCandidateIndex((current) => current + 1)}
+    />
+  );
+}
+
+function HeroPlateMedia({
+  imageUrl,
+  alt,
+  className,
+}: {
+  imageUrl: string;
+  alt: string;
+  className: string;
+}) {
+  const candidates = buildMediaCoverCandidates(imageUrl);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [imageUrl]);
+
+  if (candidates.length === 0 || candidateIndex >= candidates.length) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.24),_rgba(148,163,184,0.06))] text-slate-300">
+        <Users className="w-9 h-9" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={candidates[candidateIndex]}
+      alt={alt}
+      className={className}
+      onError={() => setCandidateIndex((current) => current + 1)}
+    />
+  );
+}
+
+function FloatingHeroPlate({
+  plate,
+  reducedMotion,
+  onSelectTab,
+}: {
+  plate: HeroPlate;
+  reducedMotion: boolean;
+  onSelectTab: (tab: CommunityTab) => void;
+}) {
+  const blurClass =
+    plate.depth === "background"
+      ? "blur-[1.2px] opacity-55"
+      : plate.depth === "midground"
+        ? "opacity-90"
+        : "opacity-100";
+
+  return (
+    <motion.button
+      type="button"
+      aria-label={`View ${plate.title} in ${plate.tab === "fab-academy" ? "Fab Academy" : "TRA Students"}`}
+      onClick={() => onSelectTab(plate.tab)}
+      style={{ width: plate.width, height: plate.height }}
+      className={`absolute ${plate.placement} ${plate.front ? "z-30" : plate.depth === "background" ? "z-10" : "z-20"} hidden sm:block text-left`}
+      animate={
+        reducedMotion
+          ? undefined
+          : {
+              x: [0, plate.driftX * 0.5, -plate.driftX * 0.18, 0],
+              y: [0, -plate.driftY * 0.45, plate.driftY * 0.2, 0],
+              rotateZ: [plate.rotate, plate.rotate + 0.65, plate.rotate - 0.45, plate.rotate],
+              scale: [1, plate.depth === "foreground" ? 1.012 : 1.006, 1],
+            }
+      }
+      transition={
+        reducedMotion
+          ? undefined
+          : {
+              duration: plate.duration + 8,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: plate.duration * 0.04,
+            }
+      }
+      whileHover={{
+        scale: 1.02,
+        y: -3,
+        rotateZ: plate.rotate + 0.4,
+      }}
+    >
+      <div
+        className={`community-plate-shell ${blurClass}`}
+        style={{
+          clipPath: DIAMOND_CLIP,
+          transform: `perspective(1000px) rotateY(${plate.tilt}deg) rotateX(${plate.depth === "background" ? "2deg" : "4deg"})`,
+        }}
+      >
+        <div className="community-plate-shadow" />
+        <div className="community-plate-frame" style={{ clipPath: DIAMOND_CLIP }}>
+          <div className="community-plate-inner" style={{ clipPath: INNER_DIAMOND_CLIP }}>
+            <HeroPlateMedia
+              imageUrl={plate.imageUrl}
+              alt={plate.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,15,31,0.02),rgba(8,15,31,0.42))]" />
+            <div className="community-plate-gloss" />
+            <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3 text-white">
+              <div className="min-w-0">
+                <p className="truncate text-[10px] font-semibold uppercase tracking-[0.26em] text-emerald-200/85">
+                  {plate.subtitle}
+                </p>
+                <p className="truncate pt-1 text-sm font-semibold">{plate.title}</p>
+              </div>
+              {plate.kind === "video" && (
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/25 bg-white/14 backdrop-blur">
+                  <PlayCircle className="h-4 w-4" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
 export default function Community() {
   const [homeData, setHomeData] = useState<HomeContent[]>([]);
+  const [fabAcademyData, setFabAcademyData] = useState<FabAcademyContent[]>([]);
+  const [selectedFabCardId, setSelectedFabCardId] = useState<string | null>(null);
+  const [fabPreviewMode, setFabPreviewMode] = useState<"image" | "video">("image");
+  const [fabPreviewAspectRatio, setFabPreviewAspectRatio] = useState(16 / 9);
+  const [fabGraduateScrollHeight, setFabGraduateScrollHeight] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [dataSource, setDataSource] = useState<'convex' | 'sheets' | 'loading'>('loading');
+  const [dataSource, setDataSource] = useState<"convex" | "sheets" | "loading">("loading");
+  const [activeTab, setActiveTab] = useState<CommunityTab>("fab-academy");
+  const reducedMotion = useReducedMotion();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const fabGraduateListRef = useRef<HTMLDivElement>(null);
+  const fabPreviewSectionRef = useRef<HTMLDivElement>(null);
+  const fabSelectedDetailsRef = useRef<HTMLDivElement>(null);
+  const fabGraduateHeaderRef = useRef<HTMLDivElement>(null);
 
   const convexHomeData = useQuery(api.home.getAll);
+  const convexFabAcademyData = useQuery(api.fabAcademy.getAll);
 
-  // Home content: Firebase is primary. Sheets is the error-only fallback.
   const fetchFromSheets = useCallback(async () => {
     try {
-      const res = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getHomeContent' }),
-      });
-      const result = await res.json();
-      if (result.success && result.items) {
-        setHomeData(result.items);
-        setDataSource('sheets');
+      const [homeRes, fabRes] = await Promise.all([
+        fetch(SCRIPT_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "getHomeContent" }),
+        }),
+        fetch(SCRIPT_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "getFabAcademyContent" }),
+        }),
+      ]);
+
+      const [homeResult, fabResult] = await Promise.all([homeRes.json(), fabRes.json()]);
+
+      if (homeResult.success && homeResult.items) {
+        setHomeData(homeResult.items);
+      }
+
+      if (fabResult.success && fabResult.items) {
+        setFabAcademyData(
+          fabResult.items.map((item: any) => ({
+            id: item.entryId,
+            studentName: item.studentName,
+            imageUrl: item.imageUrl,
+            fabYear: item.fabYear,
+            videoUrl: item.videoUrl,
+            documentationUrl: item.documentationUrl,
+            remarks: item.remarks,
+          })),
+        );
+      }
+
+      if ((homeResult.success && homeResult.items) || (fabResult.success && fabResult.items)) {
+        setDataSource("sheets");
       }
     } catch (err) {
-      console.error('Sheets home content fetch failed:', err);
+      console.error("Sheets community content fetch failed:", err);
     } finally {
       setIsLoading(false);
     }
@@ -44,167 +396,653 @@ export default function Community() {
 
   useEffect(() => {
     if (convexHomeData !== undefined) {
-      const data: HomeContent[] = convexHomeData.map(doc => ({
+      const data: HomeContent[] = convexHomeData.map((doc) => ({
         ...doc,
         id: doc.docId || doc._id,
-        contentUrl: doc.content || '',
-        heading: doc.title || '',
+        contentUrl: doc.content || "",
+        heading: doc.title || "",
       })) as unknown as HomeContent[];
       setHomeData(data);
-      setDataSource('convex');
+      setDataSource("convex");
       setIsLoading(false);
     }
   }, [convexHomeData]);
 
-  // TRA Students Videos only
-  const traVideos = homeData.filter(item => item.type && item.type.toLowerCase() === 'video');
+  useEffect(() => {
+    if (convexFabAcademyData !== undefined) {
+      const data: FabAcademyContent[] = convexFabAcademyData
+        .map((doc) => ({
+          id: doc.entryId || doc._id,
+          studentName: doc.studentName || "",
+          imageUrl: doc.imageUrl || "",
+          fabYear: doc.fabYear || "",
+          videoUrl: doc.videoUrl || "",
+          documentationUrl: doc.documentationUrl || "",
+          remarks: doc.remarks || "",
+        }))
+        .sort(
+          (a, b) =>
+            String(b.fabYear).localeCompare(String(a.fabYear)) || a.studentName.localeCompare(b.studentName),
+        );
+      setFabAcademyData(data);
+      setDataSource("convex");
+      setIsLoading(false);
+    }
+  }, [convexFabAcademyData]);
 
-  // Convert Google Drive share link to embeddable iframe link
+  useEffect(() => {
+    if (convexHomeData === null || convexFabAcademyData === null) {
+      fetchFromSheets();
+    }
+  }, [convexFabAcademyData, convexHomeData, fetchFromSheets]);
+
+  useEffect(() => {
+    if (fabAcademyData.length === 0) {
+      setSelectedFabCardId(null);
+      setFabPreviewMode("image");
+      return;
+    }
+
+    setSelectedFabCardId((current) =>
+      current && fabAcademyData.some((student) => student.id === current) ? current : fabAcademyData[0].id,
+    );
+  }, [fabAcademyData]);
+
   const getEmbedUrl = (url: string) => {
-    if (!url) return '';
-    if (url.includes('/preview')) return url;
-    return url.replace(/\/view(\?.*)?$/, '/preview');
+    if (!url) return "";
+    if (url.includes("/preview")) return url;
+    const fileId = getDriveFileId(url);
+    if (fileId) return `https://drive.google.com/file/d/${fileId}/preview`;
+    return url.replace(/\/view(\?.*)?$/, "/preview");
+  };
+
+  const traVideos = useMemo(
+    () => homeData.filter((item) => item.type && item.type.toLowerCase() === "video"),
+    [homeData],
+  );
+
+  const heroPlates = useMemo(() => {
+    const fabMedia = fabAcademyData.slice(0, 4).map((entry) => ({
+      tab: "fab-academy" as const,
+      title: entry.studentName,
+      subtitle: entry.fabYear ? `Fab Academy ${entry.fabYear}` : "Fab Academy",
+      imageUrl: entry.imageUrl,
+      kind: "image" as const,
+    }));
+    const traMedia = traVideos.slice(0, 3).map((item) => ({
+      tab: "tra-students" as const,
+      title: item.heading,
+      subtitle: "TRA Students",
+      imageUrl: item.contentUrl,
+      kind: "video" as const,
+    }));
+
+    const mediaPool = [...fabMedia, ...traMedia];
+    return HERO_PLATE_LAYOUTS.slice(0, mediaPool.length).map((layout, index) => ({
+      ...layout,
+      ...mediaPool[index],
+      id: `${mediaPool[index].tab}-${index}`,
+    }));
+  }, [fabAcademyData, traVideos]);
+
+  const selectedFabStudent = useMemo(() => {
+    if (fabAcademyData.length === 0) return null;
+    return fabAcademyData.find((student) => student.id === selectedFabCardId) ?? fabAcademyData[0];
+  }, [fabAcademyData, selectedFabCardId]);
+
+  const selectedFabIndex = useMemo(() => {
+    if (!selectedFabStudent) return -1;
+    return fabAcademyData.findIndex((student) => student.id === selectedFabStudent.id);
+  }, [fabAcademyData, selectedFabStudent]);
+
+  const selectedFabEmbedUrl = selectedFabStudent ? getEmbedUrl(selectedFabStudent.videoUrl) : "";
+  const isFabVideoVisible = fabPreviewMode === "video" && !!selectedFabStudent?.videoUrl;
+
+  useEffect(() => {
+    if (!selectedFabStudent || isFabVideoVisible) {
+      setFabPreviewAspectRatio(16 / 9);
+      return;
+    }
+
+    const candidates = buildDriveImageCandidates(selectedFabStudent.imageUrl);
+    if (candidates.length === 0) {
+      setFabPreviewAspectRatio(16 / 9);
+      return;
+    }
+
+    let cancelled = false;
+    let candidateIndex = 0;
+
+    const loadNextCandidate = () => {
+      if (cancelled || candidateIndex >= candidates.length) {
+        if (!cancelled) {
+          setFabPreviewAspectRatio(16 / 9);
+        }
+        return;
+      }
+
+      const image = new Image();
+      image.onload = () => {
+        if (cancelled) return;
+        const naturalRatio = image.naturalWidth > 0 && image.naturalHeight > 0
+          ? image.naturalWidth / image.naturalHeight
+          : 16 / 9;
+        setFabPreviewAspectRatio(Math.min(1.8, Math.max(1, naturalRatio)));
+      };
+      image.onerror = () => {
+        candidateIndex += 1;
+        loadNextCandidate();
+      };
+      image.src = candidates[candidateIndex];
+    };
+
+    loadNextCandidate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isFabVideoVisible, selectedFabStudent]);
+
+  useEffect(() => {
+    if (activeTab !== "fab-academy") {
+      setFabGraduateScrollHeight(null);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let frameId = 0;
+
+    const measureGraduateScroll = () => {
+      cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        if (window.innerWidth < 1280) {
+          setFabGraduateScrollHeight(null);
+          return;
+        }
+
+        const previewEl = fabPreviewSectionRef.current;
+        const detailEl = fabSelectedDetailsRef.current;
+        const headerEl = fabGraduateHeaderRef.current;
+        if (!previewEl || !detailEl || !headerEl) {
+          setFabGraduateScrollHeight(null);
+          return;
+        }
+
+        const desktopGap = 32;
+        const previewHeight = previewEl.getBoundingClientRect().height;
+        const detailHeight = detailEl.getBoundingClientRect().height;
+        const headerHeight = headerEl.getBoundingClientRect().height;
+        const nextHeight = Math.max(220, Math.floor(previewHeight + detailHeight + desktopGap - headerHeight));
+
+        setFabGraduateScrollHeight((current) => (current === nextHeight ? current : nextHeight));
+      });
+    };
+
+    measureGraduateScroll();
+
+    const observer = new ResizeObserver(() => {
+      measureGraduateScroll();
+    });
+
+    if (contentRef.current) observer.observe(contentRef.current);
+    if (fabPreviewSectionRef.current) observer.observe(fabPreviewSectionRef.current);
+    if (fabSelectedDetailsRef.current) observer.observe(fabSelectedDetailsRef.current);
+    if (fabGraduateHeaderRef.current) observer.observe(fabGraduateHeaderRef.current);
+
+    window.addEventListener("resize", measureGraduateScroll);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+      window.removeEventListener("resize", measureGraduateScroll);
+    };
+  }, [activeTab, fabAcademyData.length, selectedFabCardId, fabPreviewMode, fabPreviewAspectRatio]);
+
+  const selectFabStudent = (studentId: string, mode: "image" | "video" = "image") => {
+    setSelectedFabCardId(studentId);
+    setFabPreviewMode(mode);
+  };
+
+  const cycleFabStudent = (direction: 1 | -1) => {
+    if (fabAcademyData.length === 0 || selectedFabIndex === -1) return;
+    const nextIndex = (selectedFabIndex + direction + fabAcademyData.length) % fabAcademyData.length;
+    setSelectedFabCardId(fabAcademyData[nextIndex].id);
+    setFabPreviewMode("image");
+  };
+
+  const handleSelectTab = (tab: CommunityTab) => {
+    setActiveTab(tab);
+    contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-
-      {/* Navigation Bar — matches Home page */}
-      <header className="bg-white border-b border-border sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
-
-          {/* Left: Logo */}
+    <div className="min-h-screen bg-[#f6f5f1] font-sans text-slate-900">
+      <header className="sticky top-0 z-50 border-b border-white/65 bg-white/78 shadow-[0_8px_32px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-8">
           <Link href="/">
-            <div className="flex flex-col cursor-pointer group">
-              <span className="font-display font-black text-xl leading-none tracking-tight group-hover:text-emerald-500 transition-colors">AESTHETIC</span>
-              <span className="font-sans font-medium text-[0.65rem] leading-none tracking-[0.3em] text-emerald-600 group-hover:text-emerald-400 transition-colors mt-0.5 uppercase">Centre</span>
+            <div className="flex cursor-pointer flex-col group">
+              <span className="font-display text-xl font-black leading-none tracking-tight transition-colors group-hover:text-emerald-500">
+                AESTHETIC
+              </span>
+              <span className="mt-0.5 font-sans text-[0.65rem] font-medium uppercase leading-none tracking-[0.3em] text-emerald-600 transition-colors group-hover:text-emerald-400">
+                Centre
+              </span>
             </div>
           </Link>
 
-          {/* Center: Nav Links */}
-          <div className="hidden md:flex items-center gap-12 absolute left-1/2 -translate-x-1/2">
+          <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-12 md:flex">
             <Link href="/community">
-              <button className="text-sm font-semibold text-slate-900 tracking-wide">Community</button>
+              <button className="text-sm font-semibold tracking-wide text-slate-900">Community</button>
             </Link>
             <Link href="/">
-              <button className="text-sm font-medium text-slate-500 hover:text-slate-900 tracking-wide transition-colors">Aesthetic Centre</button>
+              <button className="text-sm font-medium tracking-wide text-slate-500 transition-colors hover:text-slate-900">
+                Aesthetic Centre
+              </button>
             </Link>
             <Link href="/learning">
-              <button className="text-sm font-medium text-slate-500 hover:text-slate-900 tracking-wide transition-colors">Learning</button>
+              <button className="text-sm font-medium tracking-wide text-slate-500 transition-colors hover:text-slate-900">
+                Learning
+              </button>
             </Link>
           </div>
 
-          {/* Right: Sign In */}
           <Link href="/login">
-            <button className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-full shadow-md transition-all hover:scale-105 active:scale-95">
+            <button className="rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:scale-105 hover:bg-emerald-700 active:scale-95">
               Sign In
             </button>
           </Link>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-12 md:py-16 pb-24">
+      <main className="mx-auto flex w-full max-w-7xl flex-col px-4 pb-24 pt-6 sm:px-6 lg:px-8">
+        <section className="sticky top-20 z-10 relative overflow-hidden rounded-[34px] border border-white/80 bg-[linear-gradient(180deg,#f8f7f2_0%,#eef6ef_42%,#f5f3ee_100%)] shadow-[0_20px_80px_rgba(15,23,42,0.08)]">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.88),_transparent_42%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_22%,_rgba(16,185,129,0.14),_transparent_34%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_68%,_rgba(148,163,184,0.11),_transparent_28%)]" />
+          <div className="absolute left-1/2 top-[18%] h-56 w-[72%] -translate-x-1/2 rounded-full bg-white/68 blur-[90px]" />
+          <div className="absolute inset-y-0 left-1/2 w-[46%] -translate-x-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.52),rgba(255,255,255,0.78))] blur-[72px]" />
 
-        <div className="mb-10 text-center max-w-2xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-display font-bold text-slate-900 mb-4 tracking-tight">Our Community</h1>
-          <p className="text-slate-500 text-lg">Connect, learn, and grow alongside fellow creators, engineers, and researchers.</p>
-        </div>
+          {heroPlates.map((plate) => (
+            <FloatingHeroPlate
+              key={plate.id}
+              plate={plate}
+              reducedMotion={!!reducedMotion}
+              onSelectTab={handleSelectTab}
+            />
+          ))}
 
-        {/* Data source banner */}
-        {dataSource === 'sheets' && homeData.length > 0 && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 mb-6 max-w-xl mx-auto justify-center">
-            <span className="text-base">📋</span>
-            <span><strong>Showing data from Google Sheets</strong> — Firebase quota may be exceeded.</span>
-          </div>
-        )}
-
-        <Tabs defaultValue="tra-students" className="w-full">
-          <div className="flex justify-center mb-12">
-            <TabsList className="grid w-full max-w-md grid-cols-2 p-1 bg-slate-200/50">
-              <TabsTrigger value="fab-academy" className="rounded-md font-medium">Fab Academy</TabsTrigger>
-              <TabsTrigger value="tra-students" className="rounded-md font-medium">TRA Students</TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* FAB ACADEMY TAB */}
-          <TabsContent value="fab-academy" className="outline-none focus:ring-0">
-            <div className="bg-white border border-border shadow-sm rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                  <Users className="w-8 h-8 text-slate-400" />
-               </div>
-               <h3 className="text-2xl font-bold font-display text-slate-900 mb-2">Fab Academy Coming Soon</h3>
-               <p className="text-slate-500 max-w-md">Stay tuned for projects, documentation, and showcases from our Fab Academy scholars.</p>
-            </div>
-          </TabsContent>
-
-          {/* TRA STUDENTS TAB */}
-          <TabsContent value="tra-students" className="outline-none focus:ring-0 space-y-24">
-            {isLoading ? (
-               <div className="flex flex-col items-center py-20">
-                 <div className="w-8 h-8 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
-                 <p className="text-muted-foreground animate-pulse">Loading content...</p>
-               </div>
-            ) : traVideos.length === 0 ? (
-               <div className="bg-white border border-border shadow-sm rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-                 <PlayCircle className="w-12 h-12 text-slate-300 mb-4" />
-                 <h3 className="text-xl font-bold text-slate-900 mb-2">No Videos Available</h3>
-                 <p className="text-slate-500">Video features will appear here once added by the admin.</p>
-               </div>
-            ) : (
-              <div className="space-y-20 md:space-y-32 mt-8">
-                {traVideos.map((video, idx) => {
-                  const isEven = idx % 2 === 0;
-                  const embedLink = getEmbedUrl(video.contentUrl);
-
-                  return (
-                    <motion.div
-                      key={video.id}
-                      initial={{ opacity: 0, y: 30 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, margin: "-100px" }}
-                      transition={{ duration: 0.6, ease: "easeOut" }}
-                      className={`flex flex-col gap-8 md:gap-16 items-center ${isEven ? 'md:flex-row' : 'md:flex-row-reverse'}`}
-                    >
-                      {/* Video Embed Side */}
-                      <div className="w-full md:w-1/2 rounded-2xl overflow-hidden shadow-2xl bg-black aspect-video relative group">
-                        {embedLink ? (
-                          <iframe
-                            src={embedLink}
-                            allow="autoplay; encrypted-media"
-                            allowFullScreen
-                            className="absolute top-0 left-0 w-full h-full border-0"
-                          />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center text-white/50 bg-slate-900">
-                             <p>Invalid URL</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Text Content Side */}
-                      <div className={`w-full md:w-1/2 flex flex-col justify-center space-y-4 ${isEven ? 'md:pr-8' : 'md:pl-8'}`}>
-                        <div className="inline-flex">
-                          <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold uppercase tracking-wider rounded-full">
-                            {video.type}
-                          </span>
-                        </div>
-                        <h2 className="text-3xl md:text-4xl font-display font-bold text-slate-900 leading-tight">
-                          {video.heading}
-                        </h2>
-                        <div className="w-12 h-1 bg-emerald-500 rounded-full" />
-                        <p className="text-lg text-slate-600 leading-relaxed mt-4">
-                          {video.description}
-                        </p>
-                      </div>
-
-                    </motion.div>
-                  );
-                })}
+          <div className="relative z-20 flex min-h-[500px] flex-col items-center justify-center px-6 py-20 text-center md:min-h-[620px] md:px-10">
+            <motion.div
+              initial={reducedMotion ? undefined : { opacity: 0, y: 18 }}
+              animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className="relative mx-auto max-w-3xl"
+            >
+              <div className="absolute inset-x-10 -inset-y-8 rounded-full bg-white/72 blur-[72px]" />
+              <div className="relative">
+                <p className="mb-5 inline-flex rounded-full border border-white/75 bg-white/72 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-700 shadow-[0_10px_30px_rgba(255,255,255,0.4)] backdrop-blur">
+                  Living Archive
+                </p>
+                <h1 className="text-balance text-5xl font-bold tracking-tight text-slate-900 md:text-7xl">
+                  Our Community
+                </h1>
+                <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-7 text-slate-600 md:text-xl md:leading-8">
+                  Connect, learn, and grow alongside fellow creators, engineers, and researchers.
+                </p>
               </div>
-            )}
-          </TabsContent>
-        </Tabs>
+            </motion.div>
+          </div>
+        </section>
+
+        <div ref={contentRef} className="relative z-40 mt-6 px-1 md:mt-8 md:px-4">
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CommunityTab)} className="w-full">
+            <section className="rounded-[30px] border border-white/70 bg-white/56 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.07)] backdrop-blur-2xl md:p-8">
+              <div className="flex justify-center">
+                <TabsList className="grid w-full grid-cols-2 rounded-full bg-white/72 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] md:w-[340px]">
+                  <TabsTrigger value="fab-academy" className="rounded-full font-medium">
+                    Fab Academy
+                  </TabsTrigger>
+                  <TabsTrigger value="tra-students" className="rounded-full font-medium">
+                    TRA Students
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <div className="mt-6">
+                {dataSource === "sheets" && (homeData.length > 0 || fabAcademyData.length > 0) && (
+                  <div className="mb-5 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    <span className="text-base">📋</span>
+                    <span>
+                      <strong>Showing data from Google Sheets</strong> while Convex is unavailable.
+                    </span>
+                  </div>
+                )}
+
+                <TabsContent value="fab-academy" className="m-0 outline-none focus:ring-0">
+                  {isLoading ? (
+                    <div className="flex flex-col items-center py-20">
+                      <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-500" />
+                      <p className="animate-pulse text-muted-foreground">Loading content...</p>
+                    </div>
+                  ) : fabAcademyData.length === 0 || !selectedFabStudent ? (
+                    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[26px] border border-dashed border-slate-200 bg-slate-50 text-center">
+                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm">
+                        <Users className="h-8 w-8 text-slate-400" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-slate-900">No Fab Academy Entries Yet</h3>
+                      <p className="mt-2 max-w-md text-slate-500">
+                        Student showcases will appear here once added by the admin.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-8 xl:grid-cols-[minmax(0,0.82fr),1px,minmax(320px,0.84fr)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:overflow-hidden">
+                      <div ref={fabPreviewSectionRef} className="relative z-20 space-y-6 xl:col-start-1 xl:row-start-1 xl:pr-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                            Selected Graduate
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => cycleFabStudent(-1)}
+                              className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => cycleFabStudent(1)}
+                              className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+
+                        <motion.div
+                          key={`${selectedFabStudent.id}-${fabPreviewMode}`}
+                          initial={reducedMotion ? undefined : { opacity: 0, y: 12 }}
+                          animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                          transition={{ duration: 0.35, ease: "easeOut" }}
+                          className="space-y-4"
+                        >
+                          <div className="max-w-[560px]">
+                            <div
+                              className="relative overflow-hidden rounded-[28px] border border-white/60 bg-[#09131a] shadow-[0_26px_60px_rgba(15,23,42,0.16)]"
+                              style={{ aspectRatio: fabPreviewAspectRatio }}
+                            >
+                              {isFabVideoVisible && selectedFabEmbedUrl ? (
+                                <iframe
+                                  src={selectedFabEmbedUrl}
+                                  allow="autoplay; encrypted-media"
+                                  allowFullScreen
+                                  className="absolute inset-0 h-full w-full border-0"
+                                />
+                              ) : (
+                                <MediaImage
+                                  imageUrl={selectedFabStudent.imageUrl}
+                                  alt={selectedFabStudent.studentName}
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                />
+                              )}
+                            </div>
+                            <div className="community-screen-shadow mt-2 h-6 w-[58%]" />
+                          </div>
+                        </motion.div>
+                      </div>
+
+                      <div className="relative z-10 hidden xl:row-span-2 xl:block bg-[linear-gradient(180deg,transparent,rgba(203,213,225,0.95),transparent)]" />
+
+                      <div className="relative z-10 xl:col-start-3 xl:row-span-2 xl:row-start-1 xl:flex xl:min-h-0 xl:min-w-0 xl:flex-col">
+                        <div ref={fabGraduateHeaderRef} className="mb-2 xl:pl-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                            Fab Academy Graduates
+                          </p>
+                        </div>
+
+                        <div
+                          ref={fabGraduateListRef}
+                          className="min-h-0 space-y-4 xl:flex-1 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
+                          style={fabGraduateScrollHeight ? { height: `${fabGraduateScrollHeight}px` } : undefined}
+                        >
+                          {fabAcademyData.map((student, idx) => {
+                            const isSelected = student.id === selectedFabStudent.id;
+                            const isShowingVideo = isFabVideoVisible && isSelected;
+
+                            return (
+                              <motion.article
+                                key={student.id}
+                                layout
+                                initial={reducedMotion ? undefined : { opacity: 0, y: 14 }}
+                                whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: "-80px" }}
+                                transition={{ duration: 0.35, ease: "easeOut", delay: idx * 0.03 }}
+                                className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 ${isSelected ? "border-emerald-300 bg-white/68 shadow-[0_18px_36px_rgba(16,185,129,0.12)]" : "border-white/60 bg-white/34 hover:border-emerald-200 hover:bg-white/48"}`}
+                              >
+                                <div className="grid grid-cols-[108px,minmax(0,1fr)] gap-4">
+                                  <div className="relative h-[120px] overflow-hidden rounded-[18px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
+                                    <MediaImage
+                                      imageUrl={student.imageUrl}
+                                      alt={student.studentName}
+                                      className="absolute inset-0 h-full w-full object-contain p-1 transition-transform duration-500 group-hover:scale-[1.02]"
+                                    />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">
+                                        {student.fabYear || "Fab"}
+                                      </span>
+                                      {isSelected && (
+                                        <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
+                                          Selected
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <h3 className="mt-3 text-base font-bold leading-tight text-slate-900 md:text-lg">
+                                      {student.studentName}
+                                    </h3>
+                                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
+                                      {student.remarks || "Project details will appear here soon."}
+                                    </p>
+
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => selectFabStudent(student.id)}
+                                        className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                                      >
+                                        Preview
+                                      </button>
+                                      {student.videoUrl && (
+                                        <button
+                                          type="button"
+                                          onClick={() => selectFabStudent(student.id, isShowingVideo ? "image" : "video")}
+                                          className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                                        >
+                                          {isShowingVideo ? "See less" : "Show more"}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.article>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div ref={fabSelectedDetailsRef} className="space-y-3 xl:col-start-1 xl:row-start-2 xl:pr-3">
+                        <div className="relative max-w-[680px] rounded-[26px] border border-white/50 bg-white/38 px-4 pb-5 pt-6 shadow-[0_12px_24px_rgba(15,23,42,0.03)] backdrop-blur md:px-5">
+                          <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-[0_10px_24px_rgba(15,23,42,0.16)] md:left-5 md:h-20 md:w-20">
+                            <MediaImage
+                              imageUrl={selectedFabStudent.imageUrl}
+                              alt={selectedFabStudent.studentName}
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          </div>
+
+                          <div className="pl-20 md:pl-24">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.26em] text-amber-700">
+                                Fab Academy {selectedFabStudent.fabYear || "Scholar"}
+                              </span>
+                              {isFabVideoVisible ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setFabPreviewMode("image")}
+                                  className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-emerald-700"
+                                >
+                                  See image preview
+                                  <ChevronUp className="h-4 w-4" />
+                                </button>
+                              ) : (
+                                selectedFabStudent.videoUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setFabPreviewMode("video")}
+                                    className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-emerald-700"
+                                  >
+                                    Show video
+                                    <ChevronDown className="h-4 w-4" />
+                                  </button>
+                                )
+                              )}
+                            </div>
+
+                            <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+                              {selectedFabStudent.studentName}
+                            </h3>
+                            <p className="mt-3 text-sm leading-7 text-slate-600 md:text-base">
+                              {selectedFabStudent.remarks || "Project details will appear here soon."}
+                            </p>
+
+                            <div className="mt-4 flex flex-wrap gap-3">
+                              {selectedFabStudent.documentationUrl && (
+                                <a
+                                  href={selectedFabStudent.documentationUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+                                >
+                                  Open Documentation
+                                  <ArrowUpRight className="h-4 w-4" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      <div className="w-full space-y-3 xl:col-span-3 xl:row-start-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                            Graduate Carousel
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {selectedFabIndex + 1} / {fabAcademyData.length}
+                          </p>
+                        </div>
+                        <div className="flex gap-3 overflow-x-auto pb-2 xl:pr-2">
+                          {fabAcademyData.map((student) => {
+                            const isSelected = student.id === selectedFabStudent.id;
+
+                            return (
+                              <button
+                                key={student.id}
+                                type="button"
+                                onClick={() => selectFabStudent(student.id)}
+                                className={`relative h-24 min-w-[110px] overflow-hidden rounded-[20px] border transition-colors ${isSelected ? "border-emerald-400 shadow-[0_16px_34px_rgba(16,185,129,0.18)]" : "border-white/70 bg-white/80 hover:border-emerald-200"}`}
+                              >
+                                <MediaImage
+                                  imageUrl={student.imageUrl}
+                                  alt={student.studentName}
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.66))]" />
+                                <div className="absolute inset-x-3 bottom-2 text-left text-white">
+                                  <p className="truncate text-xs font-semibold">{student.studentName}</p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="tra-students" className="m-0 outline-none focus:ring-0">
+                  {isLoading ? (
+                    <div className="flex flex-col items-center py-20">
+                      <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-emerald-500/20 border-t-emerald-500" />
+                      <p className="animate-pulse text-muted-foreground">Loading content...</p>
+                    </div>
+                  ) : traVideos.length === 0 ? (
+                    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[26px] border border-dashed border-slate-200 bg-slate-50 text-center">
+                      <PlayCircle className="mb-4 h-12 w-12 text-slate-300" />
+                      <h3 className="text-xl font-bold text-slate-900">No Videos Available</h3>
+                      <p className="mt-2 text-slate-500">Video features will appear here once added by the admin.</p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-20 md:space-y-28">
+                      {traVideos.map((video, idx) => {
+                        const isEven = idx % 2 === 0;
+                        const embedLink = getEmbedUrl(video.contentUrl);
+
+                        return (
+                          <motion.article
+                            key={video.id}
+                            initial={reducedMotion ? undefined : { opacity: 0, y: 24 }}
+                            whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                            viewport={{ once: true, margin: "-100px" }}
+                            transition={{ duration: 0.55, ease: "easeOut" }}
+                            className={`flex flex-col items-center gap-8 md:gap-16 ${isEven ? "md:flex-row" : "md:flex-row-reverse"}`}
+                          >
+                            <div className="w-full md:w-1/2">
+                              <div className="relative aspect-video overflow-hidden rounded-[28px] bg-black shadow-[0_32px_70px_rgba(15,23,42,0.14)]">
+                                {embedLink ? (
+                                  <iframe
+                                    src={embedLink}
+                                    allow="autoplay; encrypted-media"
+                                    allowFullScreen
+                                    className="absolute inset-0 h-full w-full border-0"
+                                  />
+                                ) : (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900 text-white/50">
+                                    <p>Invalid URL</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className={`w-full md:w-1/2 ${isEven ? "md:pr-8" : "md:pl-8"}`}>
+                              <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.26em] text-emerald-700">
+                                {video.type || "TRA Students"}
+                              </span>
+                              <h3 className="mt-5 text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
+                                {video.heading}
+                              </h3>
+                              <div className="mt-4 h-1 w-14 rounded-full bg-emerald-500" />
+                              <p className="mt-5 text-base leading-8 text-slate-600 md:text-lg">
+                                {video.description}
+                              </p>
+                            </div>
+                          </motion.article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+              </div>
+            </section>
+          </Tabs>
+        </div>
       </main>
     </div>
   );

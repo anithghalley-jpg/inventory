@@ -45,6 +45,14 @@ export const syncTable = internalMutation({
       for (const item of data) {
         await ctx.db.insert("home", item);
       }
+    } else if (table === "fabAcademy") {
+      const existing = await ctx.db.query("fabAcademy").collect();
+      for (const doc of existing) {
+        await ctx.db.delete(doc._id);
+      }
+      for (const item of data) {
+        await ctx.db.insert("fabAcademy", item);
+      }
     } else if (table === "settings") {
       const existing = await ctx.db.query("settings").collect();
       for (const doc of existing) {
@@ -84,6 +92,10 @@ export const syncRow = internalMutation({
       existing = await ctx.db.query("home").withIndex("by_docId", q => q.eq("docId", keyValue)).first();
       if (existing) await ctx.db.patch(existing._id, data);
       else await ctx.db.insert("home", data);
+    } else if (table === "fabAcademy") {
+      existing = await ctx.db.query("fabAcademy").withIndex("by_entryId", q => q.eq("entryId", keyValue)).first();
+      if (existing) await ctx.db.patch(existing._id, data);
+      else await ctx.db.insert("fabAcademy", data);
     } else if (table === "settings") {
       existing = await ctx.db
         .query("settings")
@@ -112,6 +124,8 @@ export const deleteRow = internalMutation({
       existing = await ctx.db.query("requests").withIndex("by_date", q => q.eq("date", keyValue)).first();
     } else if (table === "home") {
       existing = await ctx.db.query("home").withIndex("by_docId", q => q.eq("docId", keyValue)).first();
+    } else if (table === "fabAcademy") {
+      existing = await ctx.db.query("fabAcademy").withIndex("by_entryId", q => q.eq("entryId", keyValue)).first();
     } else if (table === "settings") {
       existing = await ctx.db
         .query("settings")
