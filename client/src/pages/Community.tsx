@@ -571,10 +571,11 @@ export default function Community() {
           return;
         }
 
-        const desktopGap = 32;
         const previewHeight = previewEl.getBoundingClientRect().height;
         const detailHeight = detailEl.getBoundingClientRect().height;
         const headerHeight = headerEl.getBoundingClientRect().height;
+        // 32px accounts for the grid row gap between row-1 and row-2
+        const desktopGap = 32;
         const nextHeight = Math.max(220, Math.floor(previewHeight + detailHeight + desktopGap - headerHeight));
 
         setFabGraduateScrollHeight((current) => (current === nextHeight ? current : nextHeight));
@@ -796,7 +797,7 @@ export default function Community() {
 
                       <div className="relative z-10 hidden xl:row-span-2 xl:block bg-[linear-gradient(180deg,transparent,rgba(203,213,225,0.95),transparent)]" />
 
-                      <div className="relative z-10 xl:col-start-3 xl:row-span-2 xl:row-start-1 xl:flex xl:min-h-0 xl:min-w-0 xl:flex-col">
+                      <div className="relative z-10 xl:col-start-3 xl:row-span-2 xl:row-start-1">
                         <div ref={fabGraduateHeaderRef} className="mb-2 xl:pl-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                             Fab Academy Graduates
@@ -805,7 +806,7 @@ export default function Community() {
 
                         <div
                           ref={fabGraduateListRef}
-                          className="min-h-0 space-y-4 xl:flex-1 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
+                          className="space-y-4 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
                           style={fabGraduateScrollHeight ? { height: `${fabGraduateScrollHeight}px` } : undefined}
                         >
                           {fabAcademyData.map((student, idx) => {
@@ -936,7 +937,6 @@ export default function Community() {
                             </div>
                           </div>
                         </div>
-
                       </div>
 
                       <div className="w-full space-y-3 xl:col-span-3 xl:row-start-3">
