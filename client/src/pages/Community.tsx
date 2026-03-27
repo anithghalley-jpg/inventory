@@ -245,14 +245,100 @@ function HeroPlateMedia({
   );
 }
 
+/** Fullscreen media lightbox triggered when a plate is clicked. */
+function PlateMediaModal({
+  plate,
+  onClose,
+}: {
+  plate: HeroPlate;
+  onClose: () => void;
+}) {
+  const embedUrl = plate.kind === "video" ? plate.imageUrl : null; // TRA plates store the video URL in imageUrl
+  const candidates = buildDriveImageCandidates(plate.imageUrl);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      key="plate-modal"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.22 }}
+      className="fixed inset-0 z-[999] flex items-center justify-center p-4 md:p-10"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-slate-950/72 backdrop-blur-xl" />
+
+      {/* Card */}
+      <motion.div
+        initial={{ scale: 0.88, y: 20, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.88, y: 20, opacity: 0 }}
+        transition={{ duration: 0.28, ease: [0.34, 1.56, 0.64, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/15 bg-slate-900 shadow-[0_40px_100px_rgba(0,0,0,0.6)]"
+      >
+        {/* Media */}
+        {plate.kind === "video" && embedUrl ? (
+          <div className="relative aspect-video w-full">
+            <iframe
+              src={embedUrl}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              className="absolute inset-0 h-full w-full border-0"
+            />
+          </div>
+        ) : (
+          <div className="relative w-full" style={{ aspectRatio: "4/3" }}>
+            <HeroPlateMedia
+              imageUrl={candidates[0] ?? plate.imageUrl}
+              alt={plate.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_55%,rgba(8,15,31,0.82))]" />
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-start justify-between gap-4 px-6 py-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-400">
+              {plate.subtitle}
+            </p>
+            <p className="mt-1 text-xl font-bold text-white">{plate.title}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-full border border-white/20 bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/18 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function FloatingHeroPlate({
   plate,
   reducedMotion,
-  onSelectTab,
+  dragOffset,
+  onDragEnd,
+  onPlateClick,
 }: {
   plate: HeroPlate;
   reducedMotion: boolean;
-  onSelectTab: (tab: CommunityTab) => void;
+  dragOffset: { x: number; y: number };
+  onDragEnd: (id: string, x: number, y: number) => void;
+  onPlateClick: (plate: HeroPlate) => void;
 }) {
   const blurClass =
     plate.depth === "background"
@@ -261,72 +347,121 @@ function FloatingHeroPlate({
         ? "opacity-90"
         : "opacity-100";
 
-  return (
-    <motion.button
-      type="button"
-      aria-label={`View ${plate.title} in ${plate.tab === "fab-academy" ? "Fab Academy" : "TRA Students"}`}
-      onClick={() => onSelectTab(plate.tab)}
+  // Track whether a drag gesture happened so we can distinguish from a plain click
+  const isDragging = useRef(false);
+  const isDraggable = plate.front; // only foreground plates are draggable
+
+  const handlePointerDown = () => { isDragging.current = false; };
+  const handleDragStart = () => { isDragging.current = true; };
+  const handleDragEnd = (_: unknown, info: { offset: { x: number; y: number } }) => {
+    onDragEnd(plate.id, dragOffset.x + info.offset.x, dragOffset.y + info.offset.y);
+  };
+  const handleClick = () => {
+    if (!isDragging.current) onPlateClick(plate);
+    isDragging.current = false;
+  };
+
+  const FloatInner = (
+    <motion.div
+      aria-label={`View ${plate.title}`}
       style={{ width: plate.width, height: plate.height }}
-      className={`absolute ${plate.placement} ${plate.front ? "z-30" : plate.depth === "background" ? "z-10" : "z-20"} hidden sm:block text-left`}
+      className="cursor-pointer text-left"
       animate={
         reducedMotion
           ? undefined
           : {
-              x: [0, plate.driftX * 0.5, -plate.driftX * 0.18, 0],
-              y: [0, -plate.driftY * 0.45, plate.driftY * 0.2, 0],
-              rotateZ: [plate.rotate, plate.rotate + 0.65, plate.rotate - 0.45, plate.rotate],
-              scale: [1, plate.depth === "foreground" ? 1.012 : 1.006, 1],
-            }
+            x: [0, plate.driftX * 0.5, -plate.driftX * 0.18, 0],
+            y: [0, -plate.driftY * 0.45, plate.driftY * 0.2, 0],
+            rotateZ: [plate.rotate, plate.rotate + 0.65, plate.rotate - 0.45, plate.rotate],
+            scale: [1, plate.depth === "foreground" ? 1.012 : 1.006, 1],
+          }
       }
       transition={
         reducedMotion
           ? undefined
           : {
-              duration: plate.duration + 8,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: plate.duration * 0.04,
-            }
+            duration: plate.duration + 8,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: plate.duration * 0.04,
+          }
       }
-      whileHover={{
-        scale: 1.02,
-        y: -3,
-        rotateZ: plate.rotate + 0.4,
-      }}
+      whileHover={{ scale: isDraggable ? 1.04 : 1.02, y: -4, rotateZ: plate.rotate + 0.4 }}
     >
-      <div
-        className={`community-plate-shell ${blurClass}`}
-        style={{
-          clipPath: DIAMOND_CLIP,
-          transform: `perspective(1000px) rotateY(${plate.tilt}deg) rotateX(${plate.depth === "background" ? "2deg" : "4deg"})`,
-        }}
-      >
-        <div className="community-plate-shadow" />
-        <div className="community-plate-frame" style={{ clipPath: DIAMOND_CLIP }}>
-          <div className="community-plate-inner" style={{ clipPath: INNER_DIAMOND_CLIP }}>
-            <HeroPlateMedia
-              imageUrl={plate.imageUrl}
-              alt={plate.title}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,15,31,0.02),rgba(8,15,31,0.42))]" />
-            <div className="community-plate-gloss" />
-            <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3 text-white">
-              <div className="min-w-0">
-                <p className="truncate text-[10px] font-semibold uppercase tracking-[0.26em] text-emerald-200/85">
-                  {plate.subtitle}
-                </p>
-                <p className="truncate pt-1 text-sm font-semibold">{plate.title}</p>
-              </div>
-              {plate.kind === "video" && (
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/25 bg-white/14 backdrop-blur">
-                  <PlayCircle className="h-4 w-4" />
+      <div className="h-full w-full origin-center scale-[0.62] sm:scale-[0.80] lg:scale-100">
+        <div
+          className={`community-plate-shell ${blurClass}`}
+          style={{
+            clipPath: DIAMOND_CLIP,
+            transform: `perspective(1000px) rotateY(${plate.tilt}deg) rotateX(${plate.depth === "background" ? "2deg" : "4deg"})`,
+          }}
+        >
+          <div className="community-plate-shadow" />
+          <div className="community-plate-frame" style={{ clipPath: DIAMOND_CLIP }}>
+            <div className="community-plate-inner" style={{ clipPath: INNER_DIAMOND_CLIP }}>
+              <HeroPlateMedia
+                imageUrl={plate.imageUrl}
+                alt={plate.title}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,15,31,0.02),rgba(8,15,31,0.42))]" />
+              <div className="community-plate-gloss" />
+              {/* Drag hint badge — only on draggable foreground plates */}
+              {isDraggable && (
+                <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full border border-white/20 bg-black/30 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/70 backdrop-blur">
+                  <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={1.5}>
+                    <path d="M5 1v8M1 5h8" />
+                  </svg>
+                  Drag
                 </div>
               )}
+              <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3 text-white">
+                <div className="min-w-0">
+                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.26em] text-emerald-200/85">
+                    {plate.subtitle}
+                  </p>
+                  <p className="truncate pt-1 text-sm font-semibold">{plate.title}</p>
+                </div>
+                {plate.kind === "video" && (
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/25 bg-white/14 backdrop-blur">
+                    <PlayCircle className="h-4 w-4" />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
+    </motion.div>
+  );
+
+  if (isDraggable) {
+    return (
+      <motion.div
+        className={`absolute ${plate.placement} ${plate.front ? "z-10 md:z-30" : plate.depth === "background" ? "z-10" : "z-10 md:z-20"}`}
+        style={{ x: dragOffset.x, y: dragOffset.y }}
+        drag
+        dragMomentum={false}
+        dragElastic={0.08}
+        onPointerDown={handlePointerDown}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onClick={handleClick}
+        whileDrag={{ scale: 1.08, zIndex: 50, cursor: "grabbing", filter: "drop-shadow(0 16px 32px rgba(0,0,0,0.28))" }}
+      >
+        {FloatInner}
+      </motion.div>
+    );
+  }
+
+  // Non-draggable plates: simple click-to-open-modal wrapper
+  return (
+    <motion.button
+      type="button"
+      className={`absolute ${plate.placement} ${plate.front ? "z-10 md:z-30" : plate.depth === "background" ? "z-10" : "z-10 md:z-20"} cursor-pointer`}
+      onClick={() => onPlateClick(plate)}
+    >
+      {FloatInner}
     </motion.button>
   );
 }
@@ -412,6 +547,8 @@ export default function Community() {
   const [dataSource, setDataSource] = useState<"convex" | "sheets" | "loading">("loading");
   const [activeTab, setActiveTab] = useState<CommunityTab>("fab-academy");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activePlate, setActivePlate] = useState<HeroPlate | null>(null);
+  const [plateDragOffsets, setPlateDragOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const reducedMotion = useReducedMotion();
   const contentRef = useRef<HTMLDivElement>(null);
   const fabGraduateListRef = useRef<HTMLDivElement>(null);
@@ -809,9 +946,21 @@ export default function Community() {
               key={plate.id}
               plate={plate}
               reducedMotion={!!reducedMotion}
-              onSelectTab={handleSelectTab}
+              dragOffset={plateDragOffsets[plate.id] ?? { x: 0, y: 0 }}
+              onDragEnd={(id, x, y) =>
+                setPlateDragOffsets((prev) => ({ ...prev, [id]: { x, y } }))
+              }
+              onPlateClick={setActivePlate}
             />
           ))}
+
+          {/* Media lightbox */}
+          {activePlate && (
+            <PlateMediaModal
+              plate={activePlate}
+              onClose={() => setActivePlate(null)}
+            />
+          )}
 
           <div className="relative z-20 flex min-h-[500px] flex-col items-center justify-center px-6 py-20 text-center md:min-h-[620px] md:px-10">
             <motion.div
@@ -829,7 +978,7 @@ export default function Community() {
                   Our Community
                 </h1>
                 <p className="mx-auto mt-5 max-w-2xl text-pretty text-base leading-7 text-slate-600 md:text-xl md:leading-8">
-                  Connect, learn, and grow alongside fellow creators, engineers, and researchers.
+                  Connect, Learn, Grow and Share
                 </p>
               </div>
             </motion.div>
