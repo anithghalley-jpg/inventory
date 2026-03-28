@@ -60,5 +60,22 @@ http.route({
     }
   }),
 });
+// Webhook endpoint to delete rows missing from Google Sheets
+http.route({
+  path: "/deleteMissingRows",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const body = await request.json();
+      const { table, key, validKeys } = body;
+      
+      await ctx.runMutation(internal.sync.deleteMissingRows, { table, key, validKeys });
+      
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), { status: 400 });
+    }
+  }),
+});
 
 export default http;

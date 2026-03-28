@@ -23,6 +23,94 @@ import { SCRIPT_URL } from '@/config';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
+const glowStyles = [
+  {
+    border: 'border-emerald-400',
+    shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(16,185,129,0.55)]',
+    beforeBorder: 'before:border-emerald-400/50',
+    iconColor: 'text-emerald-500',
+    textColor: 'text-emerald-900',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-700',
+    badgeBorder: 'border-emerald-200'
+  },
+  {
+    border: 'border-blue-400',
+    shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(59,130,246,0.55)]',
+    beforeBorder: 'before:border-blue-400/50',
+    iconColor: 'text-blue-500',
+    textColor: 'text-blue-900',
+    badgeBg: 'bg-blue-100',
+    badgeText: 'text-blue-700',
+    badgeBorder: 'border-blue-200'
+  },
+  {
+    border: 'border-violet-400',
+    shadow: 'shadow-[0_0_15px_rgba(139,92,246,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(139,92,246,0.55)]',
+    beforeBorder: 'before:border-violet-400/50',
+    iconColor: 'text-violet-500',
+    textColor: 'text-violet-900',
+    badgeBg: 'bg-violet-100',
+    badgeText: 'text-violet-700',
+    badgeBorder: 'border-violet-200'
+  },
+  {
+    border: 'border-rose-400',
+    shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(244,63,94,0.55)]',
+    beforeBorder: 'before:border-rose-400/50',
+    iconColor: 'text-rose-500',
+    textColor: 'text-rose-900',
+    badgeBg: 'bg-rose-100',
+    badgeText: 'text-rose-700',
+    badgeBorder: 'border-rose-200'
+  },
+  {
+    border: 'border-amber-400',
+    shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(245,158,11,0.55)]',
+    beforeBorder: 'before:border-amber-400/50',
+    iconColor: 'text-amber-500',
+    textColor: 'text-amber-900',
+    badgeBg: 'bg-amber-100',
+    badgeText: 'text-amber-700',
+    badgeBorder: 'border-amber-200'
+  },
+  {
+    border: 'border-cyan-400',
+    shadow: 'shadow-[0_0_15px_rgba(6,182,212,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(6,182,212,0.55)]',
+    beforeBorder: 'before:border-cyan-400/50',
+    iconColor: 'text-cyan-500',
+    textColor: 'text-cyan-900',
+    badgeBg: 'bg-cyan-100',
+    badgeText: 'text-cyan-700',
+    badgeBorder: 'border-cyan-200'
+  },
+  {
+    border: 'border-fuchsia-400',
+    shadow: 'shadow-[0_0_15px_rgba(217,70,239,0.35)]',
+    hoverShadow: 'hover:shadow-[0_0_25px_rgba(217,70,239,0.55)]',
+    beforeBorder: 'before:border-fuchsia-400/50',
+    iconColor: 'text-fuchsia-500',
+    textColor: 'text-fuchsia-900',
+    badgeBg: 'bg-fuchsia-100',
+    badgeText: 'text-fuchsia-700',
+    badgeBorder: 'border-fuchsia-200'
+  }
+];
+
+const getGlowStyleIndex = (str: string) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % glowStyles.length;
+};
+
 interface InventoryItem {
   id: string;
   name: string;
@@ -726,72 +814,90 @@ export default function Dashboard() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {allUsers.map((u) => (
-                  <Card key={u.id} className="flex flex-col p-4 hover:shadow-md transition-all border-slate-200 bg-white/50">
-                    <div className="flex items-start gap-3">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                        <UsersIcon className="h-5 w-5 text-slate-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start">
-                          <p className="font-bold text-sm text-slate-900 truncate pr-2">{u.name}</p>
-                          <span className="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">
-                            Active
-                          </span>
+                {allUsers.map((u) => {
+                  const hasPageLink = Boolean(u.myPageLink && u.myPageLink.trim() !== "");
+                  const glowIndex = getGlowStyleIndex(u.email || u.id || "");
+                  const s = glowStyles[glowIndex];
+                  
+                  return (
+                    <Card
+                      key={u.id}
+                      className={`flex flex-col p-4 transition-all bg-white/50 ${
+                        hasPageLink
+                          ? `cursor-pointer ${s.border} ${s.shadow} ${s.hoverShadow} hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border ${s.beforeBorder} before:animate-pulse`
+                          : "border-slate-200 hover:shadow-md"
+                      }`}
+                      onClick={() => {
+                        if (hasPageLink) {
+                          window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                    >
+                      <div className="flex items-start gap-3 relative z-10">
+                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                          <UsersIcon className={`h-5 w-5 ${hasPageLink ? s.iconColor : 'text-slate-400'}`} />
                         </div>
-                        <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role}</p>
-
-                        {/* Badges */}
-                        {u.tags && u.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2.5">
-                            <TooltipProvider>
-                              {u.tags.map((tag: string, idx: number) => {
-                                const lower = tag.toLowerCase();
-                                let icon = <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 opacity-50" />;
-                                let style = 'bg-indigo-50 text-indigo-700 border-indigo-100';
-                                let label = tag;
-
-                                if (lower.includes('3d') || lower.includes('print')) {
-                                  icon = <Printer className="w-3 h-3" />;
-                                  style = 'bg-orange-50 text-orange-700 border-orange-100';
-                                  label = "3D Printing";
-                                }
-                                else if (lower.includes('laser') || lower.includes('cut')) {
-                                  icon = <Scissors className="w-3 h-3" />;
-                                  style = 'bg-red-50 text-red-700 border-red-100';
-                                  label = "Laser Cutting";
-                                }
-                                else if (lower.includes('cnc') || lower.includes('mill')) {
-                                  icon = <Zap className="w-3 h-3" />;
-                                  style = 'bg-slate-50 text-slate-700 border-slate-100';
-                                  label = "CNC Machining";
-                                }
-                                else if (lower.includes('wood')) {
-                                  icon = <BookOpen className="w-3 h-3" />;
-                                  style = 'bg-amber-50 text-amber-700 border-amber-100';
-                                  label = "Wood Shop";
-                                }
-
-                                return (
-                                  <Tooltip key={idx}>
-                                    <TooltipTrigger asChild>
-                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium border cursor-help ${style}`}>
-                                        {icon} {tag}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{label}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                );
-                              })}
-                            </TooltipProvider>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start">
+                            <p className={`font-bold text-sm truncate pr-2 ${hasPageLink ? s.textColor : 'text-slate-900'}`}>{u.name}</p>
+                            <span className={`shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase border shadow-sm ${hasPageLink ? `${s.badgeBg} ${s.badgeText} ${s.badgeBorder}` : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
+                              Active
+                            </span>
                           </div>
-                        )}
+                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role}</p>
+
+                          {/* Badges */}
+                          {u.tags && u.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2.5">
+                              <TooltipProvider>
+                                {u.tags.map((tag: string, idx: number) => {
+                                  const lower = tag.toLowerCase();
+                                  let icon = <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 opacity-50" />;
+                                  let style = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                                  let label = tag;
+
+                                  if (lower.includes('3d') || lower.includes('print')) {
+                                    icon = <Printer className="w-3 h-3" />;
+                                    style = 'bg-orange-50 text-orange-700 border-orange-100';
+                                    label = "3D Printing";
+                                  }
+                                  else if (lower.includes('laser') || lower.includes('cut')) {
+                                    icon = <Scissors className="w-3 h-3" />;
+                                    style = 'bg-red-50 text-red-700 border-red-100';
+                                    label = "Laser Cutting";
+                                  }
+                                  else if (lower.includes('cnc') || lower.includes('mill')) {
+                                    icon = <Zap className="w-3 h-3" />;
+                                    style = 'bg-slate-50 text-slate-700 border-slate-100';
+                                    label = "CNC Machining";
+                                  }
+                                  else if (lower.includes('wood')) {
+                                    icon = <BookOpen className="w-3 h-3" />;
+                                    style = 'bg-amber-50 text-amber-700 border-amber-100';
+                                    label = "Wood Shop";
+                                  }
+
+                                  return (
+                                    <Tooltip key={idx}>
+                                      <TooltipTrigger asChild>
+                                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium border cursor-help ${style}`}>
+                                          {icon} {tag}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{label}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  );
+                                })}
+                              </TooltipProvider>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
             </Card>
           </TabsContent>

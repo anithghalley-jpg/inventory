@@ -44,6 +44,10 @@ interface User {
   totalTime?: number;
   laptopStatus?: string;
   note?: string;
+  rfid?: string;
+  myPageLink?: string;
+  sessionStart?: string;
+  sessionEnd?: string;
 }
 
 interface InventoryItem {
@@ -141,7 +145,13 @@ export default function AdminPanel() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null); // Item currently in edit mode
   const [editItemForm, setEditItemForm] = useState<Partial<InventoryItem & { tagsInput: string }>>({});
   const [editingUserEmail, setEditingUserEmail] = useState<string | null>(null); // Email key for user edit
-  const [editUserForm, setEditUserForm] = useState<{ name: string; role: string; note: string }>({ name: '', role: 'USER', note: '' });
+  const [editUserForm, setEditUserForm] = useState<{
+    name: string; role: string; note: string;
+    myPageLink: string; tags: string[];
+    // read-only display fields
+    email: string; status: string; laptopStatus: string; totalTime: number; rfid: string; sessionStart: string; sessionEnd: string;
+  }>({ name: '', role: 'USER', note: '', myPageLink: '', tags: [], email: '', status: '', laptopStatus: '', totalTime: 0, rfid: '', sessionStart: '', sessionEnd: '' });
+  const [editUserTagInput, setEditUserTagInput] = useState('');
   const [homeItems, setHomeItems] = useState<any[]>([]);
   const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
   const [showAddHome, setShowAddHome] = useState(false);
@@ -415,7 +425,22 @@ export default function AdminPanel() {
   // ======== USER EDIT HANDLERS ========
   const handleOpenEditUser = (u: any) => {
     setEditingUserEmail(u.email);
-    setEditUserForm({ name: u.name || '', role: u.role || 'USER', note: (u as any).note || '' });
+    setEditUserTagInput('');
+    setEditUserForm({
+      name: u.name || '',
+      role: u.role || 'USER',
+      note: u.note || '',
+      myPageLink: u.myPageLink || '',
+      tags: Array.isArray(u.tags) ? [...u.tags] : [],
+      // read-only
+      email: u.email || '',
+      status: u.status || '',
+      laptopStatus: u.laptopStatus || 'Offline',
+      totalTime: u.totalTime || 0,
+      rfid: u.rfid || '',
+      sessionStart: u.sessionStart || '',
+      sessionEnd: u.sessionEnd || '',
+    });
   };
 
   const handleUpdateUser = async () => {
@@ -423,14 +448,15 @@ export default function AdminPanel() {
     toast.promise(
       updateUserProfileMut({
         email: editingUserEmail,
-        name: editUserForm.name,
         role: editUserForm.role as 'ADMIN' | 'USER' | 'TEAM',
         note: editUserForm.note,
+        myPageLink: editUserForm.myPageLink,
+        tags: editUserForm.tags,
         scriptUrl: SCRIPT_URL,
       }).then(async (result) => {
         setAllUsers(prev => prev.map(u =>
           u.email === editingUserEmail
-            ? { ...u, name: editUserForm.name, role: editUserForm.role, note: editUserForm.note } as any
+            ? { ...u, role: editUserForm.role, note: editUserForm.note, myPageLink: editUserForm.myPageLink, tags: editUserForm.tags } as any
             : u
         ));
         setEditingUserEmail(null);
@@ -1180,44 +1206,162 @@ export default function AdminPanel() {
 
             {/* Edit User Profile Dialog */}
             <Dialog open={!!editingUserEmail} onOpenChange={(open) => !open && setEditingUserEmail(null)}>
-              <DialogContent>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Edit User Profile</DialogTitle>
+                  <DialogTitle className="flex items-center gap-2 text-lg">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                      <UsersIcon className="w-4 h-4 text-emerald-700" />
+                    </div>
+                    Edit User Profile
+                  </DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">Display Name</label>
-                    <Input
-                      value={editUserForm.name}
-                      onChange={(e) => setEditUserForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="Full name"
-                    />
+
+                <div className="space-y-5 py-2">
+                  {/* ── Read-only info strip ─────────────────────────────── */}
+                  <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-3">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mb-3">Account Info (Read Only)</p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Email */}
+                      <div className="col-span-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Email</p>
+                        <p className="text-sm font-medium text-foreground bg-background rounded-md px-3 py-2 border border-border truncate">{editUserForm.email}</p>
+                      </div>
+
+                      {/* Name */}
+                      <div className="col-span-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Name</p>
+                        <p className="text-sm font-medium text-foreground bg-background rounded-md px-3 py-2 border border-border">{editUserForm.name || '—'}</p>
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Status</p>
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                          editUserForm.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
+                          editUserForm.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>{editUserForm.status || '—'}</span>
+                      </div>
+
+                      {/* Laptop */}
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Laptop</p>
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                          editUserForm.laptopStatus === 'Online' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                        }`}>{editUserForm.laptopStatus || 'Offline'}</span>
+                      </div>
+
+                      {/* Screentime */}
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Screentime</p>
+                        <p className="text-sm font-medium text-foreground bg-background rounded-md px-3 py-2 border border-border">
+                          {Math.floor((editUserForm.totalTime || 0) / 60)}h {(editUserForm.totalTime || 0) % 60}m
+                        </p>
+                      </div>
+
+                      {/* RFID */}
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">RFID</p>
+                        <p className="text-sm font-medium text-foreground bg-background rounded-md px-3 py-2 border border-border font-mono">
+                          {editUserForm.rfid || '—'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">Role</label>
-                    <select
-                      value={editUserForm.role}
-                      onChange={(e) => setEditUserForm(f => ({ ...f, role: e.target.value }))}
-                      className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background"
-                    >
-                      <option value="USER">USER</option>
-                      <option value="TEAM">TEAM</option>
-                      <option value="ADMIN">ADMIN</option>
-                    </select>
+
+                  {/* ── Editable fields ──────────────────────────────────── */}
+                  <div className="space-y-4">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Editable Fields</p>
+
+                    {/* Role dropdown */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-foreground">Role</label>
+                      <select
+                        value={editUserForm.role}
+                        onChange={(e) => setEditUserForm(f => ({ ...f, role: e.target.value }))}
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-emerald-500 outline-none"
+                      >
+                        <option value="USER">USER</option>
+                        <option value="TEAM">TEAM</option>
+                        <option value="ADMIN">ADMIN</option>
+                      </select>
+                    </div>
+
+                    {/* Page Link */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-foreground">Page Link</label>
+                      <Input
+                        value={editUserForm.myPageLink}
+                        onChange={(e) => setEditUserForm(f => ({ ...f, myPageLink: e.target.value }))}
+                        placeholder="https://..."
+                        className="text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground">User's personal / portfolio page URL</p>
+                    </div>
+
+                    {/* Note */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-foreground">Admin Note</label>
+                      <textarea
+                        className="w-full text-sm p-2.5 border border-border rounded-lg bg-background focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
+                        rows={3}
+                        value={editUserForm.note}
+                        onChange={(e) => setEditUserForm(f => ({ ...f, note: e.target.value }))}
+                        placeholder="Private admin note…"
+                      />
+                    </div>
+
+                    {/* Tags */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-foreground">Tags</label>
+                      <div className="min-h-[2.5rem] p-2 border border-border rounded-lg flex flex-wrap gap-1.5 focus-within:ring-2 focus-within:ring-emerald-500 bg-background">
+                        {editUserForm.tags.map((tag, idx) => {
+                          const style = getTagStyle(tag);
+                          return (
+                            <span
+                              key={idx}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${style.color}`}
+                            >
+                              {style.icon}{tag}
+                              <button
+                                type="button"
+                                onClick={() => setEditUserForm(f => ({ ...f, tags: f.tags.filter((_, i) => i !== idx) }))}
+                                className="ml-0.5 hover:opacity-60 transition-opacity"
+                              >
+                                <XCircle className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                        <input
+                          placeholder={editUserForm.tags.length === 0 ? 'Type tag & press Enter…' : ''}
+                          value={editUserTagInput}
+                          onChange={(e) => setEditUserTagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = editUserTagInput.trim();
+                              if (val && !editUserForm.tags.includes(val)) {
+                                setEditUserForm(f => ({ ...f, tags: [...f.tags, val] }));
+                              }
+                              setEditUserTagInput('');
+                            }
+                            if (e.key === 'Backspace' && !editUserTagInput && editUserForm.tags.length > 0) {
+                              setEditUserForm(f => ({ ...f, tags: f.tags.slice(0, -1) }));
+                            }
+                          }}
+                          className="flex-1 bg-transparent border-none outline-none text-sm min-w-[120px]"
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Press Enter to add · Backspace to remove last.</p>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">Admin Note</label>
-                    <textarea
-                      className="w-full text-sm p-2 border rounded-md bg-background focus:ring-1 focus:ring-emerald-500 outline-none resize-none"
-                      rows={3}
-                      value={editUserForm.note}
-                      onChange={(e) => setEditUserForm(f => ({ ...f, note: e.target.value }))}
-                      placeholder="Private admin note…"
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-2">
+
+                  {/* Action buttons */}
+                  <div className="flex gap-2 pt-1">
                     <Button variant="outline" className="flex-1" onClick={() => setEditingUserEmail(null)}>Cancel</Button>
-                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleUpdateUser}>Save Changes</Button>
+                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleUpdateUser}>Save Changes</Button>
                   </div>
                 </div>
               </DialogContent>

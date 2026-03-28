@@ -138,3 +138,78 @@ export const deleteRow = internalMutation({
     }
   }
 });
+
+export const deleteMissingRows = internalMutation({
+  args: {
+    table: v.string(),
+    key: v.string(),
+    validKeys: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { table, key, validKeys } = args;
+    const validSet = new Set(validKeys);
+    const seen = new Set<string>();
+    
+    if (table === "inventory") {
+      const existing = await ctx.db.query("inventory").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.itemId || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "users") {
+      const existing = await ctx.db.query("users").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.email || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "requests") {
+      const existing = await ctx.db.query("requests").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.date || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "home") {
+      const existing = await ctx.db.query("home").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.docId || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "fabAcademy") {
+      const existing = await ctx.db.query("fabAcademy").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.entryId || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "settings") {
+      const existing = await ctx.db.query("settings").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.adminSettingsTitle || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    }
+  }
+});

@@ -1751,6 +1751,7 @@ function handleSyncUsersToConvex(data) {
   let synced = 0, skipped = 0, errors = 0;
   const startTime = Date.now();
   const MAX_RUNTIME_MS = 270000;
+  const activeEmails = [];
 
   for (let i = 1; i < values.length; i++) {
     if (Date.now() - startTime > MAX_RUNTIME_MS) {
@@ -1760,6 +1761,8 @@ function handleSyncUsersToConvex(data) {
     const row = values[i];
     const email = String(row[0] || '').trim();
     if (!email) continue;
+    
+    activeEmails.push(email);
 
     const tagsStart = Math.max(noteColIndex + 1, 12);
     const tags = row.slice(tagsStart, hashColIndex === -1 ? undefined : hashColIndex).map(t => String(t)).filter(t => t !== '');
@@ -1792,6 +1795,15 @@ function handleSyncUsersToConvex(data) {
     } catch (rowErr) { errors++; console.error(rowErr); }
 
     if (i % 3 === 0) Utilities.sleep(400);
+  }
+
+  // Delete users from Convex that are no longer in Google Sheets
+  if (activeEmails.length > 0) {
+    try {
+      postToConvex('/deleteMissingRows', { table: 'users', key: 'email', validKeys: activeEmails });
+    } catch (delErr) {
+      console.error('Error deleting missing users:', delErr);
+    }
   }
 
   return { success: true, message: `Synced ${synced} users (${skipped} unchanged, ${errors} errors).` };
@@ -2434,9 +2446,13 @@ function syncUsersToConvex() {
   const noteColIndex = values[0].indexOf('Note') !== -1 ? values[0].indexOf('Note') : 11;
 
   let synced = 0, errors = 0;
+  const activeEmails = [];
+  
   values.slice(1).forEach((row, i) => {
     const email = String(row[0] || '').trim();
     if (!email) return;
+    
+    activeEmails.push(email);
 
     try {
       syncSingleUser(email, row, noteColIndex);
@@ -2444,6 +2460,15 @@ function syncUsersToConvex() {
     } catch (e) { errors++; }
     if (i > 0 && i % 5 === 0) Utilities.sleep(300);
   });
+  
+  if (activeEmails.length > 0) {
+    try {
+      postToConvex('/deleteMissingRows', { table: 'users', key: 'email', validKeys: activeEmails });
+    } catch (delErr) {
+      console.error('Error deleting missing users:', delErr);
+    }
+  }
+  
   console.log('Synced ' + synced + ' users to Convex (' + errors + ' errors).');
 }
 

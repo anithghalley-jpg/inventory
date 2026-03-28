@@ -191,6 +191,8 @@ export const updateProfile = mutation({
     name: v.optional(v.string()),
     role: v.optional(v.union(v.literal("ADMIN"), v.literal("USER"), v.literal("TEAM"))),
     note: v.optional(v.string()),
+    myPageLink: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
     scriptUrl: v.string(),
   },
   handler: async (ctx, args) => {
@@ -203,6 +205,8 @@ export const updateProfile = mutation({
     if (args.name !== undefined) patch.name = args.name;
     if (args.role !== undefined) patch.role = args.role;
     if (args.note !== undefined) patch.note = args.note;
+    if (args.myPageLink !== undefined) patch.myPageLink = args.myPageLink;
+    if (args.tags !== undefined) patch.tags = args.tags;
 
     await ctx.db.patch(user._id, patch);
     const updatedUser = { ...user, ...patch };
