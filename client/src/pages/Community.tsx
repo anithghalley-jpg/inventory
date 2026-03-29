@@ -921,6 +921,20 @@ export default function Community() {
       return;
     }
 
+    const isAtTop = container.scrollTop <= 2;
+    const isAtBottom =
+      container.scrollTop + container.clientHeight >= container.scrollHeight - 2;
+    const firstStudentId = fabAcademyDataRef.current[0]?.id ?? null;
+    const lastStudentId = fabAcademyDataRef.current.at(-1)?.id ?? null;
+
+    let nearestCardId: string | null = null;
+
+    if (isAtTop) {
+      nearestCardId = firstStudentId;
+    } else if (isAtBottom) {
+      nearestCardId = lastStudentId;
+    }
+
     const cards = fabAcademyDataRef.current
       .map(student => {
         const node = fabCardRefs.current[student.id];
@@ -944,11 +958,13 @@ export default function Community() {
         } => card !== null
       );
 
-    const nearestCardId = findNearestCardToContainerMidpoint({
-      containerTop: containerRect.top,
-      containerHeight: containerRect.height,
-      cards,
-    });
+    if (!nearestCardId) {
+      nearestCardId = findNearestCardToContainerMidpoint({
+        containerTop: containerRect.top,
+        containerHeight: containerRect.height,
+        cards,
+      });
+    }
 
     if (nearestCardId && nearestCardId !== selectedFabCardIdRef.current) {
       setSelectedFabCardId(nearestCardId);
