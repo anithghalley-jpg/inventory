@@ -572,7 +572,22 @@ function handleUploadImageOptimized(data) {
     }
     
     // Step 1: Upload image to Google Drive
-    const folder = DriveApp.getFolderById(folderId);
+    let folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+    } catch (fallbackError) {
+      console.log("⚠️ Default folder not found or forbidden. Falling back to dynamic folder creation.");
+      const folders = DriveApp.getFoldersByName('Inventory Images');
+      if (folders.hasNext()) {
+        folder = folders.next();
+      } else {
+        folder = DriveApp.createFolder('Inventory Images');
+        try {
+          folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        } catch(e) { console.warn("Workspace policy blocked folder sharing."); }
+      }
+    }
+
     const blob = Utilities.newBlob(
       Utilities.base64Decode(content), 
       mimeType,
@@ -580,11 +595,14 @@ function handleUploadImageOptimized(data) {
     );
     
     const file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE, DriveApp.Permission.VIEW);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch(e) { console.warn("Workspace policy blocked file sharing."); }
     
     // Step 2: Create shareable link
     const fileId = file.getId();
-    const directLink = "https://drive.google.com/uc?export=view&id=" + fileId;
+    // Using thumbnail endpoint to bypass recent Google Drive restrictions on hot-linking new images
+    const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w1000";
     
     console.log("✅ Image uploaded successfully");
     console.log("📸 Image URL: " + directLink);

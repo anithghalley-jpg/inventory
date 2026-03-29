@@ -247,3 +247,34 @@ export const processReturn = mutation({
     return { success: true };
   }
 });
+
+export const cancelReturn = mutation({
+  args: {
+    requestId: v.string(),
+    scriptUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reqDoc = await ctx.db.query("requests").withIndex("by_date", q => q.eq("date", args.requestId)).first();
+    if (!reqDoc) throw new Error("Request not found");
+
+    // Clear return fields — item stays with the user
+    await ctx.db.patch(reqDoc._id, {
+      returnStatus: "",
+      returnTarget: "",
+    });
+
+    await enqueueSheetsSyncJob(ctx, {
+      scriptUrl: args.scriptUrl,
+      entityType: "requests",
+      entityKey: reqDoc.date,
+      operation: "upsert",
+      payload: formatRequestForSheets({
+        ...reqDoc,
+        returnStatus: "",
+        returnTarget: "",
+      }),
+    });
+
+    return { success: true };
+  }
+});

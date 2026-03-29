@@ -1060,6 +1060,7 @@ export default function Community() {
                                 >
                                   {/* FRONT — graduate detail card */}
                                   <div
+                                    onClick={() => handleMobileCardTap(student.id)}
                                     style={{
                                       backfaceVisibility: "hidden",
                                       WebkitBackfaceVisibility: "hidden",
@@ -1069,7 +1070,7 @@ export default function Community() {
                                       left: 0,
                                       right: 0,
                                     }}
-                                    className="rounded-[22px] border border-white/60 bg-white/52 p-4 backdrop-blur"
+                                    className="rounded-[22px] border border-white/60 bg-white/52 p-4 backdrop-blur cursor-pointer hover:bg-white/60 transition-colors"
                                   >
                                     <div className="flex items-start gap-4">
                                       <div className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-[16px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
@@ -1092,20 +1093,13 @@ export default function Community() {
                                           {student.remarks || "Project details coming soon."}
                                         </p>
                                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleMobileCardTap(student.id)}
-                                            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors active:bg-emerald-700"
-                                          >
-                                            <PlayCircle className="h-3.5 w-3.5" />
-                                            Preview
-                                          </button>
                                           {student.documentationUrl && (
                                             <a
                                               href={student.documentationUrl}
                                               target="_blank"
                                               rel="noreferrer"
-                                              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                                              onClick={(e) => e.stopPropagation()}
+                                              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
                                             >
                                               Docs
                                               <ArrowUpRight className="h-3 w-3" />
@@ -1244,7 +1238,8 @@ export default function Community() {
                                   whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
                                   viewport={{ once: true, margin: "-80px" }}
                                   transition={{ duration: 0.35, ease: "easeOut", delay: idx * 0.03 }}
-                                  className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 ${isSelected ? "border-emerald-300 bg-white/68 shadow-[0_18px_36px_rgba(16,185,129,0.12)]" : "border-white/60 bg-white/34 hover:border-emerald-200 hover:bg-white/48"}`}
+                                  onClick={() => selectFabStudent(student.id)}
+                                  className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? "border-emerald-300 bg-white/68 shadow-[0_18px_36px_rgba(16,185,129,0.12)]" : "border-white/60 bg-white/34 hover:border-emerald-200 hover:bg-white/48"}`}
                                 >
                                   <div className="grid grid-cols-[108px,minmax(0,1fr)] gap-4">
                                     <div className="relative h-[120px] overflow-hidden rounded-[18px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
@@ -1275,17 +1270,13 @@ export default function Community() {
                                       </p>
 
                                       <div className="mt-4 flex flex-wrap gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => selectFabStudent(student.id)}
-                                          className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-emerald-300 hover:text-emerald-700"
-                                        >
-                                          Preview
-                                        </button>
                                         {student.videoUrl && (
                                           <button
                                             type="button"
-                                            onClick={() => selectFabStudent(student.id, isShowingVideo ? "image" : "video")}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              selectFabStudent(student.id, isShowingVideo ? "image" : "video");
+                                            }}
                                             className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
                                           >
                                             {isShowingVideo ? "See less" : "Show more"}

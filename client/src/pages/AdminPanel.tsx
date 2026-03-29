@@ -22,6 +22,7 @@ import { MachineCard, MachineData } from '@/components/MachineCard';
 // 1. Add your Google Apps Script Deployment URL at the top of your component
 import { SCRIPT_URL, DRIVE_FOLDER_ID } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
+import { getOptimizedImageUrl } from '@/lib/utils';
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
@@ -94,6 +95,7 @@ export default function AdminPanel() {
   const deleteInventoryItemMut = useMutation(api.inventory.deleteItem);
   const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
   const processReturnMut = useMutation(api.requests.processReturn);
+  const cancelReturnMut = useMutation(api.requests.cancelReturn);
   const upsertHomeMut = useMutation(api.home.upsert);
   const deleteHomeMut = useMutation(api.home.remove);
   const upsertFabAcademyMut = useMutation(api.fabAcademy.upsert);
@@ -677,6 +679,20 @@ export default function AdminPanel() {
     );
   };
 
+  const handleCancelReturn = async (req: any) => {
+    toast.promise(
+      cancelReturnMut({
+        requestId: req.date,
+        scriptUrl: SCRIPT_URL,
+      }),
+      {
+        loading: 'Cancelling return request...',
+        success: 'Return cancelled — item remains with user.',
+        error: (err) => `Failed: ${err.message}`,
+      }
+    );
+  };
+
   const handleApproveRequest = async (req: any) => {
     // 1. Optimistic Update
     const prevCheckouts = [...pendingCheckouts];
@@ -851,7 +867,7 @@ export default function AdminPanel() {
       console.error("CRITICAL SYNC ERROR:", error);
       // Remove the problematic item from the queue so the loop STOPS
       setSyncQueue(prev => prev.slice(1));
-      toast.error("Sync failed due to data error. Check Google Sheet for empty rows.");
+      toast.error(`Sync failed: ${error instanceof Error ? error.message : String(error)}`);
 
     } finally {
       setIsSyncing(false);
@@ -1556,7 +1572,7 @@ export default function AdminPanel() {
 
                     <div className="relative aspect-video mb-4 overflow-hidden rounded-lg bg-muted">
                       <img
-                        src={item.imageUrl}
+                        src={getOptimizedImageUrl(item.imageUrl)}
                         alt={item.name}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
@@ -1632,7 +1648,7 @@ export default function AdminPanel() {
                   <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-muted border">
                     {selectedItem?.imageUrl ? (
                       <img
-                        src={selectedItem.imageUrl}
+                        src={getOptimizedImageUrl(selectedItem.imageUrl)}
                         alt={selectedItem.name}
                         className="w-full h-full object-contain"
                         referrerPolicy="no-referrer"
@@ -1884,12 +1900,21 @@ export default function AdminPanel() {
                           </span>
                         </div>
                       </div>
-                      <Button
-                        className="bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => setSelectedReturn(req)}
-                      >
-                        Receive Item
-                      </Button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => setSelectedReturn(req)}
+                        >
+                          Receive Item
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400"
+                          onClick={() => handleCancelReturn(req)}
+                        >
+                          Cancel Return
+                        </Button>
+                      </div>
                     </Card>
                   ))}
                 </div>

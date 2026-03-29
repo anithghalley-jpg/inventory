@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 
 import { SCRIPT_URL } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
+import { getOptimizedImageUrl } from '@/lib/utils';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
@@ -176,6 +177,7 @@ export default function TeamDashboard() {
     const checkoutRequestMut = useMutation(api.requests.checkoutRequest);
     const initiateReturnMut = useMutation(api.requests.initiateReturn);
     const processReturnMut = useMutation(api.requests.processReturn);
+    const cancelReturnMut = useMutation(api.requests.cancelReturn);
     const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
     const toggleLaptopMut = useMutation(api.users.toggleLaptop);
 
@@ -284,6 +286,20 @@ export default function TeamDashboard() {
         );
     };
 
+    const handleCancelReturn = async (req: any) => {
+        toast.promise(
+            cancelReturnMut({
+                requestId: req.date,
+                scriptUrl: SCRIPT_URL,
+            }),
+            {
+                loading: 'Cancelling return request...',
+                success: 'Return cancelled — item remains with you.',
+                error: (err) => `Failed: ${err.message}`,
+            }
+        );
+    };
+
     const handleProcessReturn = async () => {
         if (!selectedReturn) return;
 
@@ -370,7 +386,7 @@ export default function TeamDashboard() {
 
     const getItemImage = (itemName: string) => {
         const found = inventory.find(i => i.name === itemName);
-        return found?.imageUrl || '';
+        return getOptimizedImageUrl(found?.imageUrl || '');
     };
 
     const getItemObject = (itemName: string) => {
@@ -575,7 +591,7 @@ export default function TeamDashboard() {
                                                 >
                                                     <div className="relative h-40 bg-slate-100 overflow-hidden text-center">
                                                         {item.imageUrl ? (
-                                                            <img src={item.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                            <img src={getOptimizedImageUrl(item.imageUrl)} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                                         ) : (
                                                             <div className="flex items-center justify-center h-full text-slate-300"><Package className="w-8 h-8" /></div>
                                                         )}
@@ -652,8 +668,18 @@ export default function TeamDashboard() {
                                                         Pending Approval
                                                     </div>
                                                 ) : item.returnRequestStatus === 'RETURN_PENDING' ? (
-                                                    <div className="mt-auto pt-2 text-center bg-yellow-50 text-yellow-700 text-xs py-1.5 rounded font-bold border border-yellow-100">
-                                                        Return Pending...
+                                                    <div className="mt-auto flex flex-col gap-1">
+                                                        <div className="pt-2 text-center bg-yellow-50 text-yellow-700 text-xs py-1.5 rounded font-bold border border-yellow-100">
+                                                            Return Pending...
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="w-full text-xs border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400"
+                                                            onClick={(e) => { e.stopPropagation(); handleCancelReturn(item); }}
+                                                        >
+                                                            Cancel Return
+                                                        </Button>
                                                     </div>
                                                 ) : (
                                                     <Button
@@ -822,9 +848,18 @@ export default function TeamDashboard() {
                                                             <p className="text-sm text-slate-500">Returned by <span className="font-medium text-slate-900">{req.userName}</span></p>
                                                             <p className="text-xs text-slate-400 mt-1">{new Date(req.date).toLocaleDateString()}</p>
                                                         </div>
-                                                        <Button onClick={() => setSelectedReturn(req)} className="shrink-0 bg-slate-900 hover:bg-slate-800 ml-4">
-                                                            Receive
-                                                        </Button>
+                                                        <div className="flex flex-col gap-2 ml-4 shrink-0">
+                                                            <Button onClick={() => setSelectedReturn(req)} className="bg-slate-900 hover:bg-slate-800">
+                                                                Receive
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400 text-xs"
+                                                                onClick={() => handleCancelReturn(req)}
+                                                            >
+                                                                Cancel Return
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 </Card>
                                             );
@@ -913,7 +948,7 @@ export default function TeamDashboard() {
                     {/* Left: Image (Larger) */}
                     <div className="bg-slate-100 h-64 md:h-auto md:w-1/2 relative flex items-center justify-center p-8">
                         {viewItem?.imageUrl ? (
-                            <img src={viewItem.imageUrl} referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain drop-shadow-md" />
+                            <img src={getOptimizedImageUrl(viewItem.imageUrl)} referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain drop-shadow-md" />
                         ) : (
                             <Package className="w-32 h-32 text-slate-300" />
                         )}

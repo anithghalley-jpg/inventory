@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
+import { getOptimizedImageUrl } from '@/lib/utils';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -666,7 +667,7 @@ export default function Dashboard() {
                         <div className="relative h-48 bg-muted overflow-hidden">
                           {item.imageUrl ? (
                             <img
-                              src={item.imageUrl}
+                              src={getOptimizedImageUrl(item.imageUrl)}
                               alt={item.name}
                               referrerPolicy="no-referrer"
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
@@ -743,7 +744,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-md bg-muted overflow-hidden shrink-0 border border-border">
                           {record.imageUrl ?
-                            <img src={record.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover" /> :
+                            <img src={getOptimizedImageUrl(record.imageUrl)} referrerPolicy="no-referrer" className="w-full h-full object-cover" /> :
                             <div className="flex items-center justify-center h-full text-xs text-muted-foreground">No Img</div>
                           }
                         </div>
@@ -951,7 +952,7 @@ export default function Dashboard() {
                 <div className="space-y-6">
                   <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
                     <img
-                      src={viewItem.imageUrl}
+                      src={getOptimizedImageUrl(viewItem.imageUrl)}
                       alt={viewItem.name}
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-contain"
@@ -1029,7 +1030,7 @@ export default function Dashboard() {
                 <div className="space-y-4 pt-4">
                   <div className="p-4 bg-muted rounded-lg flex gap-4">
                     <div className="w-16 h-16 bg-background rounded-md overflow-hidden shrink-0">
-                      <img src={selectedItem.imageUrl} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                      <img src={getOptimizedImageUrl(selectedItem.imageUrl)} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                     </div>
                     <div>
                       <p className="font-bold">{selectedItem.name}</p>
