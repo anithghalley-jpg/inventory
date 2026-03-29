@@ -1310,7 +1310,7 @@ export default function AdminPanel() {
                               key={idx}
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${style.color}`}
                             >
-                              {style.icon}{tag}
+                              {tag}
                               <button
                                 type="button"
                                 onClick={() => setEditUserForm(f => ({ ...f, tags: f.tags.filter((_, i) => i !== idx) }))}

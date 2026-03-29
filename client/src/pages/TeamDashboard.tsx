@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,152 @@ import { getOptimizedImageUrl } from '@/lib/utils';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
+const glowStyles = [
+    {
+        border: 'border-emerald-400',
+        shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(16,185,129,0.55)]',
+        beforeBorder: 'before:border-emerald-400/50',
+        iconColor: 'text-emerald-500',
+        textColor: 'text-emerald-900',
+        badgeBg: 'bg-emerald-100',
+        badgeText: 'text-emerald-700',
+        badgeBorder: 'border-emerald-200'
+    },
+    {
+        border: 'border-blue-400',
+        shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(59,130,246,0.55)]',
+        beforeBorder: 'before:border-blue-400/50',
+        iconColor: 'text-blue-500',
+        textColor: 'text-blue-900',
+        badgeBg: 'bg-blue-100',
+        badgeText: 'text-blue-700',
+        badgeBorder: 'border-blue-200'
+    },
+    {
+        border: 'border-violet-400',
+        shadow: 'shadow-[0_0_15px_rgba(139,92,246,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(139,92,246,0.55)]',
+        beforeBorder: 'before:border-violet-400/50',
+        iconColor: 'text-violet-500',
+        textColor: 'text-violet-900',
+        badgeBg: 'bg-violet-100',
+        badgeText: 'text-violet-700',
+        badgeBorder: 'border-violet-200'
+    },
+    {
+        border: 'border-rose-400',
+        shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(244,63,94,0.55)]',
+        beforeBorder: 'before:border-rose-400/50',
+        iconColor: 'text-rose-500',
+        textColor: 'text-rose-900',
+        badgeBg: 'bg-rose-100',
+        badgeText: 'text-rose-700',
+        badgeBorder: 'border-rose-200'
+    },
+    {
+        border: 'border-amber-400',
+        shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(245,158,11,0.55)]',
+        beforeBorder: 'before:border-amber-400/50',
+        iconColor: 'text-amber-500',
+        textColor: 'text-amber-900',
+        badgeBg: 'bg-amber-100',
+        badgeText: 'text-amber-700',
+        badgeBorder: 'border-amber-200'
+    },
+    {
+        border: 'border-cyan-400',
+        shadow: 'shadow-[0_0_15px_rgba(6,182,212,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(6,182,212,0.55)]',
+        beforeBorder: 'before:border-cyan-400/50',
+        iconColor: 'text-cyan-500',
+        textColor: 'text-cyan-900',
+        badgeBg: 'bg-cyan-100',
+        badgeText: 'text-cyan-700',
+        badgeBorder: 'border-cyan-200'
+    },
+    {
+        border: 'border-fuchsia-400',
+        shadow: 'shadow-[0_0_15px_rgba(217,70,239,0.35)]',
+        hoverShadow: 'hover:shadow-[0_0_25px_rgba(217,70,239,0.55)]',
+        beforeBorder: 'before:border-fuchsia-400/50',
+        iconColor: 'text-fuchsia-500',
+        textColor: 'text-fuchsia-900',
+        badgeBg: 'bg-fuchsia-100',
+        badgeText: 'text-fuchsia-700',
+        badgeBorder: 'border-fuchsia-200'
+    }
+];
+
+const getGlowStyleIndex = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash) % glowStyles.length;
+};
+
+// Helper: Generate Unique HSL Colors for a User
+const getDynamicGlow = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const h = Math.abs(hash) % 360;
+    return {
+        hue: h,
+        glow: `hsla(${h}, 70%, 50%, 0.35)`,
+        hoverGlow: `hsla(${h}, 70%, 50%, 0.55)`,
+        border: `hsl(${h}, 70%, 65%)`,
+        beforeBorder: `hsla(${h}, 70%, 65%, 0.5)`,
+        bg: `hsl(${h}, 80%, 96%)`,
+        text: `hsl(${h}, 80%, 25%)`,
+        icon: `hsl(${h}, 70%, 50%)`
+    };
+};
+
+// Helper: Identify FAB Users (4+ tags or FA certification)
+const isFabUser = (u: any) => {
+    const hasFatag = u.tags?.some((t: string) => t.toLowerCase().startsWith("fa 20"));
+    return hasFatag || (u.tags?.length || 0) >= 4;
+};
+
+// Helper: Custom Saluting Figure Icon (Half Body)
+const SaluteIcon = ({ className = "w-4 h-4", style }: { className?: string, style?: React.CSSProperties }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2.5" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+    style={style}
+  >
+    {/* Head */}
+    <circle cx="9" cy="7" r="4" />
+    {/* Torso */}
+    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    {/* Saluting Arm/Hand */}
+    <path d="M18 10l2-2l-2-2" className="animate-pulse" />
+    <path d="M15 10h5" />
+  </svg>
+);
+
+// Helper to sort tags (FA 20XX tags at the beginning)
+const sortUserTags = (tags: string[] = []) => {
+    return [...tags].sort((a, b) => {
+        const isFA_a = a.toLowerCase().startsWith("fa 20");
+        const isFA_b = b.toLowerCase().startsWith("fa 20");
+        if (isFA_a && !isFA_b) return -1;
+        if (!isFA_a && isFA_b) return 1;
+        return a.localeCompare(b);
+    });
+};
+
 // Types
 interface InventoryItem {
     id: string;
@@ -37,6 +183,7 @@ interface InventoryItem {
 
 interface User {
     id: string;
+    _id?: string;
     name: string;
     email: string;
     status: string;
@@ -45,6 +192,7 @@ interface User {
     laptopStatus?: string;
     totalTime?: number;
     tags?: string[];
+    myPageLink?: string;
 }
 
 interface UsageRecord {
@@ -95,9 +243,46 @@ export default function TeamDashboard() {
     const [selectedReturn, setSelectedReturn] = useState<any | null>(null);
     const [returnRemarks, setReturnRemarks] = useState('');
 
+    const [communitySearchQuery, setCommunitySearchQuery] = useState('');
+    const [selectedCommunityTag, setSelectedCommunityTag] = useState('all');
+
     // Laptop State
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
     const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
+
+    // Community Search & Filter Logic
+    const availableTags = useMemo(() => {
+        const tags = new Set<string>();
+        allUsers.forEach(u => {
+            if (u.tags && Array.isArray(u.tags)) {
+                u.tags.forEach((t: string) => tags.add(t));
+            }
+        });
+        return Array.from(tags).sort();
+    }, [allUsers]);
+
+    const filteredCommunityUsers = useMemo(() => {
+        return allUsers.filter(u => {
+            const matchesSearch = !communitySearchQuery || 
+                (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
+                (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
+            
+            const matchesTag = selectedCommunityTag === 'all' || 
+                (u.tags && u.tags.includes(selectedCommunityTag));
+                
+            return matchesSearch && matchesTag;
+        });
+    }, [allUsers, communitySearchQuery, selectedCommunityTag]);
+
+    const filteredTeam = useMemo(() => 
+        filteredCommunityUsers
+            .filter(u => u.role === 'TEAM' || u.role === 'ADMIN')
+            .sort((a, b) => (b.tags?.length || 0) - (a.tags?.length || 0)),
+    [filteredCommunityUsers]);
+
+    const filteredStudents = useMemo(() => 
+        filteredCommunityUsers.filter(u => u.role === 'USER'),
+    [filteredCommunityUsers]);
 
     // Initial Side Effects
     useEffect(() => {
@@ -454,51 +639,36 @@ export default function TeamDashboard() {
                         </div>
                     </div>
 
-                    {/* Center: Medals / Badges */}
+                    {/* Center: 3D Army Badges */}
                     {user?.tags && user.tags.length > 0 && (
-                        <div className="hidden md:flex items-center gap-2 mx-4 px-4 py-2 bg-slate-50/50 rounded-full border border-slate-100 shadow-sm">
+                        <div className="hidden md:flex items-center gap-3 mx-4">
                             <TooltipProvider>
                                 {user.tags.map((tag, idx) => {
-                                    const lower = tag.toLowerCase();
-                                    let icon = <div className="w-2 h-2 rounded-full bg-indigo-400 opacity-50" />;
-                                    let bg = 'bg-indigo-100 text-indigo-700 border-indigo-200';
-                                    let ring = 'ring-indigo-100';
-                                    let label = tag;
-
-                                    if (lower.includes('3d') || lower.includes('print')) {
-                                        icon = <Printer className="w-4 h-4" />;
-                                        bg = 'bg-orange-100 text-orange-700 border-orange-200';
-                                        ring = 'ring-orange-100';
-                                        label = "3D Printing Certified";
-                                    }
-                                    else if (lower.includes('laser') || lower.includes('cut')) {
-                                        icon = <Scissors className="w-4 h-4" />;
-                                        bg = 'bg-red-100 text-red-700 border-red-200';
-                                        ring = 'ring-red-100';
-                                        label = "Laser Cutter Certified";
-                                    }
-                                    else if (lower.includes('cnc') || lower.includes('mill')) {
-                                        icon = <Zap className="w-4 h-4" />;
-                                        bg = 'bg-slate-100 text-slate-700 border-slate-200';
-                                        ring = 'ring-slate-100';
-                                        label = "CNC Milling Certified";
-                                    }
-                                    else if (lower.includes('wood')) {
-                                        icon = <BookOpen className="w-4 h-4" />;
-                                        bg = 'bg-amber-100 text-amber-700 border-amber-200';
-                                        ring = 'ring-amber-100';
-                                        label = "Wood Shop Certified";
-                                    }
-
+                                    const style = getTagStyle(tag);
+                                    const dynamic = getDynamicGlow(user.email || '');
                                     return (
                                         <Tooltip key={idx}>
                                             <TooltipTrigger asChild>
-                                                <div className={`relative group cursor-help p-1.5 rounded-full border ${bg} transition-transform hover:scale-110 ring-2 ${ring} ring-offset-2`}>
-                                                    {icon}
-                                                </div>
+                                                <span 
+                                                    style={{ 
+                                                        '--dynamic-glow': dynamic.glow,
+                                                        '--dynamic-border': dynamic.border
+                                                    } as React.CSSProperties}
+                                                    className={`
+                                                        inline-flex items-center px-2.5 py-1 rounded
+                                                        text-[9px] font-black uppercase tracking-tighter
+                                                        ${style.color}
+                                                        border-b-[3px] border-r-[2px] border-black
+                                                        hover:translate-y-[-1px] hover:translate-x-[-0.5px] 
+                                                        active:translate-y-[1px] active:translate-x-[0.5px] active:border-b-[1px] active:border-r-[0.5px]
+                                                        transition-all cursor-help select-none shadow-[0_4px_10px_var(--dynamic-glow)]
+                                                    `}
+                                                >
+                                                    {tag}
+                                                </span>
                                             </TooltipTrigger>
                                             <TooltipContent>
-                                                <p className="font-semibold">{label}</p>
+                                                <p className="font-bold text-xs uppercase">Authorized: {tag}</p>
                                             </TooltipContent>
                                         </Tooltip>
                                     );
@@ -538,7 +708,7 @@ export default function TeamDashboard() {
                                 {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
                             </TabsTrigger>
                             <TabsTrigger value="users" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
-                                <UsersIcon className="w-4 h-4 mr-2" /> Users
+                                <UsersIcon className="w-4 h-4 mr-2" /> Community
                             </TabsTrigger>
                             <TabsTrigger value="returns" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <History className="w-4 h-4 mr-2" /> History & Returns
@@ -727,82 +897,289 @@ export default function TeamDashboard() {
                         </div>
                     </TabsContent>
 
-                    {/* --- USERS TAB (WITH HOLDINGS) --- */}
+                    {/* --- COMMUNITY TAB (RENAMED FROM USERS) --- */}
                     <TabsContent value="users" className="focus-visible:outline-none focus-visible:ring-0">
                         <div className="space-y-6">
-                            <h2 className="text-2xl font-bold tracking-tight">Team Directory</h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {allUsers.map(u => {
-                                    const userHoldings = activeRequests.filter(r => r.userEmail === u.email);
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold tracking-tight">Community Directory</h2>
+                                    <p className="text-sm text-slate-500">View team members, their holdings, and skills.</p>
+                                </div>
 
-                                    return (
-                                        <Card key={u.id} className="flex flex-col p-0 overflow-hidden hover:shadow-md transition-all border-slate-200">
-                                            <div className="p-5 flex items-start space-x-4 border-b border-slate-50">
-                                                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                                                    <UsersIcon className="h-6 w-6 text-slate-400" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex justify-between items-start">
-                                                        <p className="font-bold text-slate-900 truncate">{u.name}</p>
-                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${u.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                            {u.status}
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-sm text-slate-500 truncate">{u.email}</p>
-                                                    <div className="flex flex-col gap-2 mt-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] font-medium bg-slate-100 px-2 py-1 rounded text-slate-600 uppercase tracking-wide">
-                                                                {u.role}
-                                                            </span>
-                                                            {u.laptopStatus === 'Online' && (
-                                                                <span className="text-[10px] font-medium text-emerald-600 flex items-center gap-1">
-                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                                    {/* Search Bar */}
+                                    <div className="relative w-full sm:w-64">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            placeholder="Search name or email..."
+                                            className="pl-9 bg-white border-slate-200 focus:border-emerald-400 focus:ring-emerald-400"
+                                            value={communitySearchQuery}
+                                            onChange={(e) => setCommunitySearchQuery(e.target.value)}
+                                        />
+                                    </div>
 
-                                                        {/* User Tags (Badges) - Team View */}
-                                                        {u.tags && u.tags.length > 0 && (
-                                                            <div className="flex flex-wrap gap-1.5 w-full">
-                                                                {u.tags.map((tag, idx) => {
-                                                                    const style = getTagStyle(tag);
-
-                                                                    return (
-                                                                        <span
-                                                                            key={idx}
-                                                                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${style.color}`}
-                                                                        >
-                                                                            {style.icon}
-                                                                            {tag}
-                                                                        </span>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Holdings Section */}
-                                            <div className="bg-slate-50/50 p-4 flex-1">
-                                                <p className="text-xs font-bold text-slate-400 uppercase mb-2">Active Holdings</p>
-                                                {userHoldings.length > 0 ? (
-                                                    <div className="space-y-1">
-                                                        {userHoldings.map((h, idx) => (
-                                                            <div key={idx} className="flex justify-between text-xs text-slate-600 bg-white px-2 py-1.5 rounded border border-slate-100">
-                                                                <span className="truncate pr-2">{h.itemName}</span>
-                                                                <span className="font-bold text-slate-900 shrink-0">x{h.quantity}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-xs text-slate-400 italic">No active items.</p>
-                                                )}
-                                            </div>
-                                        </Card>
-                                    );
-                                })}
+                                    {/* Category Dropdown */}
+                                    <Select value={selectedCommunityTag} onValueChange={setSelectedCommunityTag}>
+                                        <SelectTrigger className="w-full sm:w-48 bg-white border-slate-200">
+                                            <SelectValue placeholder="All Categories" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">All Categories</SelectItem>
+                                            {availableTags.map((tag) => (
+                                                <SelectItem key={tag} value={tag}>
+                                                    {tag}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
+
+                            {filteredCommunityUsers.length > 0 ? (
+                                <div className="space-y-10">
+                                    {/* GLOBAL FAB SECTION (Priority Members) */}
+                                    {filteredCommunityUsers.filter(isFabUser).length > 0 && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
+                                            {filteredCommunityUsers.filter(isFabUser).map((u) => {
+                                                const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
+                                                const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+
+                                                return (
+                                                    <Card
+                                                        key={u._id || u.id}
+                                                        style={{
+                                                            '--user-glow': dynamic.glow,
+                                                            '--user-hover-glow': dynamic.hoverGlow,
+                                                            '--user-border': dynamic.border,
+                                                            '--user-before-border': dynamic.beforeBorder,
+                                                            '--user-text': dynamic.text,
+                                                            '--user-badge-bg': dynamic.bg,
+                                                            '--user-icon': dynamic.icon
+                                                        } as React.CSSProperties}
+                                                        className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${hasPageLink
+                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                : "border-slate-200 hover:shadow-md"
+                                                            }`}
+                                                        onClick={() => {
+                                                            if (hasPageLink) {
+                                                                window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                                            }
+                                                        }}
+                                                    >
+                                                        <div className="flex items-start gap-3 relative z-10">
+                                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                                                <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
+                                                                        <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                                                        {(u.role === 'ADMIN' || u.role === 'TEAM') && (
+                                                                            <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
+                                                                        )}
+                                                                    </div>
+                                                                    {/* Circular FAB Seal */}
+                                                                    <div 
+                                                                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
+                                                                        style={{ 
+                                                                            backgroundColor: 'var(--user-badge-bg)', 
+                                                                            color: 'var(--user-text)', 
+                                                                            borderColor: 'var(--user-border)' 
+                                                                        }}
+                                                                    >
+                                                                        FAB
+                                                                    </div>
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Fab Academy / Student'}</p>
+
+                                                                {/* Badges - One Horizontal Line */}
+                                                                {u.tags && u.tags.length > 0 && (
+                                                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                                                        {sortUserTags(u.tags).map((tag, idx) => {
+                                                                            const style = getTagStyle(tag);
+                                                                            return (
+                                                                                <span
+                                                                                    key={idx}
+                                                                                    className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                                                >
+                                                                                    {tag}
+                                                                                </span>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </Card>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* TEAM SECTION (Standard Members) */}
+                                    {filteredTeam.filter(u => !isFabUser(u)).length > 0 && (
+                                        <div className="space-y-6">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-px flex-1 bg-slate-200" />
+                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">The Team</h3>
+                                                <div className="h-px flex-1 bg-slate-200" />
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                                                {filteredTeam.filter(u => !isFabUser(u)).map((u) => {
+                                                    const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
+                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+
+                                                    return (
+                                                        <Card
+                                                            key={u._id || u.id}
+                                                            style={{
+                                                                '--user-glow': dynamic.glow,
+                                                                '--user-hover-glow': dynamic.hoverGlow,
+                                                                '--user-border': dynamic.border,
+                                                                '--user-before-border': dynamic.beforeBorder,
+                                                                '--user-text': dynamic.text,
+                                                                '--user-badge-bg': dynamic.bg,
+                                                                '--user-icon': dynamic.icon
+                                                            } as React.CSSProperties}
+                                                            className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
+                                                                    ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                    : "border-slate-200 hover:shadow-md"
+                                                                }`}
+                                                            onClick={() => {
+                                                                if (hasPageLink) {
+                                                                    window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                                                }
+                                                            }}
+                                                        >
+                                                            <div className="flex items-start gap-3 relative z-10">
+                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                                                    <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex justify-between items-start">
+                                                                        <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
+                                                                            <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                                                            <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
+                                                                        </div>
+                                                                    </div>
+                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Faculty / Team Member</p>
+
+                                                                    {/* Badges - One Horizontal Line */}
+                                                                    {u.tags && u.tags.length > 0 && (
+                                                                        <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                                                            {sortUserTags(u.tags).map((tag, idx) => {
+                                                                                const style = getTagStyle(tag);
+                                                                                return (
+                                                                                    <span
+                                                                                        key={idx}
+                                                                                        className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                                                    >
+                                                                                        {tag}
+                                                                                    </span>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </Card>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* STUDENTS SECTION (Standard Members) */}
+                                    {filteredStudents.filter(u => !isFabUser(u)).length > 0 && (
+                                        <div className="space-y-6">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-px flex-1 bg-slate-200" />
+                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Makers & Students</h3>
+                                                <div className="h-px flex-1 bg-slate-200" />
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                                                {filteredStudents.filter(u => !isFabUser(u)).map((u) => {
+                                                    const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
+                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+
+                                                    return (
+                                                        <Card
+                                                            key={u._id || u.id}
+                                                            style={{
+                                                                '--user-glow': dynamic.glow,
+                                                                '--user-hover-glow': dynamic.hoverGlow,
+                                                                '--user-border': dynamic.border,
+                                                                '--user-before-border': dynamic.beforeBorder,
+                                                                '--user-text': dynamic.text,
+                                                                '--user-badge-bg': dynamic.bg,
+                                                                '--user-icon': dynamic.icon
+                                                            } as React.CSSProperties}
+                                                            className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
+                                                                    ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                    : "border-slate-200 hover:shadow-md"
+                                                                }`}
+                                                            onClick={() => {
+                                                                if (hasPageLink) {
+                                                                    window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                                                }
+                                                            }}
+                                                        >
+                                                            <div className="flex items-start gap-3 relative z-10">
+                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                                                    <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex justify-between items-start">
+                                                                        <div className="min-w-0 font-display">
+                                                                            <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Fab Academy / TRA Student</p>
+
+                                                                    {/* Badges - One Horizontal Line */}
+                                                                    {u.tags && u.tags.length > 0 && (
+                                                                        <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                                                            {sortUserTags(u.tags).map((tag, idx) => {
+                                                                                const style = getTagStyle(tag);
+                                                                                return (
+                                                                                    <span
+                                                                                        key={idx}
+                                                                                        className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                                                    >
+                                                                                        {tag}
+                                                                                    </span>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </Card>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-center py-20 bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200">
+                                    <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                                        <UsersIcon className="w-8 h-8 text-slate-300" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-900">No users found</h3>
+                                    <p className="text-slate-500 mb-6">We couldn't find any users matching your criteria.</p>
+                                    <Button 
+                                        variant="outline" 
+                                        onClick={() => {
+                                            setCommunitySearchQuery('');
+                                            setSelectedCommunityTag('all');
+                                        }}
+                                        className="border-slate-200 hover:bg-white"
+                                    >
+                                        Clear all filters
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     </TabsContent>
 

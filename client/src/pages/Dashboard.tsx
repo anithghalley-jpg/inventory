@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
+import { getTagStyle } from '@/lib/tagUtils';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -112,6 +113,64 @@ const getGlowStyleIndex = (str: string) => {
   return Math.abs(hash) % glowStyles.length;
 };
 
+// Helper: Generate Unique HSL Colors for a User
+const getDynamicGlow = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const h = Math.abs(hash) % 360;
+    return {
+        hue: h,
+        glow: `hsla(${h}, 70%, 50%, 0.35)`,
+        hoverGlow: `hsla(${h}, 70%, 50%, 0.55)`,
+        border: `hsl(${h}, 70%, 65%)`,
+        beforeBorder: `hsla(${h}, 70%, 65%, 0.5)`,
+        bg: `hsl(${h}, 80%, 96%)`,
+        text: `hsl(${h}, 80%, 25%)`,
+        icon: `hsl(${h}, 70%, 50%)`
+    };
+};
+
+// Helper: Identify FAB Users (4+ tags or FA certification)
+const isFabUser = (u: any) => {
+    const hasFatag = u.tags?.some((t: string) => t.toLowerCase().startsWith("fa 20"));
+    return hasFatag || (u.tags?.length || 0) >= 4;
+};
+
+// Helper: Custom Saluting Figure Icon (Half Body)
+const SaluteIcon = ({ className = "w-4 h-4", style }: { className?: string, style?: React.CSSProperties }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2.5" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+    style={style}
+  >
+    {/* Head */}
+    <circle cx="9" cy="7" r="4" />
+    {/* Torso */}
+    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    {/* Saluting Arm/Hand */}
+    <path d="M18 10l2-2l-2-2" className="animate-pulse" />
+    <path d="M15 10h5" />
+  </svg>
+);
+
+// Helper to sort tags (FA 20XX tags at the beginning)
+const sortUserTags = (tags: string[] = []) => {
+    return [...tags].sort((a, b) => {
+        const isFA_a = a.toLowerCase().startsWith("fa 20");
+        const isFA_b = b.toLowerCase().startsWith("fa 20");
+        if (isFA_a && !isFA_b) return -1;
+        if (!isFA_a && isFA_b) return 1;
+        return a.localeCompare(b);
+    });
+};
+
 interface InventoryItem {
   id: string;
   name: string;
@@ -162,6 +221,8 @@ export default function Dashboard() {
   // Filters & Actions
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [communitySearchQuery, setCommunitySearchQuery] = useState('');
+  const [selectedCommunityTag, setSelectedCommunityTag] = useState('all');
 
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null); // For Checkout
   const [viewItem, setViewItem] = useState<InventoryItem | null>(null); // For Details Modal
@@ -189,6 +250,33 @@ export default function Dashboard() {
   useEffect(() => {
     // Data is now fetched reactively via Convex useQuery
   }, [isAuthenticated]);
+
+  // Community Search & Filter Logic
+  const availableTags = useMemo(() => {
+    const tags = new Set<string>();
+    allUsers.forEach(u => {
+      if (u.tags && Array.isArray(u.tags)) {
+        u.tags.forEach((t: string) => tags.add(t));
+      }
+    });
+    return Array.from(tags).sort();
+  }, [allUsers]);
+
+  const filteredCommunityUsers = useMemo(() => {
+    let result = allUsers.filter(u => {
+      const matchesSearch = !communitySearchQuery || 
+        u.name?.toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
+        u.email?.toLowerCase().includes(communitySearchQuery.toLowerCase());
+      
+      const matchesCategory = selectedCommunityTag === 'all' || 
+        (u.tags || []).some((t: string) => t === selectedCommunityTag);
+        
+      return matchesSearch && matchesCategory;
+    });
+
+    // Randomize order on each refresh/memoization
+    return result.sort(() => Math.random() - 0.5);
+  }, [allUsers, communitySearchQuery, selectedCommunityTag]);
 
   // Track if we're using the fallback (Sheets) or Convex
   const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
@@ -478,58 +566,45 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Center: Medals / Badges (Hidden on mobile) */}
+          {/* Center: 3D Army Badges */}
           <div className="hidden md:flex flex-1 justify-center">
             {user?.tags && user.tags.length > 0 && (
-              <TooltipProvider>
-                <div className="flex items-center gap-2 px-6 py-2 bg-slate-50/80 backdrop-blur-sm rounded-full border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3">
+                <TooltipProvider>
                   {user.tags.map((tag, idx) => {
-                    const lower = tag.toLowerCase();
-                    let icon = <div className="w-2 h-2 rounded-full bg-indigo-400 opacity-50" />;
-                    let bg = 'bg-indigo-100 text-indigo-700 border-indigo-200';
-                    let ring = 'ring-indigo-100';
-                    let label = tag;
-
-                    if (lower.includes('3d') || lower.includes('print')) {
-                      icon = <Printer className="w-4 h-4" />;
-                      bg = 'bg-orange-100 text-orange-700 border-orange-200';
-                      ring = 'ring-orange-100';
-                      label = "3D Printing Certified";
-                    }
-                    else if (lower.includes('laser') || lower.includes('cut')) {
-                      icon = <Scissors className="w-4 h-4" />;
-                      bg = 'bg-red-100 text-red-700 border-red-200';
-                      ring = 'ring-red-100';
-                      label = "Laser Cutter Certified";
-                    }
-                    else if (lower.includes('cnc') || lower.includes('mill')) {
-                      icon = <Zap className="w-4 h-4" />;
-                      bg = 'bg-slate-100 text-slate-700 border-slate-200';
-                      ring = 'ring-slate-100';
-                      label = "CNC Milling Certified";
-                    }
-                    else if (lower.includes('wood')) {
-                      icon = <BookOpen className="w-4 h-4" />;
-                      bg = 'bg-amber-100 text-amber-700 border-amber-200';
-                      ring = 'ring-amber-100';
-                      label = "Wood Shop Certified";
-                    }
-
+                    const style = getTagStyle(tag);
+                    const dynamic = getDynamicGlow(user.email || '');
+                    
                     return (
                       <Tooltip key={idx}>
                         <TooltipTrigger asChild>
-                          <div className={`relative group cursor-help p-2 rounded-full border ${bg} transition-all duration-300 hover:scale-110 hover:shadow-md ring-2 ${ring} ring-offset-2 ring-offset-background`}>
-                            {icon}
-                          </div>
+                          <span 
+                            style={{ 
+                                '--dynamic-glow': dynamic.glow,
+                                '--dynamic-border': dynamic.border,
+                                '--dynamic-hover-glow': dynamic.hoverGlow
+                            } as React.CSSProperties}
+                            className={`
+                                inline-flex items-center px-2.5 py-1 rounded
+                                text-[9px] font-black uppercase tracking-tighter
+                                ${style.color}
+                                border-b-[3px] border-r-[2px] border-black
+                                hover:translate-y-[-1px] hover:translate-x-[-0.5px] 
+                                active:translate-y-[1px] active:translate-x-[0.5px] active:border-b-[1px] active:border-r-[0.5px]
+                                transition-all cursor-help select-none shadow-[0_4px_10px_var(--dynamic-glow)]
+                            `}
+                          >
+                            {tag}
+                          </span>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="font-semibold">{label}</p>
+                          <p className="font-bold text-xs uppercase">Authorized: {tag}</p>
                         </TooltipContent>
                       </Tooltip>
                     );
                   })}
-                </div>
-              </TooltipProvider>
+                </TooltipProvider>
+              </div>
             )}
           </div>
 
@@ -812,93 +887,202 @@ export default function Dashboard() {
                   <h2 className="text-2xl font-bold">Community Directory</h2>
                   <p className="text-muted-foreground">Certified makers in the space.</p>
                 </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                  {/* Search Bar */}
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search name or email..."
+                      className="pl-9 bg-white/50 backdrop-blur border-slate-200 focus:border-emerald-400 focus:ring-emerald-400"
+                      value={communitySearchQuery}
+                      onChange={(e) => setCommunitySearchQuery(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Category Dropdown */}
+                  <Select value={selectedCommunityTag} onValueChange={setSelectedCommunityTag}>
+                    <SelectTrigger className="w-full sm:w-48 bg-white/50 backdrop-blur border-slate-200">
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {availableTags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {allUsers.map((u) => {
-                  const hasPageLink = Boolean(u.myPageLink && u.myPageLink.trim() !== "");
-                  const glowIndex = getGlowStyleIndex(u.email || u.id || "");
-                  const s = glowStyles[glowIndex];
-                  
-                  return (
-                    <Card
-                      key={u.id}
-                      className={`flex flex-col p-4 transition-all bg-white/50 ${
-                        hasPageLink
-                          ? `cursor-pointer ${s.border} ${s.shadow} ${s.hoverShadow} hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border ${s.beforeBorder} before:animate-pulse`
-                          : "border-slate-200 hover:shadow-md"
-                      }`}
-                      onClick={() => {
-                        if (hasPageLink) {
-                          window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                        }
-                      }}
-                    >
-                      <div className="flex items-start gap-3 relative z-10">
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                          <UsersIcon className={`h-5 w-5 ${hasPageLink ? s.iconColor : 'text-slate-400'}`} />
+              <div className="space-y-10">
+                {filteredCommunityUsers.length > 0 ? (
+                  <>
+                    {/* FAB SECTION (High Skill / FA Cert) */}
+                    {filteredCommunityUsers.filter(isFabUser).length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
+                            {filteredCommunityUsers.filter(isFabUser).map((u) => {
+                                const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
+                                const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+                                
+                                return (
+                                    <Card
+                                        key={u._id || u.id}
+                                        style={{
+                                            '--user-glow': dynamic.glow,
+                                            '--user-hover-glow': dynamic.hoverGlow,
+                                            '--user-border': dynamic.border,
+                                            '--user-before-border': dynamic.beforeBorder,
+                                            '--user-text': dynamic.text,
+                                            '--user-badge-bg': dynamic.bg,
+                                            '--user-icon': dynamic.icon
+                                        } as React.CSSProperties}
+                                        className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${
+                                            hasPageLink
+                                            ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                            : "border-slate-200 hover:shadow-md"
+                                        }`}
+                                        onClick={() => {
+                                            if (hasPageLink) {
+                                                window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                            }
+                                        }}
+                                    >
+                                        <div className="flex items-start gap-3 relative z-10">
+                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                                <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
+                                                        <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                                        {(u.role === 'ADMIN' || u.role === 'TEAM') && (
+                                                            <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
+                                                        )}
+                                                    </div>
+                                                    {/* Circular FAB Tag */}
+                                                    <div 
+                                                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
+                                                        style={{ 
+                                                            backgroundColor: 'var(--user-badge-bg)', 
+                                                            color: 'var(--user-text)', 
+                                                            borderColor: 'var(--user-border)' 
+                                                        }}
+                                                    >
+                                                        FAB
+                                                    </div>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Fab Academy student'}</p>
+
+                                                {/* Badges - One Horizontal Line */}
+                                                {u.tags && u.tags.length > 0 && (
+                                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                                        {sortUserTags(u.tags).map((tag: string, idx: number) => {
+                                                        const style = getTagStyle(tag);
+                                                        return (
+                                                            <span 
+                                                                key={idx} 
+                                                                className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                            >
+                                                                {tag}
+                                                            </span>
+                                                        );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </Card>
+                                );
+                            })}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-start">
-                            <p className={`font-bold text-sm truncate pr-2 ${hasPageLink ? s.textColor : 'text-slate-900'}`}>{u.name}</p>
-                            <span className={`shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase border shadow-sm ${hasPageLink ? `${s.badgeBg} ${s.badgeText} ${s.badgeBorder}` : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
-                              Active
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role}</p>
+                    )}
 
-                          {/* Badges */}
-                          {u.tags && u.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2.5">
-                              <TooltipProvider>
-                                {u.tags.map((tag: string, idx: number) => {
-                                  const lower = tag.toLowerCase();
-                                  let icon = <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 opacity-50" />;
-                                  let style = 'bg-indigo-50 text-indigo-700 border-indigo-100';
-                                  let label = tag;
+                    {/* STANDARD SECTION */}
+                    {filteredCommunityUsers.filter(u => !isFabUser(u)).length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+                        {filteredCommunityUsers.filter(u => !isFabUser(u)).map((u) => {
+                          const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
+                          const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+                          
+                          return (
+                              <Card
+                              key={u._id || u.id}
+                              style={{
+                                  '--user-glow': dynamic.glow,
+                                  '--user-hover-glow': dynamic.hoverGlow,
+                                  '--user-border': dynamic.border,
+                                  '--user-before-border': dynamic.beforeBorder,
+                                  '--user-text': dynamic.text,
+                                  '--user-badge-bg': dynamic.bg,
+                                  '--user-icon': dynamic.icon
+                              } as React.CSSProperties}
+                              className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${
+                                  hasPageLink
+                                  ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                  : "border-slate-200 hover:shadow-md"
+                              }`}
+                              onClick={() => {
+                                  if (hasPageLink) {
+                                      window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                  }
+                              }}
+                              >
+                              <div className="flex items-start gap-3 relative z-10">
+                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                  <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                  <div className="flex justify-between items-start">
+                                      <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
+                                          <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                          {(u.role === 'ADMIN' || u.role === 'TEAM') && (
+                                              <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
+                                          )}
+                                      </div>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Fab Academy student'}</p>
 
-                                  if (lower.includes('3d') || lower.includes('print')) {
-                                    icon = <Printer className="w-3 h-3" />;
-                                    style = 'bg-orange-50 text-orange-700 border-orange-100';
-                                    label = "3D Printing";
-                                  }
-                                  else if (lower.includes('laser') || lower.includes('cut')) {
-                                    icon = <Scissors className="w-3 h-3" />;
-                                    style = 'bg-red-50 text-red-700 border-red-100';
-                                    label = "Laser Cutting";
-                                  }
-                                  else if (lower.includes('cnc') || lower.includes('mill')) {
-                                    icon = <Zap className="w-3 h-3" />;
-                                    style = 'bg-slate-50 text-slate-700 border-slate-100';
-                                    label = "CNC Machining";
-                                  }
-                                  else if (lower.includes('wood')) {
-                                    icon = <BookOpen className="w-3 h-3" />;
-                                    style = 'bg-amber-50 text-amber-700 border-amber-100';
-                                    label = "Wood Shop";
-                                  }
-
-                                  return (
-                                    <Tooltip key={idx}>
-                                      <TooltipTrigger asChild>
-                                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium border cursor-help ${style}`}>
-                                          {icon} {tag}
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{label}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  );
-                                })}
-                              </TooltipProvider>
-                            </div>
-                          )}
-                        </div>
+                                  {/* Badges - One Horizontal Line */}
+                                  {u.tags && u.tags.length > 0 && (
+                                      <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                          {sortUserTags(u.tags).map((tag: string, idx: number) => {
+                                          const style = getTagStyle(tag);
+                                          return (
+                                              <span 
+                                                  key={idx} 
+                                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                              >
+                                                  {tag}
+                                              </span>
+                                          );
+                                          })}
+                                      </div>
+                                  )}
+                                  </div>
+                              </div>
+                              </Card>
+                          );
+                        })}
                       </div>
-                    </Card>
-                  );
-                })}
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <UsersIcon className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-slate-900">No users found</h3>
+                    <p className="text-slate-500">Try adjusting your search or category filters.</p>
+                    <Button 
+                      variant="link" 
+                      className="mt-2 text-emerald-600"
+                      onClick={() => { setCommunitySearchQuery(''); setSelectedCommunityTag('all'); }}
+                    >
+                      Clear all filters
+                    </Button>
+                  </div>
+                )}
               </div>
             </Card>
           </TabsContent>
