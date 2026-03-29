@@ -115,38 +115,38 @@ const getGlowStyleIndex = (str: string) => {
 
 // Helper: Generate Unique HSL Colors for a User
 const getDynamicGlow = (str: string) => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const h = Math.abs(hash) % 360;
-    return {
-        hue: h,
-        glow: `hsla(${h}, 70%, 50%, 0.35)`,
-        hoverGlow: `hsla(${h}, 70%, 50%, 0.55)`,
-        border: `hsl(${h}, 70%, 65%)`,
-        beforeBorder: `hsla(${h}, 70%, 65%, 0.5)`,
-        bg: `hsl(${h}, 80%, 96%)`,
-        text: `hsl(${h}, 80%, 25%)`,
-        icon: `hsl(${h}, 70%, 50%)`
-    };
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const h = Math.abs(hash) % 360;
+  return {
+    hue: h,
+    glow: `hsla(${h}, 70%, 50%, 0.35)`,
+    hoverGlow: `hsla(${h}, 70%, 50%, 0.55)`,
+    border: `hsl(${h}, 70%, 65%)`,
+    beforeBorder: `hsla(${h}, 70%, 65%, 0.5)`,
+    bg: `hsl(${h}, 80%, 96%)`,
+    text: `hsl(${h}, 80%, 25%)`,
+    icon: `hsl(${h}, 70%, 50%)`
+  };
 };
 
 // Helper: Identify FAB Users (4+ tags or FA certification)
 const isFabUser = (u: any) => {
-    const hasFatag = u.tags?.some((t: string) => t.toLowerCase().startsWith("fa 20"));
-    return hasFatag || (u.tags?.length || 0) >= 4;
+  const hasFatag = u.tags?.some((t: string) => t.toLowerCase().startsWith("fa 20"));
+  return hasFatag || (u.tags?.length || 0) >= 4;
 };
 
 // Helper: Custom Saluting Figure Icon (Half Body)
 const SaluteIcon = ({ className = "w-4 h-4", style }: { className?: string, style?: React.CSSProperties }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2.5" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className={className}
     style={style}
   >
@@ -162,13 +162,13 @@ const SaluteIcon = ({ className = "w-4 h-4", style }: { className?: string, styl
 
 // Helper to sort tags (FA 20XX tags at the beginning)
 const sortUserTags = (tags: string[] = []) => {
-    return [...tags].sort((a, b) => {
-        const isFA_a = a.toLowerCase().startsWith("fa 20");
-        const isFA_b = b.toLowerCase().startsWith("fa 20");
-        if (isFA_a && !isFA_b) return -1;
-        if (!isFA_a && isFA_b) return 1;
-        return a.localeCompare(b);
-    });
+  return [...tags].sort((a, b) => {
+    const isFA_a = a.toLowerCase().startsWith("fa 20");
+    const isFA_b = b.toLowerCase().startsWith("fa 20");
+    if (isFA_a && !isFA_b) return -1;
+    if (!isFA_a && isFA_b) return 1;
+    return a.localeCompare(b);
+  });
 };
 
 interface InventoryItem {
@@ -264,13 +264,13 @@ export default function Dashboard() {
 
   const filteredCommunityUsers = useMemo(() => {
     let result = allUsers.filter(u => {
-      const matchesSearch = !communitySearchQuery || 
+      const matchesSearch = !communitySearchQuery ||
         u.name?.toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
         u.email?.toLowerCase().includes(communitySearchQuery.toLowerCase());
-      
-      const matchesCategory = selectedCommunityTag === 'all' || 
+
+      const matchesCategory = selectedCommunityTag === 'all' ||
         (u.tags || []).some((t: string) => t === selectedCommunityTag);
-        
+
       return matchesSearch && matchesCategory;
     });
 
@@ -280,7 +280,7 @@ export default function Dashboard() {
 
   // Track if we're using the fallback (Sheets) or Convex
   const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
-  
+
   const convexInventory = useQuery(api.inventory.getAll);
 
   // Helper: load inventory from Google Sheets (Golden Rule fallback)
@@ -574,15 +574,15 @@ export default function Dashboard() {
                   {user.tags.map((tag, idx) => {
                     const style = getTagStyle(tag);
                     const dynamic = getDynamicGlow(user.email || '');
-                    
+
                     return (
                       <Tooltip key={idx}>
                         <TooltipTrigger asChild>
-                          <span 
-                            style={{ 
-                                '--dynamic-glow': dynamic.glow,
-                                '--dynamic-border': dynamic.border,
-                                '--dynamic-hover-glow': dynamic.hoverGlow
+                          <span
+                            style={{
+                              '--dynamic-glow': dynamic.glow,
+                              '--dynamic-border': dynamic.border,
+                              '--dynamic-hover-glow': dynamic.hoverGlow
                             } as React.CSSProperties}
                             className={`
                                 inline-flex items-center px-2.5 py-1 rounded
@@ -922,82 +922,81 @@ export default function Dashboard() {
                   <>
                     {/* FAB SECTION (High Skill / FA Cert) */}
                     {filteredCommunityUsers.filter(isFabUser).length > 0 && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
-                            {filteredCommunityUsers.filter(isFabUser).map((u) => {
-                                const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
-                                
-                                return (
-                                    <Card
-                                        key={u._id || u.id}
-                                        style={{
-                                            '--user-glow': dynamic.glow,
-                                            '--user-hover-glow': dynamic.hoverGlow,
-                                            '--user-border': dynamic.border,
-                                            '--user-before-border': dynamic.beforeBorder,
-                                            '--user-text': dynamic.text,
-                                            '--user-badge-bg': dynamic.bg,
-                                            '--user-icon': dynamic.icon
-                                        } as React.CSSProperties}
-                                        className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${
-                                            hasPageLink
-                                            ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                            : "border-slate-200 hover:shadow-md"
-                                        }`}
-                                        onClick={() => {
-                                            if (hasPageLink) {
-                                                window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                            }
-                                        }}
-                                    >
-                                        <div className="flex items-start gap-3 relative z-10">
-                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                                                <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
-                                                        <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                                        {(u.role === 'ADMIN' || u.role === 'TEAM') && (
-                                                            <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
-                                                        )}
-                                                    </div>
-                                                    {/* Circular FAB Tag */}
-                                                    <div 
-                                                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
-                                                        style={{ 
-                                                            backgroundColor: 'var(--user-badge-bg)', 
-                                                            color: 'var(--user-text)', 
-                                                            borderColor: 'var(--user-border)' 
-                                                        }}
-                                                    >
-                                                        FAB
-                                                    </div>
-                                                </div>
-                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Fab Academy student'}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
+                        {filteredCommunityUsers.filter(isFabUser).map((u) => {
+                          const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
+                          const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
 
-                                                {/* Badges - One Horizontal Line */}
-                                                {u.tags && u.tags.length > 0 && (
-                                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                                        {sortUserTags(u.tags).map((tag: string, idx: number) => {
-                                                        const style = getTagStyle(tag);
-                                                        return (
-                                                            <span 
-                                                                key={idx} 
-                                                                className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                            >
-                                                                {tag}
-                                                            </span>
-                                                        );
-                                                        })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </Card>
-                                );
-                            })}
-                        </div>
+                          return (
+                            <Card
+                              key={u._id || u.id}
+                              style={{
+                                '--user-glow': dynamic.glow,
+                                '--user-hover-glow': dynamic.hoverGlow,
+                                '--user-border': dynamic.border,
+                                '--user-before-border': dynamic.beforeBorder,
+                                '--user-text': dynamic.text,
+                                '--user-badge-bg': dynamic.bg,
+                                '--user-icon': dynamic.icon
+                              } as React.CSSProperties}
+                              className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${hasPageLink
+                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                : "border-slate-200 hover:shadow-md"
+                                }`}
+                              onClick={() => {
+                                if (hasPageLink) {
+                                  window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                }
+                              }}
+                            >
+                              <div className="flex items-start gap-3 relative z-10">
+                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                  <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
+                                      <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                      {(u.role === 'ADMIN' || u.role === 'TEAM') && (
+                                        <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
+                                      )}
+                                    </div>
+                                    {/* Circular FAB Tag */}
+                                    <div
+                                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
+                                      style={{
+                                        backgroundColor: 'var(--user-badge-bg)',
+                                        color: 'var(--user-text)',
+                                        borderColor: 'var(--user-border)'
+                                      }}
+                                    >
+                                      FAB
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Student'}</p>
+
+                                  {/* Badges - One Horizontal Line */}
+                                  {u.tags && u.tags.length > 0 && (
+                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                      {sortUserTags(u.tags).map((tag: string, idx: number) => {
+                                        const style = getTagStyle(tag);
+                                        return (
+                                          <span
+                                            key={idx}
+                                            className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                          >
+                                            {tag}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })}
+                      </div>
                     )}
 
                     {/* STANDARD SECTION */}
@@ -1006,64 +1005,63 @@ export default function Dashboard() {
                         {filteredCommunityUsers.filter(u => !isFabUser(u)).map((u) => {
                           const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
                           const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
-                          
+
                           return (
-                              <Card
+                            <Card
                               key={u._id || u.id}
                               style={{
-                                  '--user-glow': dynamic.glow,
-                                  '--user-hover-glow': dynamic.hoverGlow,
-                                  '--user-border': dynamic.border,
-                                  '--user-before-border': dynamic.beforeBorder,
-                                  '--user-text': dynamic.text,
-                                  '--user-badge-bg': dynamic.bg,
-                                  '--user-icon': dynamic.icon
+                                '--user-glow': dynamic.glow,
+                                '--user-hover-glow': dynamic.hoverGlow,
+                                '--user-border': dynamic.border,
+                                '--user-before-border': dynamic.beforeBorder,
+                                '--user-text': dynamic.text,
+                                '--user-badge-bg': dynamic.bg,
+                                '--user-icon': dynamic.icon
                               } as React.CSSProperties}
-                              className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${
-                                  hasPageLink
-                                  ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                  : "border-slate-200 hover:shadow-md"
-                              }`}
+                              className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
+                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                : "border-slate-200 hover:shadow-md"
+                                }`}
                               onClick={() => {
-                                  if (hasPageLink) {
-                                      window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                  }
+                                if (hasPageLink) {
+                                  window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
+                                }
                               }}
-                              >
+                            >
                               <div className="flex items-start gap-3 relative z-10">
-                                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
+                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
                                   <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
+                                </div>
+                                <div className="flex-1 min-w-0">
                                   <div className="flex justify-between items-start">
-                                      <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
-                                          <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                          {(u.role === 'ADMIN' || u.role === 'TEAM') && (
-                                              <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
-                                          )}
-                                      </div>
+                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
+                                      <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
+                                      {(u.role === 'ADMIN' || u.role === 'TEAM') && (
+                                        <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
+                                      )}
+                                    </div>
                                   </div>
-                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Fab Academy student'}</p>
+                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Student'}</p>
 
                                   {/* Badges - One Horizontal Line */}
                                   {u.tags && u.tags.length > 0 && (
-                                      <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                          {sortUserTags(u.tags).map((tag: string, idx: number) => {
-                                          const style = getTagStyle(tag);
-                                          return (
-                                              <span 
-                                                  key={idx} 
-                                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                              >
-                                                  {tag}
-                                              </span>
-                                          );
-                                          })}
-                                      </div>
+                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+                                      {sortUserTags(u.tags).map((tag: string, idx: number) => {
+                                        const style = getTagStyle(tag);
+                                        return (
+                                          <span
+                                            key={idx}
+                                            className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                          >
+                                            {tag}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
                                   )}
-                                  </div>
+                                </div>
                               </div>
-                              </Card>
+                            </Card>
                           );
                         })}
                       </div>
@@ -1074,8 +1072,8 @@ export default function Dashboard() {
                     <UsersIcon className="h-12 w-12 text-slate-300 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-slate-900">No users found</h3>
                     <p className="text-slate-500">Try adjusting your search or category filters.</p>
-                    <Button 
-                      variant="link" 
+                    <Button
+                      variant="link"
                       className="mt-2 text-emerald-600"
                       onClick={() => { setCommunitySearchQuery(''); setSelectedCommunityTag('all'); }}
                     >
