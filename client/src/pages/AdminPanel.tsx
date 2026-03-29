@@ -96,6 +96,7 @@ export default function AdminPanel() {
   const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
   const processReturnMut = useMutation(api.requests.processReturn);
   const cancelReturnMut = useMutation(api.requests.cancelReturn);
+  const cancelCheckoutRequestMut = useMutation(api.requests.cancelCheckoutRequest);
   const upsertHomeMut = useMutation(api.home.upsert);
   const deleteHomeMut = useMutation(api.home.remove);
   const upsertFabAcademyMut = useMutation(api.fabAcademy.upsert);
@@ -185,6 +186,7 @@ export default function AdminPanel() {
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
+  const [userSearchQuery, setUserSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -718,6 +720,30 @@ export default function AdminPanel() {
     );
   };
 
+  const handleCancelCheckout = async (req: any) => {
+    // 1. Optimistic Update
+    const prevCheckouts = [...pendingCheckouts];
+    setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
+
+    toast.promise(
+      cancelCheckoutRequestMut({
+        requestId: req.date,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
+        return result;
+      }),
+      {
+        loading: 'Cancelling request...',
+        success: 'Request Cancelled!',
+        error: (err) => {
+          // Rollback on failure
+          setPendingCheckouts(prevCheckouts);
+          return `Cancellation failed: ${err.message}`;
+        }
+      }
+    );
+  };
+
   // 2. Replace the old handleAddItem with this version
   const handleAddItem = async () => {
     // Validation (Checks required fields - tags are optional)
@@ -1059,163 +1085,108 @@ export default function AdminPanel() {
 
           {/* Users Tab */}
           <TabsContent value="users" className="space-y-4">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
               <div>
-                <h2 className="text-2xl font-bold">User Approvals</h2>
+                <h2 className="text-2xl font-bold">User Management</h2>
                 <p className="text-muted-foreground">
-                  Review and approve pending registrations
+                  Manage approvals, roles, and profiles
                 </p>
+              </div>
+              <div className="relative w-full md:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search name or email..."
+                  className="pl-9 bg-white/50 backdrop-blur border-sage-200 focus:border-sage-400 focus:ring-sage-400"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {allUsers
-                .filter((u) => u.status !== 'REJECTED') // ❌ hide rejected users
+                .filter((u) => u.status !== 'REJECTED')
+                .filter((u) => {
+                  if (!userSearchQuery) return true;
+                  const query = userSearchQuery.toLowerCase();
+                  return (
+                    u.name?.toLowerCase().includes(query) ||
+                    u.email?.toLowerCase().includes(query)
+                  );
+                })
                 .map((u) => (
                   <Card
                     key={u.id || u.email}
-                    className="p-5 hover:shadow-xl transition-all cursor-pointer transform hover:-translate-y-1 flex flex-col gap-4 relative overflow-hidden group"
+                    onClick={() => handleOpenEditUser(u)}
+                    className="p-4 hover:shadow-lg transition-all cursor-pointer flex flex-col gap-3 relative overflow-hidden group border-sage-100 hover:border-sage-300"
                   >
-                    {/* Top: Status Badge (Absolute) */}
-                    <div className="absolute top-3 right-3">
-                      {u.status === 'APPROVED' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          Approved
-                        </span>
-                      )}
-                      {u.status === 'PENDING' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-800 animate-pulse">
-                          Pending
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Header: Avatar + Info */}
-                    <div className="flex flex-col items-center text-center pt-2">
-                      <div className="h-16 w-16 rounded-full bg-sage-50 flex items-center justify-center mb-3 border border-sage-100 shadow-sm group-hover:scale-110 transition-transform">
-                        <UsersIcon className="h-7 w-7 text-sage-600" />
-                      </div>
-                      <h3 className="font-bold text-lg text-foreground leading-tight truncate w-full px-2">
+                    {/* Header: Name + Status */}
+                    <div className="flex justify-between items-start gap-2">
+                      <h3 className="font-bold text-sm text-foreground leading-tight truncate flex-1" title={u.name}>
                         {u.name || 'Unknown'}
                       </h3>
-                      <p className="text-xs text-muted-foreground truncate w-full px-4 mb-2">
-                        {u.email}
-                      </p>
-                      <span className="inline-block px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-slate-100 text-slate-500">
-                        {u.role || 'USER'}
-                      </span>
-
-                      {/* User Tags (Badges) */}
-                      {u.tags && u.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-2 justify-center mt-3 px-2 w-full">
-                          {u.tags.map((tag, idx) => {
-                            const style = getTagStyle(tag);
-
-                            return (
-                              <span
-                                key={idx}
-                                className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border shadow-sm ${style.color}`}
-                                title="Earned Badge"
-                              >
-                                {style.icon}
-                                {tag}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Divider */}
-                    <div className="w-full h-px bg-border/50"></div>
-                    
-                    {/* Admin Note Section (Visible to Admin/Team) */}
-                    <div className="w-full px-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Admin Note</span>
-                        {/* BUG FIX: use u.email (not u.id which is undefined for GAS users) */}
-                        {activeNoteEditId !== u.email ? (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setActiveNoteEditId(u.email); setTempNoteText((u as any).note || ''); }}
-                            className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
-                          >
-                            Edit
-                          </button>
-                        ) : (
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); setActiveNoteEditId(null); }}
-                              className="text-[10px] text-gray-500 hover:text-gray-700 font-medium"
-                            >
-                              Cancel
-                            </button>
-                            <button 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                handleUpdateUserNote(u.email, tempNoteText); 
-                                setActiveNoteEditId(null);
-                              }}
-                              className="text-[10px] text-emerald-600 hover:text-emerald-800 font-bold"
-                            >
-                              Save
-                            </button>
-                          </div>
+                      <div className="shrink-0">
+                        {u.status === 'APPROVED' && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 uppercase">
+                            Approved
+                          </span>
+                        )}
+                        {u.status === 'PENDING' && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-yellow-100 text-yellow-800 uppercase animate-pulse">
+                            Pending
+                          </span>
                         )}
                       </div>
-                      
-                      {activeNoteEditId === u.email ? (
-                        <textarea 
-                           className="w-full text-xs p-2 border rounded-md bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
-                           rows={2}
-                           value={tempNoteText}
-                           onChange={(e) => setTempNoteText(e.target.value)}
-                           onClick={(e) => e.stopPropagation()}
-                           autoFocus
-                        />
-                      ) : (
-                        <p className="text-xs text-muted-foreground bg-muted/40 p-2 rounded-md min-h-[36px] line-clamp-2 italic">
-                          {(u as any).note || "No notes"}
-                        </p>
-                      )}
                     </div>
 
-                    {/* Divider */}
-                    <div className="w-full h-px bg-border/50"></div>
+                    {/* Meta: Email + Role */}
+                    <div className="space-y-1">
+                      <p className="text-[11px] text-muted-foreground truncate w-full" title={u.email}>
+                        {u.email}
+                      </p>
+                      <span className="inline-block px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-wider rounded bg-slate-100 text-slate-500">
+                        {u.role || 'USER'}
+                      </span>
+                    </div>
 
-                    {/* Footer: Loans */}
-                    <div className="flex-1 w-full">
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground mb-2 text-center">Active Loans</p>
+                    {/* Tags (Compact) */}
+                    {u.tags && u.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {u.tags.map((tag, idx) => {
+                          const style = getTagStyle(tag);
+                          return (
+                            <span
+                              key={idx}
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-tight border shadow-sm ${style.color}`}
+                            >
+                              {tag}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Loans (Expanded) */}
+                    <div className="mt-auto pt-2 border-t border-border/40">
                       {(() => {
                         const userLoans = activeLoans.filter(l => l.userEmail === u.email);
                         if (userLoans.length > 0) {
                           return (
-                            <div className="flex flex-wrap gap-1.5 justify-center">
-                              {userLoans.slice(0, 3).map((loan, idx) => (
-                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-50 text-blue-600 text-[10px] border border-blue-100 font-medium">
-                                  {loan.itemName.split(' ')[0]}... <span className="text-blue-800">x{loan.quantity}</span>
-                                </span>
+                            <div className="space-y-1">
+                              {userLoans.map((loan, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 min-w-0">
+                                  <Package className="w-3 h-3 text-blue-500 shrink-0" />
+                                  <p className="text-[10px] text-blue-700 font-medium truncate flex-1" title={loan.itemName}>
+                                    {loan.itemName} <span className="text-[9px] text-blue-500 opacity-80">x{loan.quantity}</span>
+                                  </p>
+                                </div>
                               ))}
-                              {userLoans.length > 3 && (
-                                <span className="text-[10px] text-muted-foreground flex items-center">+{userLoans.length - 3} more</span>
-                              )}
                             </div>
                           );
                         }
-                        return <p className="text-xs text-muted-foreground italic text-center py-2">No active items</p>;
+                        return <p className="text-[10px] text-muted-foreground italic truncate">No active items</p>;
                       })()}
                     </div>
-
-                    {/* Edit Profile Button (Admin only) */}
-                    {user?.role === 'ADMIN' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                        onClick={(e) => { e.stopPropagation(); handleOpenEditUser(u); }}
-                      >
-                        <Edit2 className="w-3 h-3 mr-1" /> Edit Profile
-                      </Button>
-                    )}
                   </Card>
                 ))}
             </div>
@@ -1858,12 +1829,21 @@ export default function AdminPanel() {
                           </span>
                         </div>
                       </div>
-                      <Button
-                        className="bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => handleApproveRequest(req)}
-                      >
-                        Approve Checkout
-                      </Button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => handleApproveRequest(req)}
+                        >
+                          Approve Checkout
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400"
+                          onClick={() => handleCancelCheckout(req)}
+                        >
+                          Cancel Request
+                        </Button>
+                      </div>
                     </Card>
                   ))}
                 </div>

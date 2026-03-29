@@ -278,3 +278,33 @@ export const cancelReturn = mutation({
     return { success: true };
   }
 });
+
+export const cancelCheckoutRequest = mutation({
+  args: {
+    requestId: v.string(),
+    scriptUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const reqDoc = await ctx.db.query("requests").withIndex("by_date", q => q.eq("date", args.requestId)).first();
+    if (!reqDoc) throw new Error("Request not found");
+
+    // Only allow canceling PENDING requests
+    if (reqDoc.status !== "PENDING") {
+      throw new Error("Only pending requests can be cancelled");
+    }
+
+    // Delete the request
+    await ctx.db.delete(reqDoc._id);
+
+    // Sync deletion to Google Sheets
+    await enqueueSheetsSyncJob(ctx, {
+      scriptUrl: args.scriptUrl,
+      entityType: "requests",
+      entityKey: reqDoc.date,
+      operation: "delete",
+      payload: { date: reqDoc.date },
+    });
+
+    return { success: true };
+  }
+});

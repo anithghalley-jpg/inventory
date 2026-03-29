@@ -179,6 +179,7 @@ export default function TeamDashboard() {
     const processReturnMut = useMutation(api.requests.processReturn);
     const cancelReturnMut = useMutation(api.requests.cancelReturn);
     const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
+    const cancelCheckoutRequestMut = useMutation(api.requests.cancelCheckoutRequest);
     const toggleLaptopMut = useMutation(api.users.toggleLaptop);
 
     useEffect(() => {
@@ -324,6 +325,30 @@ export default function TeamDashboard() {
         );
     };
 
+
+    const handleCancelCheckout = async (req: any) => {
+        // Optimistic Update
+        const prevCheckouts = [...pendingCheckouts];
+        setPendingCheckouts(prev => prev.filter(r => r.date !== req.date));
+
+        toast.promise(
+            cancelCheckoutRequestMut({
+                requestId: req.date,
+                scriptUrl: SCRIPT_URL,
+            }).then(async (result) => {
+                return result;
+            }),
+            {
+                loading: 'Cancelling request...',
+                success: 'Request Cancelled!',
+                error: (err) => {
+                    // Rollback on failure
+                    setPendingCheckouts(prevCheckouts);
+                    return `Cancellation failed: ${err.message}`;
+                }
+            }
+        );
+    };
 
     const handleApproveRequest = async (req: any) => {
         try {
@@ -809,9 +834,18 @@ export default function TeamDashboard() {
                                                             <p className="text-sm text-slate-500">Requested by <span className="font-medium text-slate-900">{req.userName}</span></p>
                                                             <p className="text-xs text-slate-400 mt-1">{new Date(req.date).toLocaleDateString()}</p>
                                                         </div>
-                                                        <Button size="sm" onClick={() => handleApproveRequest(req)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                                                            Approve
-                                                        </Button>
+                                                        <div className="flex flex-col gap-2 ml-4 shrink-0">
+                                                            <Button onClick={() => handleApproveRequest(req)} className="bg-slate-900 hover:bg-slate-800">
+                                                                Approve
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400 text-xs"
+                                                                onClick={() => handleCancelCheckout(req)}
+                                                            >
+                                                                Cancel Request
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 </Card>
                                             )
