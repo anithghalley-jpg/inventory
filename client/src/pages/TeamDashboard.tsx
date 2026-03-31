@@ -137,24 +137,24 @@ const isFabUser = (u: any) => {
 
 // Helper: Custom Saluting Figure Icon (Half Body)
 const SaluteIcon = ({ className = "w-4 h-4", style }: { className?: string, style?: React.CSSProperties }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2.5" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
-    className={className}
-    style={style}
-  >
-    {/* Head */}
-    <circle cx="9" cy="7" r="4" />
-    {/* Torso */}
-    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    {/* Saluting Arm/Hand */}
-    <path d="M18 10l2-2l-2-2" className="animate-pulse" />
-    <path d="M15 10h5" />
-  </svg>
+    <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        style={style}
+    >
+        {/* Head */}
+        <circle cx="9" cy="7" r="4" />
+        {/* Torso */}
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        {/* Saluting Arm/Hand */}
+        <path d="M18 10l2-2l-2-2" className="animate-pulse" />
+        <path d="M15 10h5" />
+    </svg>
 );
 
 // Helper to sort tags (FA 20XX tags at the beginning)
@@ -263,26 +263,26 @@ export default function TeamDashboard() {
 
     const filteredCommunityUsers = useMemo(() => {
         return allUsers.filter(u => {
-            const matchesSearch = !communitySearchQuery || 
+            const matchesSearch = !communitySearchQuery ||
                 (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
                 (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
-            
-            const matchesTag = selectedCommunityTag === 'all' || 
+
+            const matchesTag = selectedCommunityTag === 'all' ||
                 (u.tags && u.tags.includes(selectedCommunityTag));
-                
+
             return matchesSearch && matchesTag;
         });
     }, [allUsers, communitySearchQuery, selectedCommunityTag]);
 
-    const filteredTeam = useMemo(() => 
+    const filteredTeam = useMemo(() =>
         filteredCommunityUsers
             .filter(u => u.role === 'TEAM' || u.role === 'ADMIN')
             .sort((a, b) => (b.tags?.length || 0) - (a.tags?.length || 0)),
-    [filteredCommunityUsers]);
+        [filteredCommunityUsers]);
 
-    const filteredStudents = useMemo(() => 
+    const filteredStudents = useMemo(() =>
         filteredCommunityUsers.filter(u => u.role === 'USER'),
-    [filteredCommunityUsers]);
+        [filteredCommunityUsers]);
 
     // Initial Side Effects
     useEffect(() => {
@@ -294,7 +294,7 @@ export default function TeamDashboard() {
 
     // Track if we're using the fallback (Sheets) or Convex
     const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
-    
+
     const convexInventory = useQuery(api.inventory.getAll);
 
     // Helper: load inventory from Google Sheets (Golden Rule fallback)
@@ -369,7 +369,7 @@ export default function TeamDashboard() {
 
     useEffect(() => {
         if (!convexUsers || !convexRequests) return;
-        
+
         setAllUsers(convexUsers.map((u: any) => ({ ...u, id: u._id })));
 
         const vApprovers = convexUsers
@@ -417,7 +417,7 @@ export default function TeamDashboard() {
     }, [convexUsers, convexRequests, user]);
 
     // Keep function for the manual refresh button to not break UI
-    const fetchUsers = async () => {};
+    const fetchUsers = async () => { };
 
     const fetchAllData = async () => {
         toast.success("Synchronized with Convex!");
@@ -559,11 +559,11 @@ export default function TeamDashboard() {
                 scriptUrl: SCRIPT_URL,
             });
             if (newStatus === 'Offline') {
-                toast.success('Session Ended.'); 
+                toast.success('Session Ended.');
             } else {
                 toast.success('Lab Session Started');
             }
-            
+
         } catch (e) {
             toast.error("Status update failed");
             setLaptopStatus(checked ? 'Offline' : 'Online');
@@ -649,8 +649,8 @@ export default function TeamDashboard() {
                                     return (
                                         <Tooltip key={idx}>
                                             <TooltipTrigger asChild>
-                                                <span 
-                                                    style={{ 
+                                                <span
+                                                    style={{
                                                         '--dynamic-glow': dynamic.glow,
                                                         '--dynamic-border': dynamic.border
                                                     } as React.CSSProperties}
@@ -957,8 +957,8 @@ export default function TeamDashboard() {
                                                             '--user-icon': dynamic.icon
                                                         } as React.CSSProperties}
                                                         className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${hasPageLink
-                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                : "border-slate-200 hover:shadow-md"
+                                                            ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                            : "border-slate-200 hover:shadow-md"
                                                             }`}
                                                         onClick={() => {
                                                             if (hasPageLink) {
@@ -979,18 +979,18 @@ export default function TeamDashboard() {
                                                                         )}
                                                                     </div>
                                                                     {/* Circular FAB Seal */}
-                                                                    <div 
+                                                                    <div
                                                                         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
-                                                                        style={{ 
-                                                                            backgroundColor: 'var(--user-badge-bg)', 
-                                                                            color: 'var(--user-text)', 
-                                                                            borderColor: 'var(--user-border)' 
+                                                                        style={{
+                                                                            backgroundColor: 'var(--user-badge-bg)',
+                                                                            color: 'var(--user-text)',
+                                                                            borderColor: 'var(--user-border)'
                                                                         }}
                                                                     >
                                                                         FAB
                                                                     </div>
                                                                 </div>
-                                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Fab Academy / Student'}</p>
+                                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Student'}</p>
 
                                                                 {/* Badges - One Horizontal Line */}
                                                                 {u.tags && u.tags.length > 0 && (
@@ -1042,8 +1042,8 @@ export default function TeamDashboard() {
                                                                 '--user-icon': dynamic.icon
                                                             } as React.CSSProperties}
                                                             className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                                                    ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                    : "border-slate-200 hover:shadow-md"
+                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                : "border-slate-200 hover:shadow-md"
                                                                 }`}
                                                             onClick={() => {
                                                                 if (hasPageLink) {
@@ -1115,8 +1115,8 @@ export default function TeamDashboard() {
                                                                 '--user-icon': dynamic.icon
                                                             } as React.CSSProperties}
                                                             className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                                                    ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                    : "border-slate-200 hover:shadow-md"
+                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                : "border-slate-200 hover:shadow-md"
                                                                 }`}
                                                             onClick={() => {
                                                                 if (hasPageLink) {
@@ -1134,7 +1134,7 @@ export default function TeamDashboard() {
                                                                             <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
                                                                         </div>
                                                                     </div>
-                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Fab Academy / TRA Student</p>
+                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Student</p>
 
                                                                     {/* Badges - One Horizontal Line */}
                                                                     {u.tags && u.tags.length > 0 && (
@@ -1168,8 +1168,8 @@ export default function TeamDashboard() {
                                     </div>
                                     <h3 className="text-lg font-bold text-slate-900">No users found</h3>
                                     <p className="text-slate-500 mb-6">We couldn't find any users matching your criteria.</p>
-                                    <Button 
-                                        variant="outline" 
+                                    <Button
+                                        variant="outline"
                                         onClick={() => {
                                             setCommunitySearchQuery('');
                                             setSelectedCommunityTag('all');
@@ -1329,7 +1329,7 @@ export default function TeamDashboard() {
                                                     <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
                                                 </div>
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={() => handleForceTurnOff(u.email)}
                                                 className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                                 title="Force Turn Off"
