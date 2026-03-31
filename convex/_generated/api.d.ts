@@ -12,6 +12,7 @@ import type * as fabAcademy from "../fabAcademy.js";
 import type * as home from "../home.js";
 import type * as http from "../http.js";
 import type * as inventory from "../inventory.js";
+import type * as machines from "../machines.js";
 import type * as requests from "../requests.js";
 import type * as settings from "../settings.js";
 import type * as sheetsSync from "../sheetsSync.js";
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   home: typeof home;
   http: typeof http;
   inventory: typeof inventory;
+  machines: typeof machines;
   requests: typeof requests;
   settings: typeof settings;
   sheetsSync: typeof sheetsSync;

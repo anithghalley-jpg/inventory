@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 
@@ -108,6 +108,10 @@ export default function AdminPanel() {
   const convexHome = useQuery(api.home.getAll);
   const convexFabAcademy = useQuery(api.fabAcademy.getAll);
   const convexSettings = useQuery(api.settings.getAdmin);
+  const convexMachines = useQuery(api.machines.getAll);
+  const registerMachineMut = useMutation(api.machines.register);
+  const unregisterMachineMut = useMutation(api.machines.unregister);
+  const deleteMachineLog = useMutation(api.machines.deleteLog);
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([
     {
       id: '1',
@@ -145,6 +149,9 @@ export default function AdminPanel() {
   const [returnRemarks, setReturnRemarks] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [machineLogs, setMachineLogs] = useState<MachineData[]>([]); // New: Machine Logs State
+  const [showAddMachine, setShowAddMachine] = useState(false);
+  const [newMachineForm, setNewMachineForm] = useState({ name: '', id: '' });
+  // Removed localMachines state - now using backend dynamic list
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null); // Item currently in edit mode
   const [editItemForm, setEditItemForm] = useState<Partial<InventoryItem & { tagsInput: string }>>({});
   const [editingUserEmail, setEditingUserEmail] = useState<string | null>(null); // Email key for user edit
@@ -603,14 +610,55 @@ export default function AdminPanel() {
         entryId,
         scriptUrl: SCRIPT_URL,
       }).then(async (result) => {
-        setFabAcademyItems((prev) => prev.filter((item) => item.id !== entryId));
         return result;
       }),
       { loading: 'Deleting Fab Academy entry...', success: 'Fab Academy entry deleted.', error: (e) => `Failed: ${e.message}` }
     );
   };
 
+  const handleSaveMachine = async () => {
+    if (!newMachineForm.name || !newMachineForm.id) {
+      toast.error('Please fill in both name and ID');
+      return;
+    }
 
+    const machineId = newMachineForm.id.trim();
+    const machineName = newMachineForm.name.trim();
+
+    toast.promise(
+      registerMachineMut({
+        machineId,
+        name: machineName,
+        scriptUrl: SCRIPT_URL
+      }).then((result) => {
+        setNewMachineForm({ name: '', id: '' });
+        setShowAddMachine(false);
+        return result;
+      }),
+      {
+        loading: 'Registering machine...',
+        success: 'Machine registered! (Syncing to Sheets...)',
+        error: (err) => `Failed: ${err.message}`
+      }
+    );
+  };
+
+  const handleDeleteMachine = async (machineId: string) => {
+    if (!window.confirm('Delete this machine? This only removes it from the list, log sheets are preserved.')) return;
+    toast.promise(
+      unregisterMachineMut({ 
+        machineId,
+        scriptUrl: SCRIPT_URL
+      }).then((result) => {
+        return result;
+      }),
+      {
+        loading: 'Unregistering machine...',
+        success: 'Machine removed. (Syncing to Sheets...)',
+        error: (err) => `Failed: ${err.message}`
+      }
+    );
+  };
 
   const handleAddCategory = async () => {
     if (!newCategory) {
@@ -951,35 +999,25 @@ export default function AdminPanel() {
     }
   };
 
-  // 3. Trigger the fetch automatically when the page loads
+  // 3. Trigger initial fetches
   React.useEffect(() => {
     fetchInventory();
     fetchCategories();
     fetchUsers();
-    fetchMachineLogs(); // Initial fetch
-    fetchHomeContent(); // Home CMS content
-
-    const interval = setInterval(fetchMachineLogs, 30000); // Poll every 30s
-    return () => clearInterval(interval);
+    fetchHomeContent();
   }, []);
 
-
-  const fetchMachineLogs = async () => {
-    try {
-      const response = await fetch(SCRIPT_URL, {
-        redirect: "follow",
-        method: 'POST',
-        body: JSON.stringify({ action: 'getMachineLogs' }),
-        headers: { "Content-Type": "text/plain;charset=utf-8" }
-      });
-      const data = await response.json();
-      if (data.success) {
-        setMachineLogs(data.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch machine logs", error);
+  // Sync Convex Machines with local state for instant status updates
+  React.useEffect(() => {
+    if (convexMachines) {
+      setMachineLogs(convexMachines.map(cm => ({
+        id: cm.machineId,
+        name: cm.name,
+        isOnline: cm.status === "ENGAGED",
+        currentUser: cm.currentUser || ""
+      })));
     }
-  };
+  }, [convexMachines]);
 
   // Filter & Sort Logic
   const filteredInventory = inventory.filter((item) => {
@@ -1044,7 +1082,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="users" className="space-y-20" onValueChange={(tab) => { if (tab === 'settings') fetchSyncStatus(); }}>
-          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-3xl grid-cols-6' : 'max-w-2xl grid-cols-5'} bg-muted`}>
+          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-4xl grid-cols-7' : 'max-w-3xl grid-cols-6'} bg-muted`}>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -1074,6 +1112,10 @@ export default function AdminPanel() {
             <TabsTrigger value="monitor" className="flex items-center gap-2">
               <Monitor className="w-4 h-4" />
               <span className="hidden sm:inline">Monitor</span>
+            </TabsTrigger>
+            <TabsTrigger value="machines" className="flex items-center gap-2">
+              <Zap className="w-4 h-4" />
+              <span className="hidden sm:inline">Machines</span>
             </TabsTrigger>
             {user?.role === 'ADMIN' && (
               <TabsTrigger value="settings" className="flex items-center gap-2">
@@ -2004,20 +2046,28 @@ export default function AdminPanel() {
                   <h2 className="text-xl font-bold font-display flex items-center gap-2">
                     <Monitor className="w-5 h-5" /> Machine Status
                   </h2>
-                  <Button variant="outline" size="sm" onClick={fetchMachineLogs} disabled={isSyncing}>
-                    Refresh
-                  </Button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {machineLogs.length > 0 ? (
-                    machineLogs.map(machine => (
-                      <MachineCard key={machine.id} machine={machine} />
-                    ))
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {convexMachines && convexMachines.length > 0 ? (
+                    convexMachines.map((m) => {
+                      const machine = {
+                        id: m.machineId,
+                        name: m.name,
+                        isOnline: m.status === "ENGAGED",
+                        currentUser: m.currentUser || ""
+                      };
+                      return (
+                        <div key={machine.id}>
+                          <MachineCard machine={machine} />
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="col-span-full p-8 text-center text-muted-foreground border-2 border-dashed rounded-xl bg-card">
-                      <p>No machines connected.</p>
-                      <p className="text-xs mt-1">Check Google Sheets configuration.</p>
+                      <Zap className="w-8 h-8 text-slate-200 mx-auto mb-2 opacity-20" />
+                      <p>No machines registered in Convex.</p>
+                      <p className="text-xs mt-1">Add a machine from the register section.</p>
                     </div>
                   )}
                 </div>
@@ -2125,6 +2175,81 @@ export default function AdminPanel() {
                   </Card>
                 </div>
               </div>
+            </div>
+          </TabsContent>
+
+          {/* TAB 5: MACHINE MANAGEMENT */}
+          <TabsContent value="machines" className="space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+              <div>
+                <h2 className="text-2xl font-bold">Machine Management</h2>
+                <p className="text-muted-foreground">
+                  Add and manage workshop machines
+                </p>
+              </div>
+
+              <Dialog open={showAddMachine} onOpenChange={setShowAddMachine}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-slate-800 hover:bg-slate-900">
+                    <Plus className="w-4 h-4" /> Add Machine
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Add New Machine</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Machine Name</label>
+                      <Input
+                        placeholder="e.g. Laser Cutter 1"
+                        value={newMachineForm.name}
+                        onChange={(e) => setNewMachineForm({ ...newMachineForm, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Machine ID (Optional)</label>
+                      <Input
+                        placeholder="e.g. laser_01"
+                        value={newMachineForm.id}
+                        onChange={(e) => setNewMachineForm({ ...newMachineForm, id: e.target.value })}
+                      />
+                    </div>
+                    <Button onClick={handleSaveMachine} className="w-full bg-slate-800 hover:bg-slate-900 mt-2">
+                      Create Machine
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {machineLogs.map((machine) => (
+                <div key={machine.id} className="relative group">
+                  <MachineCard machine={machine} />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    onClick={() => handleDeleteMachine(machine.id)}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              ))}
+              {machineLogs.length === 0 && (
+                <div className="col-span-full py-20 text-center border-2 border-dashed rounded-xl bg-muted/20">
+                  <Zap className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-20" />
+                  <p className="text-muted-foreground">No machines registered</p>
+                  <Button
+                    variant="link"
+                    onClick={() => setShowAddMachine(true)}
+                    className="mt-2 text-slate-600"
+                  >
+                    Click here to add your first machine
+                  </Button>
+                </div>
+              )}
             </div>
           </TabsContent>
 
@@ -2469,6 +2594,88 @@ export default function AdminPanel() {
 
         </Tabs>
       </main>
+    </div>
+  );
+}
+
+// Helper component for Admin Machine Logs
+function AdminMachineLogs({ machineId, onDelete }: { machineId: string, onDelete: any }) {
+  const logs = useQuery(api.machines.getLogsByMachine, { machineId });
+
+  if (logs === undefined) return <div className="p-4 text-center text-xs text-muted-foreground">Loading logs...</div>;
+  if (!logs || logs.length === 0) return <div className="p-4 text-center text-xs text-muted-foreground italic">No usage history found in Convex.</div>;
+
+  const calculateDuration = (start: string, stop: string) => {
+    if (!start || !stop) return 0;
+    try {
+        const startMs = new Date(start).getTime();
+        const stopMs = new Date(stop).getTime();
+        return Math.floor((stopMs - startMs) / 60000); // Minutes
+    } catch (e) { return 0; }
+  };
+
+  const formatDuration = (mins: number) => {
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  };
+
+  const handleDelete = async (logId: any) => {
+    if (!window.confirm('Are you sure you want to delete this log entry?')) return;
+    try {
+      await onDelete({ logId });
+      toast.success('Log entry deleted');
+    } catch (err) {
+      toast.error('Failed to delete log');
+    }
+  };
+
+  return (
+    <div className="max-h-[350px] overflow-y-auto divide-y">
+      {logs.map((log) => {
+        const duration = calculateDuration(log.startTime, log.endTime || '');
+        return (
+          <div key={log._id} className="p-3 hover:bg-muted/30 transition-colors flex justify-between items-start group">
+            <div className="space-y-1.5 flex-1 pr-4">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm">{log.userName}</span>
+                <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  {new Date(log.startTime).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(log.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                {log.endTime && (
+                  <span className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                    {formatDuration(duration)}
+                  </span>
+                )}
+              </div>
+              
+              {log.note && (
+                <div className="bg-amber-50/50 p-2 rounded border border-amber-100/50">
+                  <p className="text-[11px] text-amber-900 leading-relaxed italic">
+                    "{log.note}"
+                  </p>
+                </div>
+              )}
+
+              {!log.endTime && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] rounded-full font-bold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active Now
+                </span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              onClick={() => handleDelete(log._id)}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }

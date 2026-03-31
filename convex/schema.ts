@@ -66,6 +66,26 @@ export default defineSchema({
     remarks: v.string(),
   }).index("by_entryId", ["entryId"]),
   
+  machines: defineTable({
+    machineId: v.string(),
+    name: v.string(),
+    status: v.string(),
+    currentUser: v.optional(v.string()),
+    lastUsed: v.optional(v.string()),
+    lastNote: v.optional(v.string()),
+  }).index("by_machineId", ["machineId"]),
+  
+  machineLogs: defineTable({
+    machineId: v.string(),
+    userName: v.string(),
+    userEmail: v.string(),
+    startTime: v.string(),
+    endTime: v.optional(v.string()),
+    note: v.optional(v.string()),
+    command: v.optional(v.string()), // "ON", "OFF"
+  }).index("by_machineId", ["machineId"])
+    .index("by_machineId_and_startTime", ["machineId", "startTime"]),
+  
   settings: defineTable({
     adminSettingsTitle: v.string(),
     homeDescription: v.optional(v.string()),
@@ -82,6 +102,7 @@ export default defineSchema({
       v.literal("home"),
       v.literal("fabAcademy"),
       v.literal("settings"),
+      v.literal("machines"),
     ),
     entityKey: v.string(),
     operation: v.union(v.literal("upsert"), v.literal("delete")),

@@ -43,7 +43,7 @@ const SHEET_NAMES = {
   CATEGORIES: 'Categories',
   ITEM_REQUESTS: 'ItemRequests',
   REQUESTS: 'Requests',
-  MACHINES: ['LaserCutter', 'LaserCutter2', '3DPrinter1']
+  MACHINE_LIST: 'MachineList'
 };
 
 // Initialize spreadsheet
@@ -74,6 +74,24 @@ function findRowIndexByValue(values, keyColIndex, keyValue) {
     }
   }
   return -1;
+}
+
+function computeSettingsSyncHash(settingsData) {
+  return computeMd5Hash(JSON.stringify({
+    key: String(settingsData.key || ''),
+    value: String(settingsData.value || ''),
+  }));
+}
+
+function computeMachineSyncHash(machineData) {
+  return computeMd5Hash(JSON.stringify({
+    id: String(machineData.id || ''),
+    name: String(machineData.name || ''),
+    isOnline: Boolean(machineData.isOnline),
+    currentUser: String(machineData.currentUser || ''),
+    lastUsed: String(machineData.lastUsed || ''),
+    note: String(machineData.note || ''),
+  }));
 }
 
 function computeUserSyncHash(userData) {
@@ -196,6 +214,18 @@ function doPost(e) {
       case 'getMachineLogs':
         response = handleGetMachineLogs(data);
         break;
+      case 'registerMachine':
+        response = handleRegisterMachine(data);
+        break;
+      case 'unregisterMachine':
+        response = handleUnregisterMachine(data);
+        break;
+      case 'startMachineSession':
+        response = handleStartMachineSession(data);
+        break;
+      case 'endMachineSession':
+        response = handleEndMachineSession(data);
+        break;
       case 'getUsageHistory':
         response = handleGetUsageHistory(data);
         break;
@@ -298,6 +328,12 @@ function doPost(e) {
         break;
       case 'deleteFabAcademyRow':
         response = handleDeleteFabAcademyRow(data);
+        break;
+      case 'upsertMachineRow':
+        response = handleUpsertMachineRow(data);
+        break;
+      case 'deleteMachineRow':
+        response = handleDeleteMachineRow(data);
         break;
       case 'upsertSettingsRow':
         response = handleUpsertSettingsRow(data);
@@ -1181,7 +1217,13 @@ function onMachineSheetChange(e) {
   const sheet = e.source.getActiveSheet();
   const sheetName = sheet.getName();
   
-  if (SHEET_NAMES.MACHINES.includes(sheetName)) {
+  // Dynamic check: Is this sheet in our MachineList?
+  const listSheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+  if (!listSheet) return;
+  const listValues = listSheet.getDataRange().getValues();
+  const machineIds = listValues.slice(1).map(r => r[0]);
+  
+  if (machineIds.includes(sheetName)) {
     console.log(`Processing machine logs for: ${sheetName}`);
     
     // Build RFID Map once
@@ -1341,10 +1383,201 @@ function processMachineLogs(sheet, rfidMap) {
 }
 
 // Updated handleGetMachineLogs to use processor
-function handleGetMachineLogs(data) {
-    const machines = SHEET_NAMES.MACHINES;
-    const result = [];
+function formatMachineName(id) {
+    if (!id) return '';
+    // Convert camelCase or PascalCase to "Title Case With Spaces"
+    return id.replace(/([A-Z0-9])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim();
+}
 
+/**
+ * Register a new machine.
+ */
+function handleRegisterMachine(data) {
+    const { machineId, name } = data;
+    if (!machineId) return { success: false, message: 'Missing machineId' };
+
+    const listSheet = getOrCreateSheet(SHEET_NAMES.MACHINE_LIST);
+    
+    // Ensure accurate headers including Sync Hash
+    if (listSheet.getLastRow() === 0) {
+        listSheet.appendRow(['Machine ID', 'Machine Name', 'Is Online', 'Current User', 'Last Used', 'Sync Hash']);
+    }
+
+    const values = listSheet.getDataRange().getValues();
+    const existingIndex = findRowIndexByValue(values, 0, machineId);
+
+    if (existingIndex !== -1) {
+        return { success: false, message: 'Machine ID already exists' };
+    }
+
+    const machineName = name || formatMachineName(machineId);
+    
+    // Initial data for sync hash
+    const machineData = {
+        id: machineId,
+        name: machineName,
+        isOnline: false,
+        currentUser: '',
+        lastUsed: ''
+    };
+
+    const row = [
+        machineId,
+        machineName,
+        'FALSE',
+        '',
+        '',
+        computeMachineSyncHash(machineData)
+    ];
+
+    listSheet.appendRow(row);
+
+    // Create log sheet
+    const logSheet = getOrCreateSheet(machineId);
+    if (logSheet.getLastRow() === 0) {
+        logSheet.appendRow(['RFID', 'Name', 'Command', 'Status', 'Start', 'Stop', 'Duration', 'Note']);
+    }
+
+    return { success: true, message: 'Machine registered successfully' };
+}
+
+/**
+ * Unregister a machine.
+ * Removes from MachineList.
+ */
+function handleUnregisterMachine(data) {
+    const { machineId } = data;
+    if (!machineId) return { success: false, message: 'Missing machineId' };
+
+    const listSheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+    if (!listSheet) return { success: false, message: 'MachineList sheet not found' };
+
+    const values = listSheet.getDataRange().getValues();
+    const rowIndex = findRowIndexByValue(values, 0, machineId);
+
+    if (rowIndex === -1) return { success: false, message: 'Machine not found' };
+
+    listSheet.deleteRow(rowIndex);
+    
+    // We don't delete the log sheet to preserve history, but it's now "unregistered"
+    return { success: true, message: 'Machine unregistered' };
+}
+
+/**
+ * Start a manual machine session.
+ */
+function handleStartMachineSession(data) {
+    const { machineId, userEmail, userName } = data;
+    if (!machineId || !userEmail) return { success: false, message: 'Missing machineId or userEmail' };
+
+    const listSheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+    const values = listSheet.getDataRange().getValues();
+    const rowIndex = findRowIndexByValue(values, 0, machineId);
+
+    if (rowIndex === -1) return { success: false, message: 'Machine not found' };
+
+    // Column 2 is Status (index 2)
+    const isOnline = values[rowIndex - 1][2] === 'TRUE';
+    if (isOnline) return { success: false, message: 'Machine is already in use' };
+
+    const nowIso = new Date().toISOString();
+    const displayName = userName || userEmail;
+
+    // Prepare data for hash update
+    const machineData = {
+        id: machineId,
+        name: String(values[rowIndex - 1][1]),
+        isOnline: true,
+        currentUser: displayName,
+        lastUsed: nowIso
+    };
+
+    // Update list sheet (1-based indices)
+    listSheet.getRange(rowIndex, 3).setValue('TRUE');
+    listSheet.getRange(rowIndex, 4).setValue(displayName);
+    listSheet.getRange(rowIndex, 5).setValue(nowIso);
+    
+    // Update Sync Hash (Col 6)
+    const hash = computeMachineSyncHash(machineData);
+    listSheet.getRange(rowIndex, 6).setValue(hash);
+
+    // Add log entry
+    const logSheet = getSheet(machineId);
+    if (logSheet) {
+        logSheet.appendRow(['MANUAL', displayName, 'ON', 'ON', nowIso, '', '']);
+    }
+
+    return { success: true, message: 'Session started' };
+}
+
+/**
+ * End a manual machine session.
+ */
+function handleEndMachineSession(data) {
+    const { machineId, userEmail } = data;
+    if (!machineId) return { success: false, message: 'Missing machineId' };
+
+    const listSheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+    const values = listSheet.getDataRange().getValues();
+    const rowIndex = findRowIndexByValue(values, 0, machineId);
+
+    if (rowIndex === -1) return { success: false, message: 'Machine not found' };
+
+    const nowIso = new Date().toISOString();
+
+    // Prepare data for hash update
+    const machineData = {
+        id: machineId,
+        name: String(values[rowIndex - 1][1]),
+        isOnline: false,
+        currentUser: '',
+        lastUsed: nowIso
+    };
+
+    // Update list sheet
+    listSheet.getRange(rowIndex, 3).setValue('FALSE');
+    listSheet.getRange(rowIndex, 4).setValue('');
+    listSheet.getRange(rowIndex, 5).setValue(nowIso);
+    
+    // Update Sync Hash (Col 6)
+    const hash = computeMachineSyncHash(machineData);
+    listSheet.getRange(rowIndex, 6).setValue(hash);
+
+    // Update log
+    const logSheet = getSheet(machineId);
+    if (logSheet) {
+        const logValues = logSheet.getDataRange().getValues();
+        let lastOnRow = -1;
+        for (let i = logValues.length - 1; i >= 1; i--) {
+            if (logValues[i][2] === 'ON' && !logValues[i][5]) {
+                lastOnRow = i + 1;
+                break;
+            }
+        }
+
+        if (lastOnRow !== -1) {
+            logSheet.getRange(lastOnRow, 3).setValue('OFF');
+            logSheet.getRange(lastOnRow, 4).setValue('OFF');
+            logSheet.getRange(lastOnRow, 6).setValue(nowIso);
+            
+            const start = new Date(logValues[lastOnRow - 1][4]);
+            const diffMins = Number(((new Date(nowIso) - start) / 60000).toFixed(3));
+            logSheet.getRange(lastOnRow, 7).setValue(diffMins);
+        }
+    }
+
+    return { success: true, message: 'Session ended' };
+}
+
+// Updated handleGetMachineLogs to use dynamic MachineList
+function handleGetMachineLogs(data) {
+    const listSheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+    if (!listSheet) return { success: true, data: [] };
+
+    const machineListData = listSheet.getDataRange().getValues();
+    const machineIds = machineListData.slice(1).map(row => row[0]).filter(Boolean);
+
+    const result = [];
     const usersSheet = getSheet(SHEET_NAMES.USERS);
     const usersData = usersSheet.getDataRange().getValues();
     const rfidMap = {};
@@ -1355,41 +1588,29 @@ function handleGetMachineLogs(data) {
         if (rfid) rfidMap[rfid] = name;
     }
 
-    machines.forEach(machineName => {
-        const sheet = getSheet(machineName);
+    machineIds.forEach(machineId => {
+        const sheet = getSheet(machineId);
         if (!sheet) return;
 
-        // PROCESS LOGIC HERE - ENSURE FRESH DATA
         const values = processMachineLogs(sheet, rfidMap);
-
         const logs = [];
         let isOnline = false;
         let currentUser = '';
 
-        // Skip header
         for (let i = 1; i < values.length; i++) {
             const row = values[i];
-            const rfid = row[0];
-            const name = row[1];
-            const command = row[2];
-            const status = row[3];
-            const start = row[4];
-            const stop = row[5];
-            const duration = row[6];
-
             logs.push({
-                rfid,
-                name: name || 'Unknown',
-                command,
-                status,
-                machineId: machineName,
-                start,
-                stop,
-                duration
+                rfid: row[0],
+                name: row[1] || 'Unknown',
+                command: row[2],
+                status: row[3],
+                machineId: machineId,
+                start: row[4],
+                stop: row[5],
+                duration: row[6]
             });
         }
         
-        // Determine Machine Current Status
         if (logs.length > 0) {
              const lastLog = logs[logs.length - 1];
              if (lastLog.status === 'ON') {
@@ -1399,8 +1620,8 @@ function handleGetMachineLogs(data) {
         }
 
         result.push({
-            id: machineName,
-            name: formatMachineName(machineName),
+            id: machineId,
+            name: formatMachineName(machineId),
             logs: logs.reverse(),
             isOnline,
             currentUser
@@ -2544,6 +2765,119 @@ function syncRequestsToConvex() {
  *   5. syncFabAcademyToConvex   — every 1 hour (time-based)
  *   6. onUniversalEdit          — on spreadsheet edit (onEdit)
  */
+function handleUpsertMachineRow(data) {
+  const { id } = data;
+  if (!id) return { success: false, message: 'Missing machine ID' };
+
+  const sheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+  if (!sheet) return { success: false, message: 'MachineList sheet not found' };
+
+  let values = sheet.getDataRange().getValues();
+  let hashColIndex = values[0].indexOf('Sync Hash');
+  if (hashColIndex === -1) {
+    hashColIndex = ensureHeaderColumn(sheet, 'Sync Hash');
+    values = sheet.getDataRange().getValues();
+  }
+
+  let rowIndex = findRowIndexByValue(values, 0, id);
+  if (rowIndex === -1) {
+    rowIndex = sheet.getLastRow() + 1;
+  }
+
+  const existingRow = rowIndex <= values.length ? values[rowIndex - 1].slice() : [];
+  const rowLength = Math.max(sheet.getLastColumn(), hashColIndex + 1);
+  const row = new Array(rowLength).fill('');
+  for (let i = 0; i < rowLength; i++) {
+    row[i] = existingRow[i] || '';
+  }
+
+  row[0] = String(id);
+  row[1] = String(data.name || '');
+  row[2] = Boolean(data.isOnline) ? 'TRUE' : 'FALSE';
+  row[3] = String(data.currentUser || '');
+  row[4] = String(data.lastUsed || '');
+  row[hashColIndex] = computeMachineSyncHash(data);
+
+  sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
+
+  // If session is ending (isOnline is FALSE) and there's a note, update the log sheet
+  if (!Boolean(data.isOnline) && data.note) {
+    const logSheet = getSheet(id);
+    if (logSheet) {
+      const logValues = logSheet.getDataRange().getValues();
+      let lastOnRow = -1;
+      // Search for the last "ON" session that doesn't have a "Stop" time yet
+      for (let i = logValues.length - 1; i >= 1; i--) {
+        if (logValues[i][2] === 'ON' && !logValues[i][5]) {
+          lastOnRow = i + 1;
+          break;
+        }
+      }
+
+      if (lastOnRow !== -1) {
+        logSheet.getRange(lastOnRow, 3).setValue('OFF');
+        logSheet.getRange(lastOnRow, 4).setValue('OFF');
+        logSheet.getRange(lastOnRow, 6).setValue(data.lastUsed || new Date().toISOString());
+        logSheet.getRange(lastOnRow, 8).setValue(data.note); // Col 8 is Note
+      }
+    }
+  }
+
+  return { success: true };
+}
+
+function handleDeleteMachineRow(data) {
+  const { id } = data;
+  if (!id) return { success: false, message: 'Missing machine ID' };
+  const sheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+  if (!sheet) return { success: false, message: 'MachineList sheet not found' };
+  const values = sheet.getDataRange().getValues();
+  const rowIndex = findRowIndexByValue(values, 0, id);
+  if (rowIndex === -1) return { success: true };
+  sheet.deleteRow(rowIndex);
+  return { success: true };
+}
+
+function syncMachinesToConvex(force = false) {
+  const sheet = getSheet(SHEET_NAMES.MACHINE_LIST);
+  if (!sheet) return;
+  
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const hashColIndex = headers.indexOf('Sync Hash');
+  
+  let synced = 0;
+  let errors = 0;
+  
+  values.slice(1).forEach((row, i) => {
+    const docId = row[0];
+    if (!docId) return;
+    
+    const machineData = {
+      id: String(row[0]),
+      name: String(row[1]),
+      isOnline: row[2] === 'TRUE',
+      currentUser: String(row[3]),
+      lastUsed: String(row[4]),
+    };
+    
+    const currentHash = computeMachineSyncHash(machineData);
+    const storedHash = hashColIndex !== -1 ? String(row[hashColIndex]) : '';
+    
+    if (!force && storedHash === currentHash) return;
+    
+    try {
+      postToConvex('/syncRow', { table: 'machines', key: 'id', keyValue: String(docId), data: machineData });
+      if (hashColIndex !== -1) {
+        sheet.getRange(i + 2, hashColIndex + 1).setValue(currentHash);
+      }
+      synced++;
+    } catch (e) { errors++; }
+    if (i > 0 && i % 5 === 0) Utilities.sleep(300);
+  });
+  
+  console.log('Synced ' + synced + ' machines to Convex (' + errors + ' errors).');
+}
 function installTriggers() {
   // Delete ALL existing triggers first to avoid duplicates
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
@@ -2553,15 +2887,18 @@ function installTriggers() {
   ScriptApp.newTrigger('syncInventoryToConvex').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('syncUsersToConvex').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('syncRequestsToConvex').timeBased().everyMinutes(30).create();
+  ScriptApp.newTrigger('syncMachinesToConvex').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('syncHomeToConvex').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('syncFabAcademyToConvex').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('onUniversalEdit').forSpreadsheet(ss).onEdit().create();
 
-  console.log('✅ All 6 triggers installed successfully!');
+  console.log('✅ All 7 triggers installed successfully!');
   console.log('Running initial full sync now...');
 
   syncInventoryToConvex();
   syncUsersToConvex();
+  syncRequestsToConvex();
+  syncMachinesToConvex();
   syncHomeToConvex(true);
   syncFabAcademyToConvex(true);
 

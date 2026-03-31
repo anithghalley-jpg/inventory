@@ -4,11 +4,14 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { MachineCard } from '@/components/MachineCard';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
@@ -250,6 +253,11 @@ export default function TeamDashboard() {
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
     const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
 
+    // Machine Logic State
+    const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
+    const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
+    const [fabricationNote, setFabricationNote] = useState('');
+
     // Community Search & Filter Logic
     const availableTags = useMemo(() => {
         const tags = new Set<string>();
@@ -366,6 +374,11 @@ export default function TeamDashboard() {
     const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
     const cancelCheckoutRequestMut = useMutation(api.requests.cancelCheckoutRequest);
     const toggleLaptopMut = useMutation(api.users.toggleLaptop);
+
+    // Machine Queries & Mutations
+    const convexMachines = useQuery(api.machines.getAll);
+    const startMachineMutation = useMutation(api.machines.startSession);
+    const endMachineMutation = useMutation(api.machines.endSession);
 
     useEffect(() => {
         if (!convexUsers || !convexRequests) return;
@@ -587,6 +600,49 @@ export default function TeamDashboard() {
         );
     };
 
+    // Machine Session Handlers
+    const handleStartMachine = async (id: string) => {
+        try {
+            await startMachineMutation({
+                machineId: id,
+                userEmail: user?.email || '',
+                userName: user?.name || '',
+                scriptUrl: SCRIPT_URL
+            });
+            toast.success("Machine Session Started");
+        } catch (e: any) {
+            toast.error(e.message || "Failed to start machine");
+        }
+    };
+
+    const handleEndMachineClick = (id: string) => {
+        setMachineToEnd(id);
+        setFabricationNote('');
+        setShowMachineNoteModal(true);
+    };
+
+    const handleConfirmEndMachine = async () => {
+        if (!machineToEnd || !fabricationNote.trim()) return;
+
+        const id = machineToEnd;
+        const note = fabricationNote;
+
+        setShowMachineNoteModal(false);
+        setMachineToEnd(null);
+        setFabricationNote('');
+
+        try {
+            await endMachineMutation({
+                machineId: id,
+                note: note,
+                scriptUrl: SCRIPT_URL
+            });
+            toast.success("Session Ended.");
+        } catch (e: any) {
+            toast.error(e.message || "Failed to end machine session");
+        }
+    };
+
     // Helpers
     const formatTime = (minutes: number) => {
         const hrs = Math.floor(minutes / 60);
@@ -716,6 +772,9 @@ export default function TeamDashboard() {
                             </TabsTrigger>
                             <TabsTrigger value="monitor" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <Monitor className="w-4 h-4 mr-2" /> Monitor
+                            </TabsTrigger>
+                            <TabsTrigger value="machines" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <Zap className="w-4 h-4 mr-2" /> Machines
                             </TabsTrigger>
                         </TabsList>
                     </div>
@@ -1348,10 +1407,215 @@ export default function TeamDashboard() {
                             </div>
                         </div>
                     </TabsContent>
+
+                    {/* --- MONITOR TAB --- */}
+                    <TabsContent value="monitor" className="space-y-6">
+                        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center gap-4 mb-6">
+                            <div className="bg-white p-2 rounded-lg shadow-sm border border-blue-100">
+                                <Monitor className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div>
+                                <h2 className="font-bold text-blue-900">Real-time Monitor</h2>
+                                <p className="text-sm text-blue-700">View team members currently in the lab.</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Online Team Members
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                                {allUsers.filter(u => u.laptopStatus === 'Online').map(u => {
+                                    const dynamic = getDynamicGlow(u.email || '');
+                                    return (
+                                        <Card 
+                                            key={u.id} 
+                                            style={{
+                                                '--glow': dynamic.glow,
+                                                '--border': dynamic.border
+                                            } as React.CSSProperties}
+                                            className="p-4 border-l-4 border-l-[var(--border)] flex flex-col gap-1 shadow-[0_4px_12px_var(--glow)] relative group hover:scale-[1.02] transition-all"
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <p className="font-bold text-sm truncate pr-6" title={u.name}>{u.name}</p>
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-6 w-6 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                onClick={() => handleForceTurnOff(u.email)}
+                                                            >
+                                                                <XCircle className="w-4 h-4" />
+                                                            </Button>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent><p>Force Log Out</p></TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground truncate" title={u.email}>{u.email}</p>
+                                            <div className="mt-2 flex items-center justify-between">
+                                                <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
+                                                    Online
+                                                </span>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
+                                {allUsers.filter(u => u.laptopStatus === 'Online').length === 0 && (
+                                    <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500">
+                                        <Monitor className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                                        <p>No team members are currently online.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </TabsContent>
+
+                    {/* --- MACHINES TAB (Team Edition) --- */}
+                    <TabsContent value="machines" className="space-y-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            {/* LEFT COLUMN: MACHINES (Span 8) */}
+                            <div className="lg:col-span-8 space-y-6">
+                                <div className="mb-6">
+                                    <h2 className="text-2xl font-black font-display text-slate-900 border-b-2 border-emerald-500 pb-1 w-fit mb-2 uppercase">Machine Status</h2>
+                                    <p className="text-muted-foreground text-sm max-w-2xl">
+                                        Monitor and manage lab machines. Start or end sessions for yourself or track availability.
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {(convexMachines || []).map((m) => {
+                                        const machine = {
+                                            id: m.machineId,
+                                            name: m.name,
+                                            isOnline: m.status === "ENGAGED",
+                                            currentUser: m.currentUser || "",
+                                        };
+                                        const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
+                                        const isEngaged = machine.isOnline;
+
+                                        return (
+                                            <MachineCard
+                                                key={machine.id}
+                                                machine={machine}
+                                                hideHistory={true}
+                                                actionButton={
+                                                    isUserOperating ? (
+                                                        <Button 
+                                                            className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold h-10 shadow-sm"
+                                                            onClick={() => handleEndMachineClick(machine.id)}
+                                                        >
+                                                            End My Session
+                                                        </Button>
+                                                    ) : (
+                                                        <Button 
+                                                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
+                                                            disabled={isEngaged}
+                                                            onClick={() => handleStartMachine(machine.id)}
+                                                        >
+                                                            {isEngaged ? 'Machine Occupied' : 'Start Session'}
+                                                        </Button>
+                                                    )
+                                                }
+                                            />
+                                        );
+                                    })}
+                                    {convexMachines?.length === 0 && (
+                                        <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
+                                            <Zap className="w-12 h-12 text-slate-200 mx-auto mb-4 opacity-20" />
+                                            <p className="text-slate-400 font-medium">No machines registered in Convex.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* RIGHT COLUMN: ONLINE STUDENTS (Span 4) */}
+                            <div className="lg:col-span-4 space-y-6">
+                                <div>
+                                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                        <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        Online Students
+                                    </h3>
+                                    <div className="flex flex-col gap-4">
+                                        {allUsers.filter((u: any) => u.laptopStatus === 'Online' && u.role === 'USER').length > 0 ? (
+                                            allUsers.filter((u: any) => u.laptopStatus === 'Online' && u.role === 'USER').map(u => (
+                                                <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 flex flex-col gap-1 shadow-sm relative group overflow-hidden">
+                                                    <p className="font-bold text-sm truncate pr-6" title={u.name}>{u.name}</p>
+                                                    <p className="text-xs text-muted-foreground truncate" title={u.email}>{u.email}</p>
+                                                    <div className="flex justify-between items-center mt-2">
+                                                        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
+                                                            Online
+                                                        </span>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            onClick={() => handleForceTurnOff(u.email)}
+                                                        >
+                                                            <XCircle className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
+                                                </Card>
+                                            ))
+                                        ) : (
+                                            <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs">
+                                                No students online.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </TabsContent>
                 </Tabs>
             </main>
 
             {/* --- DIALOGS --- */}
+
+            {/* Machine Note Modal */}
+            <Dialog open={showMachineNoteModal} onOpenChange={setShowMachineNoteModal}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                            <Scissors className="w-5 h-5 text-emerald-500" />
+                            What did you fabricate?
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="fabrication-note" className="text-slate-700 font-medium">
+                                Please share a brief note about your work. This is mandatory to complete the session.
+                            </Label>
+                            <Textarea
+                                id="fabrication-note"
+                                placeholder="Example: Cut acrylic for robot chassis, 3D printed sensor bracket..."
+                                className="h-32 resize-none border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 transition-all rounded-xl"
+                                value={fabricationNote}
+                                onChange={(e) => setFabricationNote(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setShowMachineNoteModal(false)}
+                            className="rounded-xl border-slate-200"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            onClick={handleConfirmEndMachine}
+                            disabled={!fabricationNote.trim()}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 h-10"
+                        >
+                            Submit & End Session
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* ITEM DETAILS DIALOG (New) */}
             <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>

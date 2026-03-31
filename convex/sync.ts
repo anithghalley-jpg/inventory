@@ -58,8 +58,22 @@ export const syncTable = internalMutation({
       for (const doc of existing) {
         await ctx.db.delete(doc._id);
       }
+    } else if (table === "machines") {
+      const existing = await ctx.db.query("machines").collect();
+      for (const doc of existing) {
+        await ctx.db.delete(doc._id);
+      }
       for (const item of data) {
-        await ctx.db.insert("settings", item);
+        // Sanitize machine data to match schema
+        const sanitized = {
+          machineId: item.machineId || item.id,
+          name: item.name,
+          status: item.status || (item.isOnline ? "ENGAGED" : "AVAILABLE"),
+          currentUser: item.currentUser,
+          lastUsed: item.lastUsed,
+          lastNote: item.lastNote,
+        };
+        await ctx.db.insert("machines", sanitized);
       }
     }
   },
@@ -103,6 +117,19 @@ export const syncRow = internalMutation({
         .first();
       if (existing) await ctx.db.patch(existing._id, data);
       else await ctx.db.insert("settings", data);
+    } else if (table === "machines") {
+      // Sanitize machine data to match schema
+      const sanitized = {
+        machineId: data.machineId || data.id,
+        name: data.name,
+        status: data.status || (data.isOnline ? "ENGAGED" : "AVAILABLE"),
+        currentUser: data.currentUser,
+        lastUsed: data.lastUsed,
+        lastNote: data.lastNote,
+      };
+      existing = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", keyValue)).first();
+      if (existing) await ctx.db.patch(existing._id, sanitized);
+      else await ctx.db.insert("machines", sanitized);
     }
   }
 });
@@ -131,6 +158,8 @@ export const deleteRow = internalMutation({
         .query("settings")
         .withIndex("by_adminSettingsTitle", q => q.eq("adminSettingsTitle", keyValue))
         .first();
+    } else if (table === "machines") {
+      existing = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", keyValue)).first();
     }
     
     if (existing) {
@@ -204,6 +233,16 @@ export const deleteMissingRows = internalMutation({
       const existing = await ctx.db.query("settings").collect();
       for (const doc of existing) {
         const primaryKey = String(doc.adminSettingsTitle || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "machines") {
+      const existing = await ctx.db.query("machines").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.machineId || '');
         if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
           await ctx.db.delete(doc._id);
         } else {

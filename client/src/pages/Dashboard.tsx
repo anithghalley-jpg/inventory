@@ -5,10 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
@@ -24,6 +26,7 @@ import { getTagStyle } from '@/lib/tagUtils';
 import { SCRIPT_URL } from '@/config';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { MachineCard, MachineData } from '@/components/MachineCard';
 
 const glowStyles = [
   {
@@ -233,9 +236,13 @@ export default function Dashboard() {
   const [newItemNameRequest, setNewItemNameRequest] = useState('');
   const [newItemRemarksRequest, setNewItemRemarksRequest] = useState('');
 
-  // Laptop Tracking State
   const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
   const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
+
+  // Machine Logic
+  const convexMachines = useQuery(api.machines.getAll);
+  const startMachineMutation = useMutation(api.machines.startSession);
+  const endMachineMutation = useMutation(api.machines.endSession);
 
   // Sync state with user context updates
   useEffect(() => {
@@ -244,6 +251,52 @@ export default function Dashboard() {
       setTotalScreenTime(user.totalTime || 0);
     }
   }, [user]);
+
+  const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
+  const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
+  const [fabricationNote, setFabricationNote] = useState('');
+
+  const handleStartMachine = async (id: string) => {
+    try {
+      await startMachineMutation({
+        machineId: id,
+        userEmail: user?.email || '',
+        userName: user?.name || '',
+        scriptUrl: SCRIPT_URL
+      });
+      toast.success('Session started successfully');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to start session');
+    }
+  };
+
+  const handleEndMachineClick = (id: string) => {
+    setMachineToEnd(id);
+    setFabricationNote('');
+    setShowMachineNoteModal(true);
+  };
+
+  const handleConfirmEndMachine = async () => {
+    if (!machineToEnd) return;
+    if (!fabricationNote.trim()) {
+      toast.error('Please share what you have fabricated');
+      return;
+    }
+
+    try {
+      await endMachineMutation({
+        machineId: machineToEnd,
+        note: fabricationNote.trim(),
+        scriptUrl: SCRIPT_URL
+      });
+      setShowMachineNoteModal(false);
+      setMachineToEnd(null);
+      toast.success('Session ended successfully');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to end session');
+    }
+  };
+
 
 
   // 1. Fetch Data on Mount
@@ -640,7 +693,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="store" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-3 bg-muted">
+          <TabsList className="grid w-full max-w-md grid-cols-4 bg-muted">
             <TabsTrigger value="store" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               Store
@@ -653,6 +706,10 @@ export default function Dashboard() {
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               Community
+            </TabsTrigger>
+            <TabsTrigger value="machines" className="flex items-center gap-2">
+              <Zap className="w-4 h-4" />
+              Machines
             </TabsTrigger>
           </TabsList>
 
@@ -1084,6 +1141,102 @@ export default function Dashboard() {
               </div>
             </Card>
           </TabsContent>
+
+          {/* TAB 4: MACHINES */}
+          <TabsContent value="machines" className="space-y-6">
+            <div className="mb-6">
+              <h2 className="text-2xl font-black font-display text-slate-900 border-b-2 border-emerald-500 pb-1 w-fit mb-2">MACHINE STATUS</h2>
+              <p className="text-muted-foreground text-sm max-w-2xl">
+                Monitor machine availability and start your session manually. Please ensure you have been trained to use the machines safely.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {(convexMachines || []).map((m) => {
+                const machine = {
+                  id: m.machineId,
+                  name: m.name,
+                  isOnline: m.status === "ENGAGED",
+                  currentUser: m.currentUser || "",
+                };
+                const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
+                const isEngaged = machine.isOnline;
+
+                return (
+                  <MachineCard
+                    key={machine.id}
+                    machine={machine}
+                    actionButton={
+                      isUserOperating ? (
+                        <Button 
+                          className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold h-10 shadow-sm"
+                          onClick={() => handleEndMachineClick(machine.id)}
+                        >
+                          End My Session
+                        </Button>
+                      ) : (
+                        <Button 
+                          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
+                          disabled={isEngaged}
+                          onClick={() => handleStartMachine(machine.id)}
+                        >
+                          {isEngaged ? 'Machine Occupied' : 'Start Session'}
+                        </Button>
+                      )
+                    }
+                  />
+                );
+              })}
+              {convexMachines?.length === 0 && (
+                <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
+                  <Zap className="w-12 h-12 text-slate-200 mx-auto mb-4 opacity-20" />
+                  <p className="text-slate-400 font-medium">No machines are currently registered</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Machine Note Modal */}
+          <Dialog open={showMachineNoteModal} onOpenChange={setShowMachineNoteModal}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                  <Scissors className="w-5 h-5 text-emerald-500" />
+                  What did you fabricate?
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fabrication-note" className="text-slate-700 font-medium">
+                    Please share a brief note about your work. This is mandatory to complete the session.
+                  </Label>
+                  <Textarea
+                    id="fabrication-note"
+                    placeholder="Example: Cut acrylic for robot chassis, 3D printed sensor bracket..."
+                    className="h-32 resize-none border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 transition-all rounded-xl"
+                    value={fabricationNote}
+                    onChange={(e) => setFabricationNote(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowMachineNoteModal(false)}
+                  className="rounded-xl border-slate-200"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleConfirmEndMachine}
+                  disabled={!fabricationNote.trim()}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 h-10"
+                >
+                  Submit & End Session
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Return Item Modal */}
           <Dialog open={!!returnItem} onOpenChange={(open) => !open && setReturnItem(null)}>
