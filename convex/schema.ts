@@ -73,6 +73,14 @@ export default defineSchema({
     currentUser: v.optional(v.string()),
     lastUsed: v.optional(v.string()),
     lastNote: v.optional(v.string()),
+    waitingList: v.optional(v.array(v.object({
+        userEmail: v.string(),
+        userName: v.string(),
+        note: v.string(),
+        timestamp: v.number(),
+    }))),
+    currentTurnEmail: v.optional(v.string()),
+    currentTurnName: v.optional(v.string()),
   }).index("by_machineId", ["machineId"]),
   
   machineLogs: defineTable({

@@ -2055,7 +2055,8 @@ export default function AdminPanel() {
                         id: m.machineId,
                         name: m.name,
                         isOnline: m.status === "ENGAGED",
-                        currentUser: m.currentUser || ""
+                        currentUser: m.currentUser || "",
+                        waitingList: m.waitingList || [],
                       };
                       return (
                         <div key={machine.id}>

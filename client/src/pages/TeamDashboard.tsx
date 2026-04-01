@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { MachineCard } from '@/components/MachineCard';
+import { MachineTurnNotification } from '@/components/MachineTurnNotification';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
@@ -1408,169 +1409,68 @@ export default function TeamDashboard() {
                         </div>
                     </TabsContent>
 
-                    {/* --- MONITOR TAB --- */}
-                    <TabsContent value="monitor" className="space-y-6">
-                        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center gap-4 mb-6">
-                            <div className="bg-white p-2 rounded-lg shadow-sm border border-blue-100">
-                                <Monitor className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                                <h2 className="font-bold text-blue-900">Real-time Monitor</h2>
-                                <p className="text-sm text-blue-700">View team members currently in the lab.</p>
-                            </div>
-                        </div>
 
-                        <div>
-                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-                                Online Team Members
-                            </h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                                {allUsers.filter(u => u.laptopStatus === 'Online').map(u => {
-                                    const dynamic = getDynamicGlow(u.email || '');
+                    {/* --- MACHINES TAB (Team Edition) --- */}
+                    <TabsContent value="machines" className="space-y-6">
+                        <div className="space-y-6">
+                            <div className="mb-6">
+                                <h2 className="text-2xl font-black font-display text-slate-900 border-b-2 border-emerald-500 pb-1 w-fit mb-2 uppercase">Machine Status</h2>
+                                <p className="text-muted-foreground text-sm max-w-2xl">
+                                    Monitor and manage lab machines. Start or end sessions for yourself or track availability.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {(convexMachines || []).map((m) => {
+                                    const machine = {
+                                        id: m.machineId,
+                                        name: m.name,
+                                        isOnline: m.status === "ENGAGED",
+                                        currentUser: m.currentUser || "",
+                                        waitingList: m.waitingList || [],
+                                        currentTurnEmail: m.currentTurnEmail,
+                                        currentTurnName: m.currentTurnName,
+                                    };
+                                    const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
+                                    const isEngaged = machine.isOnline;
+
                                     return (
-                                        <Card 
-                                            key={u.id} 
-                                            style={{
-                                                '--glow': dynamic.glow,
-                                                '--border': dynamic.border
-                                            } as React.CSSProperties}
-                                            className="p-4 border-l-4 border-l-[var(--border)] flex flex-col gap-1 shadow-[0_4px_12px_var(--glow)] relative group hover:scale-[1.02] transition-all"
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <p className="font-bold text-sm truncate pr-6" title={u.name}>{u.name}</p>
-                                                <TooltipProvider>
-                                                    <Tooltip>
-                                                        <TooltipTrigger asChild>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-6 w-6 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                onClick={() => handleForceTurnOff(u.email)}
-                                                            >
-                                                                <XCircle className="w-4 h-4" />
-                                                            </Button>
-                                                        </TooltipTrigger>
-                                                        <TooltipContent><p>Force Log Out</p></TooltipContent>
-                                                    </Tooltip>
-                                                </TooltipProvider>
-                                            </div>
-                                            <p className="text-xs text-muted-foreground truncate" title={u.email}>{u.email}</p>
-                                            <div className="mt-2 flex items-center justify-between">
-                                                <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
-                                                    Online
-                                                </span>
-                                            </div>
-                                        </Card>
+                                        <MachineCard
+                                            key={machine.id}
+                                            machine={machine}
+                                            hideHistory={true}
+                                            actionButton={
+                                                isUserOperating ? (
+                                                    <Button 
+                                                        className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold h-10 shadow-sm"
+                                                        onClick={() => handleEndMachineClick(machine.id)}
+                                                    >
+                                                        End My Session
+                                                    </Button>
+                                                ) : (
+                                                    <Button 
+                                                        className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
+                                                        disabled={isEngaged || (!!machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? ""))}
+                                                        onClick={() => handleStartMachine(machine.id)}
+                                                    >
+                                                        {isEngaged ? 'Machine Occupied' : (machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? "") ? 'Reserved' : 'Start Session')}
+                                                    </Button>
+                                                )
+                                            }
+                                        />
                                     );
                                 })}
-                                {allUsers.filter(u => u.laptopStatus === 'Online').length === 0 && (
-                                    <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500">
-                                        <Monitor className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                                        <p>No team members are currently online.</p>
+                                {convexMachines?.length === 0 && (
+                                    <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
+                                        <Zap className="w-12 h-12 text-slate-200 mx-auto mb-4 opacity-20" />
+                                        <p className="text-slate-400 font-medium">No machines registered in Convex.</p>
                                     </div>
                                 )}
                             </div>
                         </div>
                     </TabsContent>
-
-                    {/* --- MACHINES TAB (Team Edition) --- */}
-                    <TabsContent value="machines" className="space-y-6">
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                            {/* LEFT COLUMN: MACHINES (Span 8) */}
-                            <div className="lg:col-span-8 space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl font-black font-display text-slate-900 border-b-2 border-emerald-500 pb-1 w-fit mb-2 uppercase">Machine Status</h2>
-                                    <p className="text-muted-foreground text-sm max-w-2xl">
-                                        Monitor and manage lab machines. Start or end sessions for yourself or track availability.
-                                    </p>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {(convexMachines || []).map((m) => {
-                                        const machine = {
-                                            id: m.machineId,
-                                            name: m.name,
-                                            isOnline: m.status === "ENGAGED",
-                                            currentUser: m.currentUser || "",
-                                        };
-                                        const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
-                                        const isEngaged = machine.isOnline;
-
-                                        return (
-                                            <MachineCard
-                                                key={machine.id}
-                                                machine={machine}
-                                                hideHistory={true}
-                                                actionButton={
-                                                    isUserOperating ? (
-                                                        <Button 
-                                                            className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold h-10 shadow-sm"
-                                                            onClick={() => handleEndMachineClick(machine.id)}
-                                                        >
-                                                            End My Session
-                                                        </Button>
-                                                    ) : (
-                                                        <Button 
-                                                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
-                                                            disabled={isEngaged}
-                                                            onClick={() => handleStartMachine(machine.id)}
-                                                        >
-                                                            {isEngaged ? 'Machine Occupied' : 'Start Session'}
-                                                        </Button>
-                                                    )
-                                                }
-                                            />
-                                        );
-                                    })}
-                                    {convexMachines?.length === 0 && (
-                                        <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
-                                            <Zap className="w-12 h-12 text-slate-200 mx-auto mb-4 opacity-20" />
-                                            <p className="text-slate-400 font-medium">No machines registered in Convex.</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* RIGHT COLUMN: ONLINE STUDENTS (Span 4) */}
-                            <div className="lg:col-span-4 space-y-6">
-                                <div>
-                                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                        <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-                                        Online Students
-                                    </h3>
-                                    <div className="flex flex-col gap-4">
-                                        {allUsers.filter((u: any) => u.laptopStatus === 'Online' && u.role === 'USER').length > 0 ? (
-                                            allUsers.filter((u: any) => u.laptopStatus === 'Online' && u.role === 'USER').map(u => (
-                                                <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 flex flex-col gap-1 shadow-sm relative group overflow-hidden">
-                                                    <p className="font-bold text-sm truncate pr-6" title={u.name}>{u.name}</p>
-                                                    <p className="text-xs text-muted-foreground truncate" title={u.email}>{u.email}</p>
-                                                    <div className="flex justify-between items-center mt-2">
-                                                        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
-                                                            Online
-                                                        </span>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            onClick={() => handleForceTurnOff(u.email)}
-                                                        >
-                                                            <XCircle className="w-4 h-4" />
-                                                        </Button>
-                                                    </div>
-                                                </Card>
-                                            ))
-                                        ) : (
-                                            <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs">
-                                                No students online.
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </TabsContent>
                 </Tabs>
+                <MachineTurnNotification scriptUrl={SCRIPT_URL} />
             </main>
 
             {/* --- DIALOGS --- */}

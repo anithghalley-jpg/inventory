@@ -9,14 +9,7 @@ export const getAll = query({
   },
 });
 
-function formatMachineForSheets(machine: {
-  machineId: string;
-  name: string;
-  status: string;
-  currentUser?: string;
-  lastUsed?: string;
-  lastNote?: string;
-}) {
+function formatMachineForSheets(machine: any) {
   return {
     id: machine.machineId,
     name: machine.name,
@@ -91,11 +84,24 @@ export const startSession = mutation({
     if (!machine) throw new Error("Machine not found");
     if (machine.status === "ENGAGED") throw new Error("Machine is already in use");
 
+    // check if it's RESERVED for someone else
+    if (machine.status === "RESERVED" && machine.currentTurnEmail && machine.currentTurnEmail !== args.userEmail) {
+      throw new Error(`Machine is reserved for ${machine.currentTurnName || machine.currentTurnEmail}`);
+    }
+
     const now = new Date().toISOString();
+    
+    // Manage waiting list: If the user starting the session is in the queue, remove them.
+    const waitingList = machine.waitingList || [];
+    const newWaitingList = waitingList.filter(u => u.userEmail !== args.userEmail);
+
     const patch = {
       status: "ENGAGED",
       currentUser: args.userName || args.userEmail,
       lastUsed: now,
+      waitingList: newWaitingList,
+      currentTurnEmail: undefined,
+      currentTurnName: undefined,
     };
 
     await ctx.db.patch(machine._id, patch);
@@ -110,13 +116,16 @@ export const startSession = mutation({
     });
     
     // Optional: Keep Sheets list in sync for high-level status
-    const updatedMachine = { ...machine, ...patch };
     await enqueueSheetsSyncJob(ctx, {
       scriptUrl: args.scriptUrl,
       entityType: "machines",
       entityKey: args.machineId,
       operation: "upsert",
-      payload: formatMachineForSheets(updatedMachine),
+      payload: formatMachineForSheets({
+        machineId: args.machineId,
+        name: machine.name,
+        ...patch
+      }),
     });
 
     return { success: true };
@@ -151,10 +160,25 @@ export const endSession = mutation({
     if (!machine) throw new Error("Machine not found");
 
     const now = new Date().toISOString();
+    
+    // Check if there's someone in the waiting list
+    const waitingList = machine.waitingList || [];
+    let status = "AVAILABLE";
+    let currentTurnEmail = undefined;
+    let currentTurnName = undefined;
+
+    if (waitingList.length > 0) {
+      status = "RESERVED";
+      currentTurnEmail = waitingList[0].userEmail;
+      currentTurnName = waitingList[0].userName;
+    }
+
     const patch = {
-      status: "AVAILABLE",
+      status: status,
       currentUser: "",
       lastNote: args.note,
+      currentTurnEmail: currentTurnEmail,
+      currentTurnName: currentTurnName,
     };
 
     await ctx.db.patch(machine._id, patch);
@@ -179,13 +203,16 @@ export const endSession = mutation({
     await pruneLogs(ctx, args.machineId);
     
     // Optional: Keep Sheets list in sync
-    const updatedMachine = { ...machine, ...patch };
     await enqueueSheetsSyncJob(ctx, {
       scriptUrl: args.scriptUrl,
       entityType: "machines",
       entityKey: args.machineId,
       operation: "upsert",
-      payload: formatMachineForSheets(updatedMachine),
+      payload: formatMachineForSheets({
+        machineId: args.machineId,
+        name: machine.name,
+        ...patch
+      }),
     });
 
     return { success: true };
@@ -208,6 +235,108 @@ export const deleteLog = mutation({
   args: { logId: v.id("machineLogs") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.logId);
+    return { success: true };
+  },
+});
+
+const MAX_WAITING_LIST = 5;
+
+export const bookMachine = mutation({
+  args: {
+    machineId: v.string(),
+    userEmail: v.string(),
+    userName: v.string(),
+    note: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const machine = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", args.machineId)).first();
+    if (!machine) throw new Error("Machine not found");
+    if (machine.status !== "ENGAGED") throw new Error("Machine is available; start a session instead");
+
+    const waitingList = machine.waitingList || [];
+    if (waitingList.length >= MAX_WAITING_LIST) throw new Error("Waiting list is full (max 5)");
+    
+    if (waitingList.some(u => u.userEmail === args.userEmail)) {
+        throw new Error("You are already in the waiting list");
+    }
+
+    const newWaitingList = [
+        ...waitingList,
+        {
+            userEmail: args.userEmail,
+            userName: args.userName,
+            note: args.note,
+            timestamp: Date.now(),
+        }
+    ];
+
+    await ctx.db.patch(machine._id, { waitingList: newWaitingList });
+    return { success: true };
+  },
+});
+
+export const cancelBooking = mutation({
+  args: {
+    machineId: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const machine = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", args.machineId)).first();
+    if (!machine) throw new Error("Machine not found");
+
+    const waitingList = machine.waitingList || [];
+    const newWaitingList = waitingList.filter(u => u.userEmail !== args.userEmail);
+
+    if (newWaitingList.length !== waitingList.length) {
+        // If the user we removed was the one with the turn, we need to pass it
+        let patch: any = { waitingList: newWaitingList };
+        if (machine.currentTurnEmail === args.userEmail) {
+            if (newWaitingList.length > 0) {
+                patch.currentTurnEmail = newWaitingList[0].userEmail;
+                patch.currentTurnName = newWaitingList[0].userName;
+                patch.status = "RESERVED";
+            } else {
+                patch.currentTurnEmail = undefined;
+                patch.currentTurnName = undefined;
+                patch.status = "AVAILABLE";
+            }
+        }
+        await ctx.db.patch(machine._id, patch);
+    }
+    return { success: true };
+  },
+});
+
+export const passTurn = mutation({
+  args: {
+    machineId: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const machine = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", args.machineId)).first();
+    if (!machine) throw new Error("Machine not found");
+    if (machine.currentTurnEmail !== args.userEmail) throw new Error("It's not your turn");
+
+    const waitingList = machine.waitingList || [];
+    // Remove current user from waiting list
+    const newWaitingList = waitingList.slice(1);
+
+    if (newWaitingList.length > 0) {
+        await ctx.db.patch(machine._id, {
+            waitingList: newWaitingList,
+            currentTurnEmail: newWaitingList[0].userEmail,
+            currentTurnName: newWaitingList[0].userName,
+            status: "RESERVED",
+        });
+    } else {
+        await ctx.db.patch(machine._id, {
+            waitingList: [],
+            currentTurnEmail: undefined,
+            currentTurnName: undefined,
+            status: "AVAILABLE",
+        });
+    }
+
     return { success: true };
   },
 });

@@ -27,6 +27,7 @@ import { SCRIPT_URL } from '@/config';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { MachineCard, MachineData } from '@/components/MachineCard';
+import { MachineTurnNotification } from '@/components/MachineTurnNotification';
 
 const glowStyles = [
   {
@@ -1158,6 +1159,9 @@ export default function Dashboard() {
                   name: m.name,
                   isOnline: m.status === "ENGAGED",
                   currentUser: m.currentUser || "",
+                  waitingList: m.waitingList || [],
+                  currentTurnEmail: m.currentTurnEmail,
+                  currentTurnName: m.currentTurnName,
                 };
                 const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
                 const isEngaged = machine.isOnline;
@@ -1166,6 +1170,7 @@ export default function Dashboard() {
                   <MachineCard
                     key={machine.id}
                     machine={machine}
+                    hideHistory={true}
                     actionButton={
                       isUserOperating ? (
                         <Button 
@@ -1177,10 +1182,10 @@ export default function Dashboard() {
                       ) : (
                         <Button 
                           className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
-                          disabled={isEngaged}
+                          disabled={isEngaged || (!!machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? ""))}
                           onClick={() => handleStartMachine(machine.id)}
                         >
-                          {isEngaged ? 'Machine Occupied' : 'Start Session'}
+                          {isEngaged ? 'Machine Occupied' : (machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? "") ? 'Reserved' : 'Start Session')}
                         </Button>
                       )
                     }
@@ -1390,6 +1395,7 @@ export default function Dashboard() {
             </DialogContent>
           </Dialog>
 
+          <MachineTurnNotification scriptUrl={SCRIPT_URL} />
         </Tabs>
       </main >
     </div >
