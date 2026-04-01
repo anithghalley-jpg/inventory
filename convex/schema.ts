@@ -66,6 +66,16 @@ export default defineSchema({
     remarks: v.string(),
   }).index("by_entryId", ["entryId"]),
   
+  fabInterns: defineTable({
+    entryId: v.string(),
+    studentName: v.string(),
+    imageUrl: v.string(),
+    internshipYear: v.string(),
+    videoUrl: v.string(),
+    documentationUrl: v.string(),
+    remarks: v.string(),
+  }).index("by_entryId", ["entryId"]),
+  
   machines: defineTable({
     machineId: v.string(),
     name: v.string(),
@@ -109,6 +119,7 @@ export default defineSchema({
       v.literal("inventory"),
       v.literal("home"),
       v.literal("fabAcademy"),
+      v.literal("fabInterns"),
       v.literal("settings"),
       v.literal("machines"),
     ),

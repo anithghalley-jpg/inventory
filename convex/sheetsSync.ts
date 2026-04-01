@@ -8,7 +8,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 
-type SyncEntityType = "users" | "requests" | "inventory" | "home" | "fabAcademy" | "machines" | "settings";
+type SyncEntityType = "users" | "requests" | "inventory" | "home" | "fabAcademy" | "fabInterns" | "machines" | "settings";
 type SyncOperation = "upsert" | "delete";
 
 type EnqueueSheetsSyncJobArgs = {
@@ -55,6 +55,8 @@ function buildAppsScriptPayload(job: {
     "home:delete": "deleteHomeRow",
     "fabAcademy:upsert": "upsertFabAcademyRow",
     "fabAcademy:delete": "deleteFabAcademyRow",
+    "fabInterns:upsert": "upsertFabInternRow",
+    "fabInterns:delete": "deleteFabInternRow",
     "machines:upsert": "upsertMachineRow",
     "machines:delete": "deleteMachineRow",
     "settings:upsert": "upsertSettingsRow",

@@ -84,6 +84,16 @@ interface FabAcademyEntry {
   remarks: string;
 }
 
+interface FabInternEntry {
+  id: string;
+  studentName: string;
+  imageUrl: string;
+  internshipYear: string;
+  videoUrl: string;
+  documentationUrl: string;
+  remarks: string;
+}
+
 export default function AdminPanel() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
@@ -101,12 +111,15 @@ export default function AdminPanel() {
   const deleteHomeMut = useMutation(api.home.remove);
   const upsertFabAcademyMut = useMutation(api.fabAcademy.upsert);
   const deleteFabAcademyMut = useMutation(api.fabAcademy.remove);
+  const upsertFabInternMut = useMutation(api.fabInterns.upsert);
+  const deleteFabInternMut = useMutation(api.fabInterns.remove);
   const updateAdminSettingsMut = useMutation(api.settings.updateAdmin);
   const convexInventory = useQuery(api.inventory.getAll);
   const convexUsers = useQuery(api.users.getAll);
   const convexRequests = useQuery(api.requests.getAll);
   const convexHome = useQuery(api.home.getAll);
   const convexFabAcademy = useQuery(api.fabAcademy.getAll);
+  const convexFabInterns = useQuery(api.fabInterns.getAll);
   const convexSettings = useQuery(api.settings.getAdmin);
   const convexMachines = useQuery(api.machines.getAll);
   const registerMachineMut = useMutation(api.machines.register);
@@ -165,7 +178,7 @@ export default function AdminPanel() {
   const [homeItems, setHomeItems] = useState<any[]>([]);
   const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
   const [showAddHome, setShowAddHome] = useState(false);
-  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy'>('tra-students');
+  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy' | 'fab-interns'>('tra-students');
   const [fabAcademyItems, setFabAcademyItems] = useState<FabAcademyEntry[]>([]);
   const [fabAcademyForm, setFabAcademyForm] = useState({
     id: '',
@@ -177,6 +190,17 @@ export default function AdminPanel() {
     remarks: '',
   });
   const [showAddFabAcademy, setShowAddFabAcademy] = useState(false);
+  const [fabInternItems, setFabInternItems] = useState<FabInternEntry[]>([]);
+  const [fabInternForm, setFabInternForm] = useState({
+    id: '',
+    studentName: '',
+    imageUrl: '',
+    internshipYear: '',
+    videoUrl: '',
+    documentationUrl: '',
+    remarks: '',
+  });
+  const [showAddFabIntern, setShowAddFabIntern] = useState(false);
   const [allowTeamInventoryEdit, setAllowTeamInventoryEdit] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     users: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
@@ -244,6 +268,21 @@ export default function AdminPanel() {
       }))
     );
   }, [convexFabAcademy]);
+
+  React.useEffect(() => {
+    if (convexFabInterns === undefined) return;
+    setFabInternItems(
+      convexFabInterns.map((item) => ({
+        id: item.entryId,
+        studentName: item.studentName,
+        imageUrl: item.imageUrl,
+        internshipYear: item.internshipYear,
+        videoUrl: item.videoUrl,
+        documentationUrl: item.documentationUrl,
+        remarks: item.remarks,
+      }))
+    );
+  }, [convexFabInterns]);
 
   React.useEffect(() => {
     if (!convexUsers || !convexRequests) return;
@@ -613,6 +652,56 @@ export default function AdminPanel() {
         return result;
       }),
       { loading: 'Deleting Fab Academy entry...', success: 'Fab Academy entry deleted.', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const resetFabInternForm = () => {
+    setFabInternForm({
+      id: '',
+      studentName: '',
+      imageUrl: '',
+      internshipYear: '',
+      videoUrl: '',
+      documentationUrl: '',
+      remarks: '',
+    });
+  };
+
+  const handleSaveFabInternContent = async () => {
+    if (!fabInternForm.studentName.trim()) {
+      toast.error('Student name is required.');
+      return;
+    }
+
+    toast.promise(
+      upsertFabInternMut({
+        entryId: fabInternForm.id || undefined,
+        studentName: fabInternForm.studentName.trim(),
+        imageUrl: fabInternForm.imageUrl.trim(),
+        internshipYear: fabInternForm.internshipYear.trim(),
+        videoUrl: fabInternForm.videoUrl.trim(),
+        documentationUrl: fabInternForm.documentationUrl.trim(),
+        remarks: fabInternForm.remarks.trim(),
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
+        setShowAddFabIntern(false);
+        resetFabInternForm();
+        return result;
+      }),
+      { loading: 'Saving Fab Intern profile...', success: 'Fab Intern entry synced!', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const handleDeleteFabInternContent = async (entryId: string) => {
+    if (!window.confirm('Delete this Fab Intern entry?')) return;
+    toast.promise(
+      deleteFabInternMut({
+        entryId,
+        scriptUrl: SCRIPT_URL,
+      }).then(async (result) => {
+        return result;
+      }),
+      { loading: 'Deleting Fab Intern entry...', success: 'Fab Intern entry deleted.', error: (e) => `Failed: ${e.message}` }
     );
   };
 
@@ -2397,23 +2486,30 @@ export default function AdminPanel() {
                         if (guestContentTab === 'fab-academy') {
                           resetFabAcademyForm();
                           setShowAddFabAcademy(true);
+                        } else if (guestContentTab === 'fab-interns') {
+                          resetFabInternForm();
+                          setShowAddFabIntern(true);
                         } else {
                           setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
                           setShowAddHome(true);
                         }
                       }}
                     >
-                      <Plus className="w-4 h-4 mr-1" /> {guestContentTab === 'fab-academy' ? 'Add Fab Academy Entry' : 'Add Block'}
+                      <Plus className="w-4 h-4 mr-1" /> 
+                      {guestContentTab === 'fab-academy' ? 'Add Fab Academy Entry' : 
+                       guestContentTab === 'fab-interns' ? 'Add Fab Intern Entry' : 
+                       'Add Block'}
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Manage public community content for TRA Students and Fab Academy showcases.
+                    Manage public community content for TRA Students, Fab Academy, and Fab Intern showcases.
                   </p>
 
-                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy')}>
-                    <TabsList className="grid w-full max-w-md grid-cols-2 p-1 bg-slate-200/50 mb-4">
+                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy' | 'fab-interns')}>
+                    <TabsList className="grid w-full max-w-lg grid-cols-3 p-1 bg-slate-200/50 mb-4">
                       <TabsTrigger value="tra-students" className="rounded-md font-medium">TRA Students</TabsTrigger>
                       <TabsTrigger value="fab-academy" className="rounded-md font-medium">Fab Academy</TabsTrigger>
+                      <TabsTrigger value="fab-interns" className="rounded-md font-medium">Fab Interns</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="tra-students" className="space-y-4">
@@ -2578,6 +2674,108 @@ export default function AdminPanel() {
                                 variant="ghost"
                                 className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
                                 onClick={() => handleDeleteFabAcademyContent(item.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="fab-interns" className="space-y-4">
+                      {showAddFabIntern && (
+                        <div className="mb-4 p-4 border rounded-xl bg-muted/20 space-y-3">
+                          <h3 className="font-semibold text-sm">{fabInternForm.id ? 'Edit Fab Intern Entry' : 'New Fab Intern Entry'}</h3>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">Student Name</label>
+                              <Input className="mt-1" value={fabInternForm.studentName} onChange={e => setFabInternForm(f => ({ ...f, studentName: e.target.value }))} placeholder="Full Name" />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">Internship Year</label>
+                              <Input className="mt-1" value={fabInternForm.internshipYear} onChange={e => setFabInternForm(f => ({ ...f, internshipYear: e.target.value }))} placeholder="e.g. Summer 2024" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Image URL (Profile)</label>
+                            <Input className="mt-1" value={fabInternForm.imageUrl} onChange={e => setFabInternForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://..." />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">Video URL (Presentation)</label>
+                              <Input className="mt-1" value={fabInternForm.videoUrl} onChange={e => setFabInternForm(f => ({ ...f, videoUrl: e.target.value }))} placeholder="https://drive.google.com/..." />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">Documentation URL</label>
+                              <Input className="mt-1" value={fabInternForm.documentationUrl} onChange={e => setFabInternForm(f => ({ ...f, documentationUrl: e.target.value }))} placeholder="https://..." />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Remarks</label>
+                            <textarea
+                              className="w-full mt-1 text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                              rows={4}
+                              value={fabInternForm.remarks}
+                              onChange={e => setFabInternForm(f => ({ ...f, remarks: e.target.value }))}
+                              placeholder="Brief internship summary, key projects, and achievements..."
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowAddFabIntern(false)}>Cancel</Button>
+                            <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveFabInternContent}>Save & Sync</Button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        {fabInternItems.length === 0 ? (
+                          <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
+                            No internship entries yet. Click "Add Fab Intern Entry" to create one.
+                          </div>
+                        ) : fabInternItems.map((item) => (
+                          <div key={item.id} className="p-3 border rounded-lg bg-muted/20 flex justify-between items-start gap-2">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="h-10 w-10 rounded-full overflow-hidden bg-slate-100 flex-shrink-0">
+                                {item.imageUrl ? (
+                                  <img src={getOptimizedImageUrl(item.imageUrl)} alt={item.studentName} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="h-full w-full flex items-center justify-center text-slate-400 font-bold">{item.studentName.charAt(0)}</div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="font-bold text-sm truncate">{item.studentName}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-bold uppercase">{item.internshipYear}</span>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground truncate">{item.remarks || 'No remarks provided'}</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => {
+                                  setFabInternForm({
+                                    id: item.id,
+                                    studentName: item.studentName,
+                                    imageUrl: item.imageUrl,
+                                    internshipYear: item.internshipYear,
+                                    videoUrl: item.videoUrl,
+                                    documentationUrl: item.documentationUrl,
+                                    remarks: item.remarks,
+                                  });
+                                  setShowAddFabIntern(true);
+                                }}
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => handleDeleteFabInternContent(item.id)}
                               >
                                 <Trash2 className="w-3 h-3" />
                               </Button>
