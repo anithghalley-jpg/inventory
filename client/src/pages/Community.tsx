@@ -575,6 +575,7 @@ export default function Community() {
   const internPreviewSectionRef = useRef<HTMLDivElement>(null);
   const internSelectedDetailsRef = useRef<HTMLDivElement>(null);
   const internGraduateHeaderRef = useRef<HTMLDivElement>(null);
+  const internGraduateListRef = useRef<HTMLDivElement>(null);
 
   const convexHomeData = useQuery(api.home.getAll);
   const convexFabAcademyData = useQuery(api.fabAcademy.getAll);
@@ -967,6 +968,7 @@ export default function Community() {
     if (internPreviewSectionRef.current) observer.observe(internPreviewSectionRef.current);
     if (internSelectedDetailsRef.current) observer.observe(internSelectedDetailsRef.current);
     if (internGraduateHeaderRef.current) observer.observe(internGraduateHeaderRef.current);
+    if (internGraduateListRef.current) observer.observe(internGraduateListRef.current);
 
     window.addEventListener("resize", measureInternScroll);
 
@@ -1345,7 +1347,7 @@ export default function Community() {
                       </div>
 
                       {/* ── DESKTOP LAYOUT (hidden below xl) ─────────────────────────── */}
-                      <div className="hidden xl:grid gap-8 xl:grid-cols-[minmax(0,0.82fr),1px,minmax(320px,0.84fr)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:overflow-hidden">
+                      <div className="hidden xl:grid gap-12 xl:grid-cols-[minmax(0,560px)_1px_minmax(0,360px)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:justify-center xl:overflow-hidden">
                         <div ref={fabPreviewSectionRef} className="relative z-20 space-y-6 xl:col-start-1 xl:row-start-1 xl:pr-3">
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -1707,7 +1709,7 @@ export default function Community() {
                       </div>
 
                       {/* ── DESKTOP LAYOUT ─────────────────────────── */}
-                      <div className="hidden xl:grid gap-8 xl:grid-cols-[minmax(0,0.82fr),1px,minmax(320px,0.84fr)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:overflow-hidden">
+                      <div className="hidden xl:grid gap-12 xl:grid-cols-[minmax(0,560px)_1px_minmax(0,360px)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:justify-center xl:overflow-hidden">
                         <div ref={internPreviewSectionRef} className="relative z-20 space-y-6 xl:col-start-1 xl:row-start-1 xl:pr-3">
                           <div className="flex items-center justify-between">
                             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -1773,6 +1775,7 @@ export default function Community() {
                           </div>
 
                           <div
+                            ref={internGraduateListRef}
                             className="space-y-4 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
                             style={internGraduateScrollHeight ? { height: `${internGraduateScrollHeight}px` } : undefined}
                           >
@@ -1783,13 +1786,11 @@ export default function Community() {
                               return (
                                 <motion.article
                                   key={intern.id}
-                                  layout
-                                  initial={reducedMotion ? undefined : { opacity: 0, y: 14 }}
-                                  whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-                                  viewport={{ once: true, margin: "-80px" }}
-                                  transition={{ duration: 0.35, ease: "easeOut", delay: idx * 0.03 }}
+                                  initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+                                  animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                                  transition={{ duration: 0.3, ease: "easeOut" }}
                                   onClick={() => selectIntern(intern.id)}
-                                  className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? "border-indigo-300 bg-white/68 shadow-[0_18px_36px_rgba(79,70,229,0.12)]" : "border-white/60 bg-white/34 hover:border-indigo-200 hover:bg-white/48"}`}
+                                  className={`group w-full max-w-[360px] shrink-0 rounded-[24px] border p-3 backdrop-blur md:p-4 cursor-pointer transition-all active:scale-[0.98] ${isSelected ? "border-indigo-300 bg-indigo-50/68 shadow-[0_18px_36px_rgba(79,70,229,0.12)]" : "border-white/60 bg-white/34 hover:border-indigo-200 hover:bg-white/48"}`}
                                 >
                                   <div className="grid grid-cols-[108px,minmax(0,1fr)] gap-4">
                                     <div 
@@ -1838,8 +1839,8 @@ export default function Community() {
                           </div>
                         </div>
 
-                        <div className="space-y-3 xl:col-start-1 xl:row-start-2 xl:pr-3">
-                          <div ref={internSelectedDetailsRef} className="relative max-w-[680px] rounded-[26px] border border-white/50 bg-white/38 px-4 pb-5 pt-6 shadow-[0_12px_24px_rgba(15,23,42,0.03)] backdrop-blur md:px-5">
+                        <div ref={internSelectedDetailsRef} className="space-y-3 xl:col-start-1 xl:row-start-2 xl:pr-3">
+                          <div className="relative max-w-[680px] rounded-[26px] border border-white/50 bg-white/38 px-4 pb-5 pt-6 shadow-[0_12px_24px_rgba(15,23,42,0.03)] backdrop-blur md:px-5">
                             <div 
                               className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-[0_10px_24px_rgba(79,70,229,0.16)] md:left-5 md:h-20 md:w-20"
                             >
