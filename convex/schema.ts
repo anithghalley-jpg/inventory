@@ -56,6 +56,14 @@ export default defineSchema({
     targetAudience: v.string(),
   }).index("by_docId", ["docId"]),
 
+  aspects: defineTable({
+    entryId: v.string(),
+    aspect: v.string(),
+    writeUp: v.string(),
+    shortNote: v.string(),
+    images: v.array(v.string()),
+  }).index("by_entryId", ["entryId"]),
+
   fabAcademy: defineTable({
     entryId: v.string(),
     studentName: v.string(),

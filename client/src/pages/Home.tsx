@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import {
   Telescope, Palette, Hammer, Scissors,
   Music, Activity, Scale, Sparkles, Gem, Cpu, Code2, ArrowRight, ArrowLeft, Menu, X
 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 const PLANETS = [
   { name: "FabLab", aspect: "Digital Fabrication", icon: Cpu, planetBg: "radial-gradient(circle at 30% 30%, #60a5fa, #2563eb, #1e3a8a)", shadow: "rgba(37,99,235,0.5)", size: "w-8 h-8 md:w-12 md:h-12" },
@@ -20,12 +22,62 @@ const PLANETS = [
   { name: "Computer Science", aspect: "Computational Thinking", icon: Code2, planetBg: "radial-gradient(circle at 30% 30%, #67e8f9, #0891b2, #164e63)", shadow: "rgba(8,145,178,0.5)", size: "w-8 h-8 md:w-12 md:h-12" },
 ];
 
+function transformDriveLink(url: string): string {
+  if (url.includes("drive.google.com/file/d/")) {
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      // Use lh3.googleusercontent directly to bypass Safari/Chrome 3rd party cookie redirect blocks
+      return `https://lh3.googleusercontent.com/d/${match[1]}=w1200`;
+    }
+  }
+  return url;
+}
+
+function ImageSlideshow({ images }: { images: string[] }) {
+  const validImages = images.filter(img => img.trim().length > 5).map(transformDriveLink);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    if (validImages.length === 0) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % validImages.length);
+    }, 4500); // 4.5 seconds per image ensures comfortably > 2s un-animated display
+    return () => clearInterval(interval);
+  }, [validImages.length]); // only depends on length so the array ref doesn't trigger re-renders
+
+  if (validImages.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 w-full h-full flex items-center justify-center p-4">
+      {/* Blurred background for a more polished aesthetic */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center blur-xl opacity-40 scale-110" 
+        style={{ backgroundImage: `url(${validImages[currentIndex]})`, transition: 'background-image 1s ease-in-out' }}
+      />
+      <AnimatePresence mode="popLayout">
+        <motion.img
+          key={currentIndex}
+          src={validImages[currentIndex]}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 1.05 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="relative max-w-full max-h-full object-contain rounded-2xl shadow-2xl ring-1 ring-white/20 z-10"
+          alt="Aspect Showcase"
+          referrerPolicy="no-referrer"
+        />
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function Home() {
   const [isSpaceHovered, setIsSpaceHovered] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const aspectsSectionRef = useRef<HTMLElement>(null);
+  const aspects = (useQuery(api.aspects.getAll) || []) as any[];
 
   const handleGlobeClick = (aspectName: string) => {
     setSelectedAspect(aspectName);
@@ -265,7 +317,7 @@ export default function Home() {
                               {/* Hover Subtitle */}
                               <div className="absolute top-[110%] w-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
                                 <span className="text-emerald-300/80 text-[10px] uppercase tracking-widest whitespace-nowrap bg-black/50 px-2 py-0.5 rounded-full">
-                                  {planet.aspect}
+                                  {aspects?.find((a: any) => a.aspect === planet.name)?.shortNote || planet.aspect}
                                 </span>
                               </div>
                             </div>
@@ -311,6 +363,9 @@ export default function Home() {
             {(() => {
               const aspectData = PLANETS.find(p => p.name === selectedAspect);
               if (!aspectData) return null;
+              
+              const convexAspectData = aspects.find((a: any) => a.aspect === selectedAspect);
+
               return (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -325,22 +380,32 @@ export default function Home() {
                       </div>
                       <div>
                         <h2 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tight">{aspectData.name}</h2>
-                        <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
+                        {convexAspectData?.shortNote ? (
+                           <p className="text-emerald-600 font-semibold text-sm mt-2">{convexAspectData.shortNote}</p>
+                        ) : (
+                           <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
+                        )}
                       </div>
                     </div>
 
                     <div className="prose prose-slate max-w-none text-muted-foreground text-lg leading-relaxed">
-                      <p>
-                        Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}.
-                        This cluster provides members with specialized tools, immersive environments, and the collaborative
-                        energy needed to explore and refine their craft.
-                      </p>
-                      <p>
-                        Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers
-                        resources designed to inspire and elevate your practice. Connect with like-minded individuals,
-                        participate in hands-on workshops, and unlock new dimensions of creativity and understanding
-                        in the aesthetic centre.
-                      </p>
+                      {convexAspectData?.writeUp ? (
+                        <p className="whitespace-pre-wrap">{convexAspectData.writeUp}</p>
+                      ) : (
+                        <>
+                          <p>
+                            Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}.
+                            This cluster provides members with specialized tools, immersive environments, and the collaborative
+                            energy needed to explore and refine their craft.
+                          </p>
+                          <p>
+                            Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers
+                            resources designed to inspire and elevate your practice. Connect with like-minded individuals,
+                            participate in hands-on workshops, and unlock new dimensions of creativity and understanding
+                            in the aesthetic centre.
+                          </p>
+                        </>
+                      )}
                     </div>
 
                     <div className="pt-6 border-t border-border/50">
@@ -351,11 +416,19 @@ export default function Home() {
                   </div>
 
                   {/* Visual representation */}
-                  <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group">
-                    <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
-                    <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                    <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+                  <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group bg-slate-900 border border-slate-800">
+                    {convexAspectData?.images && convexAspectData.images.filter((i: string) => i.trim().length > 5).length > 0 ? (
+                      <>
+                        <ImageSlideshow images={convexAspectData.images} />
+                      </>
+                    ) : (
+                      <>
+                        <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
+                        <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                        <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+                      </>
+                    )}
                   </div>
                 </motion.div>
               );

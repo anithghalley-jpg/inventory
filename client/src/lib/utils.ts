@@ -13,7 +13,7 @@ export function getOptimizedImageUrl(url: string | undefined): string {
   if (!url) return '';
   const match = url.match(/^https:\/\/drive\.google\.com\/uc\?export=view&id=(.+)$/);
   if (match && match[1]) {
-    return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w1000`;
+    return `https://lh3.googleusercontent.com/d/${match[1]}=w1000`;
   }
   return url;
 }

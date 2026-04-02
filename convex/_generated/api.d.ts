@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as aspects from "../aspects.js";
 import type * as fabAcademy from "../fabAcademy.js";
 import type * as fabInterns from "../fabInterns.js";
 import type * as home from "../home.js";
@@ -27,6 +28,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  aspects: typeof aspects;
   fabAcademy: typeof fabAcademy;
   fabInterns: typeof fabInterns;
   home: typeof home;

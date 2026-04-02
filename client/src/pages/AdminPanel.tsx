@@ -118,6 +118,10 @@ export default function AdminPanel() {
   const convexUsers = useQuery(api.users.getAll);
   const convexRequests = useQuery(api.requests.getAll);
   const convexHome = useQuery(api.home.getAll);
+  const convexAspects = useQuery(api.aspects.getAll);
+  const addAspectMut = useMutation(api.aspects.add);
+  const updateAspectMut = useMutation(api.aspects.update);
+  const removeAspectMut = useMutation(api.aspects.remove);
   const convexFabAcademy = useQuery(api.fabAcademy.getAll);
   const convexFabInterns = useQuery(api.fabInterns.getAll);
   const convexSettings = useQuery(api.settings.getAdmin);
@@ -178,7 +182,10 @@ export default function AdminPanel() {
   const [homeItems, setHomeItems] = useState<any[]>([]);
   const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
   const [showAddHome, setShowAddHome] = useState(false);
-  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy' | 'fab-interns'>('tra-students');
+  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy' | 'fab-interns' | 'home'>('tra-students');
+  const [aspects, setAspects] = useState<any[]>([]);
+  const [aspectForm, setAspectForm] = useState({ id: '', entryId: '', aspect: '', writeUp: '', shortNote: '', images: [''] as string[] });
+  const [showAddAspect, setShowAddAspect] = useState(false);
   const [fabAcademyItems, setFabAcademyItems] = useState<FabAcademyEntry[]>([]);
   const [fabAcademyForm, setFabAcademyForm] = useState({
     id: '',
@@ -248,6 +255,18 @@ export default function AdminPanel() {
       contentUrl: item.content,
     })));
   }, [convexHome]);
+
+  React.useEffect(() => {
+    if (convexAspects === undefined) return;
+    setAspects(convexAspects.map((item) => ({
+      id: item._id,
+      entryId: item.entryId,
+      aspect: item.aspect,
+      writeUp: item.writeUp,
+      shortNote: item.shortNote,
+      images: item.images,
+    })));
+  }, [convexAspects]);
 
   React.useEffect(() => {
     if (!convexSettings) return;
@@ -602,6 +621,54 @@ export default function AdminPanel() {
         return result;
       }),
       { loading: 'Deleting...', success: 'Content block deleted.', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const resetAspectForm = () => {
+    setAspectForm({ id: '', entryId: '', aspect: '', writeUp: '', shortNote: '', images: [''] });
+  };
+
+  const handleSaveAspectContent = async () => {
+    if (!aspectForm.aspect.trim()) {
+      toast.error('Aspect name is required.');
+      return;
+    }
+
+    const filteredImages = aspectForm.images.filter(img => img.trim() !== '');
+
+    const prom = aspectForm.id
+      ? updateAspectMut({
+          id: aspectForm.id as any,
+          aspect: aspectForm.aspect.trim(),
+          writeUp: aspectForm.writeUp.trim(),
+          shortNote: aspectForm.shortNote.trim(),
+          images: filteredImages,
+        })
+      : addAspectMut({
+          entryId: Date.now().toString(),
+          aspect: aspectForm.aspect.trim(),
+          writeUp: aspectForm.writeUp.trim(),
+          shortNote: aspectForm.shortNote.trim(),
+          images: filteredImages,
+        });
+
+    toast.promise(
+      prom.then(async (result) => {
+        setShowAddAspect(false);
+        resetAspectForm();
+        return result;
+      }),
+      { loading: 'Saving Aspect...', success: 'Aspect saved!', error: (e) => `Failed: ${e.message}` }
+    );
+  };
+
+  const handleDeleteAspectContent = async (id: string) => {
+    if (!window.confirm('Delete this aspect?')) return;
+    toast.promise(
+      removeAspectMut({ id: id as any }).then(async (result) => {
+        return result;
+      }),
+      { loading: 'Deleting...', success: 'Aspect deleted.', error: (e) => `Failed: ${e.message}` }
     );
   };
 
@@ -2489,6 +2556,9 @@ export default function AdminPanel() {
                         } else if (guestContentTab === 'fab-interns') {
                           resetFabInternForm();
                           setShowAddFabIntern(true);
+                        } else if (guestContentTab === 'home') {
+                          resetAspectForm();
+                          setShowAddAspect(true);
                         } else {
                           setHomeForm({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
                           setShowAddHome(true);
@@ -2498,19 +2568,122 @@ export default function AdminPanel() {
                       <Plus className="w-4 h-4 mr-1" /> 
                       {guestContentTab === 'fab-academy' ? 'Add Fab Academy Entry' : 
                        guestContentTab === 'fab-interns' ? 'Add Fab Intern Entry' : 
+                       guestContentTab === 'home' ? 'Add Aspect' :
                        'Add Block'}
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Manage public community content for TRA Students, Fab Academy, and Fab Intern showcases.
+                    Manage public community content for Home Aspects, TRA Students, Fab Academy, and Fab Intern showcases.
                   </p>
 
-                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy' | 'fab-interns')}>
-                    <TabsList className="grid w-full max-w-lg grid-cols-3 p-1 bg-slate-200/50 mb-4">
+                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy' | 'fab-interns' | 'home')}>
+                    <TabsList className="grid w-full max-w-2xl grid-cols-4 p-1 bg-slate-200/50 mb-4">
+                      <TabsTrigger value="home" className="rounded-md font-medium">Home</TabsTrigger>
                       <TabsTrigger value="tra-students" className="rounded-md font-medium">TRA Students</TabsTrigger>
                       <TabsTrigger value="fab-academy" className="rounded-md font-medium">Fab Academy</TabsTrigger>
                       <TabsTrigger value="fab-interns" className="rounded-md font-medium">Fab Interns</TabsTrigger>
                     </TabsList>
+
+                    <TabsContent value="home" className="space-y-4">
+                      {showAddAspect && (
+                        <div className="mb-4 p-4 border rounded-xl bg-muted/20 space-y-3">
+                          <h3 className="font-semibold text-sm">{aspectForm.id ? 'Edit Aspect' : 'New Aspect'}</h3>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Aspect Title</label>
+                            <Input className="mt-1" value={aspectForm.aspect} onChange={e => setAspectForm(f => ({ ...f, aspect: e.target.value }))} placeholder="e.g. Community" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Write Up</label>
+                            <textarea
+                              className="w-full mt-1 text-sm p-2 border rounded-md bg-background outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                              rows={4}
+                              value={aspectForm.writeUp}
+                              onChange={e => setAspectForm(f => ({ ...f, writeUp: e.target.value }))}
+                              placeholder="Detailed description..."
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Short Note (Hover effect)</label>
+                            <Input className="mt-1" value={aspectForm.shortNote} onChange={e => setAspectForm(f => ({ ...f, shortNote: e.target.value }))} placeholder="Brief hovering text..." />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground flex justify-between items-center">
+                              <span>Image URLs</span>
+                              <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setAspectForm(f => ({ ...f, images: [...f.images, ''] }))}>
+                                <Plus className="w-3 h-3 mr-1" /> Add Image
+                              </Button>
+                            </label>
+                            <div className="space-y-2 mt-2">
+                              {aspectForm.images.map((img, idx) => (
+                                <div key={idx} className="flex gap-2">
+                                  <Input 
+                                    value={img} 
+                                    onChange={e => {
+                                      const newImgs = [...aspectForm.images];
+                                      newImgs[idx] = e.target.value;
+                                      setAspectForm(f => ({ ...f, images: newImgs }));
+                                    }} 
+                                    placeholder="https://..." 
+                                  />
+                                  {aspectForm.images.length > 1 && (
+                                    <Button variant="outline" size="sm" className="px-2 shrink-0" onClick={() => {
+                                      const newImgs = aspectForm.images.filter((_, i) => i !== idx);
+                                      setAspectForm(f => ({ ...f, images: newImgs }));
+                                    }}>
+                                      <Trash2 className="w-4 h-4 text-red-500" />
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowAddAspect(false)}>Cancel</Button>
+                            <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveAspectContent}>Save Aspect</Button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        {aspects.length === 0 ? (
+                          <div className="p-6 border-2 border-dashed rounded-lg text-center text-muted-foreground text-sm">
+                            No aspects configured yet.
+                          </div>
+                        ) : aspects.map(item => (
+                          <div key={item.id} className="p-3 border rounded-lg bg-muted/20 flex justify-between items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-sm truncate">{item.aspect}</span>
+                              </div>
+                              {item.shortNote && <p className="text-[10px] text-emerald-600 mt-1">Hover: {item.shortNote}</p>}
+                              {item.writeUp && <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.writeUp}</p>}
+                              {item.images && item.images.length > 0 && <p className="text-[10px] text-blue-500 truncate mt-1">{item.images.length} Image(s)</p>}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => { 
+                                  setAspectForm({ ...item, images: item.images?.length ? item.images : [''] }); 
+                                  setShowAddAspect(true); 
+                                }}
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500"
+                                onClick={() => handleDeleteAspectContent(item.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
 
                     <TabsContent value="tra-students" className="space-y-4">
                       {showAddHome && (
