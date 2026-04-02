@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { Link } from "wouter";
 import {
   Telescope, Palette, Hammer, Scissors,
@@ -71,6 +71,40 @@ function ImageSlideshow({ images }: { images: string[] }) {
   );
 }
 
+function BackgroundSlideshow({ images }: { images: string[] }) {
+  const validImages = images.map(transformDriveLink);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    if (validImages.length === 0) return;
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % validImages.length);
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [validImages.length]);
+
+  if (validImages.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 w-full h-full z-0 pointer-events-none">
+      <AnimatePresence mode="popLayout">
+        <motion.img
+          key={currentIndex}
+          src={validImages[currentIndex]}
+          initial={{ opacity: 0, scale: 1.05 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 3, ease: "easeInOut" }}
+          className="absolute inset-0 w-full h-full object-cover"
+          alt=""
+        />
+      </AnimatePresence>
+      <div className="absolute inset-0 bg-slate-900/10 mix-blend-multiply" />
+      <div className="absolute inset-0 bg-white/20 backdrop-blur-sm" />
+    </div>
+  );
+}
+
 export default function Home() {
   const [isSpaceHovered, setIsSpaceHovered] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -78,6 +112,14 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const aspectsSectionRef = useRef<HTMLElement>(null);
   const aspects = (useQuery(api.aspects.getAll) || []) as any[];
+
+  const allAspectImages = useMemo(() => {
+    return aspects.flatMap((a: any) => a.images || []).filter((i: string) => i.trim().length > 5);
+  }, [aspects]);
+
+  const { scrollY } = useScroll();
+  const heroOpacity = useTransform(scrollY, [0, 400], [1, 0]);
+  const exploreOpacity = useTransform(scrollY, [200, 600], [0, 1]);
 
   const handleGlobeClick = (aspectName: string) => {
     setSelectedAspect(aspectName);
@@ -109,7 +151,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans overflow-x-hidden">
       {/* Navigation Bar */}
-      <header className={`fixed top-0 left-0 w-full z-50 pointer-events-auto transition-all duration-500 ${isScrolled ? 'bg-background/90 backdrop-blur-md border-b border-border/50 shadow-sm' : ''}`}>
+      <header className={`fixed top-0 left-0 w-full z-50 pointer-events-auto transition-all duration-500 ${isScrolled ? 'bg-white/60 backdrop-blur-xl border-b border-white/50 shadow-sm' : ''}`}>
 
         {/* ── Top bar ───────────────────────────────────────────────── */}
         <div className={`px-4 md:px-8 py-4 md:py-6 flex items-center justify-between transition-all duration-500 ${isScrolled ? 'py-3 md:py-4' : ''} ${isScrolled ? 'text-slate-900' : isSpaceHovered ? 'text-white' : 'text-slate-900'}`}>
@@ -211,7 +253,7 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <section className={`relative w-full h-[600px] md:h-[800px] flex items-center justify-center overflow-hidden border-b transition-colors duration-1000 ${isSpaceHovered ? 'bg-slate-950 border-slate-900' : 'bg-white border-border'}`}>
+      <section className={`relative w-full h-screen flex items-center justify-center overflow-hidden transition-colors duration-1000 ${isSpaceHovered ? 'bg-slate-950' : 'bg-white'}`}>
 
         {/* Deep Space Background Reveals */}
         <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-1000 ${isSpaceHovered ? 'opacity-100' : 'opacity-0'}`}>
@@ -230,11 +272,12 @@ export default function Home() {
         </div>
 
         {/* Global Sun + Orbit Wrapper (incorporates 92% scaling and 20px upward shift) */}
-        <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
-          style={{ transform: "scale(0.92) translateY(-20px)", perspective: "1200px" }}
-        >
-          {/* Central Burning Sun */}
+        <motion.div style={{ opacity: heroOpacity }} className="absolute inset-0 w-full h-full z-10">
+          <div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            style={{ transform: "scale(0.92) translateY(-20px)", perspective: "1200px" }}
+          >
+            {/* Central Burning Sun */}
           <div className="absolute z-20 flex flex-col items-center justify-center text-center pointer-events-auto relative">
             <motion.div
               onHoverStart={() => setIsSpaceHovered(true)}
@@ -330,14 +373,26 @@ export default function Home() {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        </motion.div>
       </section>
 
       {/* Aspects Section */}
-      <section ref={aspectsSectionRef} className="py-16 md:py-24 px-4 md:px-8 max-w-7xl mx-auto w-full min-h-[600px] scroll-mt-20">
-        {selectedAspect ? (
-          <div className="w-full">
-            {/* Aspect Detail View */}
+      <section ref={aspectsSectionRef} className="relative w-full min-h-[800px] py-16 md:py-32 overflow-hidden scroll-mt-20">
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true, amount: 0.15 }}
+          transition={{ duration: 3, ease: "easeOut" }}
+          className="absolute inset-0 pointer-events-none"
+        >
+          <BackgroundSlideshow images={allAspectImages} />
+        </motion.div>
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8">
+          {selectedAspect ? (
+            <div className="w-full bg-white/70 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-12 shadow-2xl border border-white/60 relative z-10">
+              {/* Aspect Detail View */}
 
             {/* Sub Navigation */}
             <div className="flex items-center gap-3 overflow-x-auto pb-4 mb-10 border-b border-border/50 scrollbar-hide no-scrollbar">
@@ -435,19 +490,21 @@ export default function Home() {
             })()}
           </div>
         ) : (
-          <div>
-            <div className="mb-12 text-center">
-              <h2 className="text-3xl font-display font-bold text-foreground">Explore Our Aspects</h2>
-              <p className="text-muted-foreground mt-2">Discover the different clusters of our aesthetic center.</p>
-            </div>
+          <div className="relative w-full z-10">
+            <motion.div style={{ opacity: exploreOpacity }} className="flex justify-center mb-8">
+              <div className="text-center bg-white/60 backdrop-blur-xl px-8 py-5 rounded-[2rem] border border-white/60 shadow-2xl">
+                <h2 className="text-2xl md:text-4xl font-display font-bold text-slate-900 tracking-tight">Explore Our Aspects</h2>
+                <p className="text-slate-800 font-medium mt-2 max-w-xl mx-auto text-base lg:text-lg">Discover the different clusters of our aesthetic center.</p>
+              </div>
+            </motion.div>
 
             {/* Masonry / Bento Box Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 auto-rows-[200px] gap-4 md:gap-6">
+            <motion.div style={{ opacity: exploreOpacity }} className="grid grid-cols-1 md:grid-cols-4 auto-rows-[160px] gap-4 md:gap-6 relative z-10">
               {/* Card 1: Large Wide */}
               <motion.div
                 onClick={() => setSelectedAspect('FabLab')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-2 md:row-span-2 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-2 md:row-span-2 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className={`w-14 h-14 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4`}>
                   <Cpu className={`w-7 h-7 text-blue-500`} />
@@ -467,7 +524,7 @@ export default function Home() {
               <motion.div
                 onClick={() => setSelectedAspect('Astronomy')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-1 md:row-span-2 rounded-2xl border border-border bg-[#fafafa] overflow-hidden p-6 flex flex-col group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-1 md:row-span-2 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-md overflow-hidden p-6 flex flex-col group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className={`w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-6`}>
                   <Telescope className={`w-6 h-6 text-indigo-500`} />
@@ -485,7 +542,7 @@ export default function Home() {
               <motion.div
                 onClick={() => setSelectedAspect('Painting')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center flex-shrink-0`}>
@@ -499,7 +556,7 @@ export default function Home() {
               <motion.div
                 onClick={() => handleGlobeClick('Sculpting')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0`}>
@@ -513,7 +570,7 @@ export default function Home() {
               <motion.div
                 onClick={() => handleGlobeClick('Weaving')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-1 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center flex-shrink-0`}>
@@ -527,7 +584,7 @@ export default function Home() {
               <motion.div
                 onClick={() => handleGlobeClick('Music')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-2 md:row-span-1 rounded-2xl border border-border bg-[#fafafa] overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-2 md:row-span-1 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-md overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div>
                   <h3 className="text-xl font-bold mb-1">Music & Dance</h3>
@@ -546,7 +603,7 @@ export default function Home() {
               <motion.div
                 onClick={() => handleGlobeClick('Computer Science')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-1 md:row-span-2 rounded-2xl border border-border bg-white overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-1 md:row-span-2 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className="w-12 h-12 rounded-full bg-cyan-50 border border-cyan-100 flex items-center justify-center mb-4">
                   <Code2 className="w-6 h-6 text-cyan-500" />
@@ -566,7 +623,7 @@ export default function Home() {
               <motion.div
                 onClick={() => handleGlobeClick('Truth')}
                 whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                className="md:col-span-3 md:row-span-1 rounded-2xl border border-border bg-white overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+                className="md:col-span-3 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
               >
                 <div className="flex -space-x-4">
                   <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center shadow-sm z-20">
@@ -584,9 +641,10 @@ export default function Home() {
                   <p className="text-sm text-muted-foreground">The philosophical cores.</p>
                 </div>
               </motion.div>
-            </div>
+            </motion.div>
           </div>
         )}
+        </div>
       </section>
 
       {/* Footer */}
