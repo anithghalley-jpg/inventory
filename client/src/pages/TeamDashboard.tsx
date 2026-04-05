@@ -11,12 +11,15 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import DashboardLanding from '@/components/DashboardLanding';
 import { MachineCard } from '@/components/MachineCard';
 import { MachineTurnNotification } from '@/components/MachineTurnNotification';
+import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
+import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -216,6 +219,13 @@ interface UsageRecord {
     status?: string;
 }
 
+interface ProjectAssignmentRecord {
+    projectId: string;
+    projectName: string;
+    projectStatus: string;
+    requestId: string;
+}
+
 export default function TeamDashboard() {
     const { user, logout, isAuthenticated } = useAuth();
     const [, navigate] = useLocation();
@@ -246,6 +256,8 @@ export default function TeamDashboard() {
     const [returnTarget, setReturnTarget] = useState('');
     const [selectedReturn, setSelectedReturn] = useState<any | null>(null);
     const [returnRemarks, setReturnRemarks] = useState('');
+    const [projectAssignmentTarget, setProjectAssignmentTarget] = useState<UsageRecord | null>(null);
+    const [activeTab, setActiveTab] = useState('store');
 
     const [communitySearchQuery, setCommunitySearchQuery] = useState('');
     const [selectedCommunityTag, setSelectedCommunityTag] = useState('all');
@@ -375,11 +387,22 @@ export default function TeamDashboard() {
     const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
     const cancelCheckoutRequestMut = useMutation(api.requests.cancelCheckoutRequest);
     const toggleLaptopMut = useMutation(api.users.toggleLaptop);
+    const updateUserStatusMut = useMutation(api.users.updateStatus);
 
     // Machine Queries & Mutations
     const convexMachines = useQuery(api.machines.getAll);
+    const convexDashboardUpdates = useQuery(api.dashboardUpdates.getForAudience, {
+        audience: "team",
+        userEmail: user?.email || "",
+    });
+    const projectWorkspace = useQuery(api.projects.getMemberWorkspace, {
+        userEmail: user?.email || "",
+    });
+    const projectAssignments = useQuery(api.projects.getAssignmentsOverview);
+    const adminSettings = useQuery(api.settings.getAdmin);
     const startMachineMutation = useMutation(api.machines.startSession);
     const endMachineMutation = useMutation(api.machines.endSession);
+    const addItemToProjectMut = useMutation(api.projects.addItemToProject);
 
     useEffect(() => {
         if (!convexUsers || !convexRequests) return;
@@ -601,6 +624,58 @@ export default function TeamDashboard() {
         );
     };
 
+    const handleApprovePendingUser = async (email: string) => {
+        await toast.promise(
+            (async () => {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'approveUser', userId: email }),
+                });
+                const result = await response.json();
+                if (!response.ok || result?.success === false) {
+                    throw new Error(result?.message || 'Failed to update Google Sheets approval');
+                }
+
+                await updateUserStatusMut({
+                    email,
+                    status: 'APPROVED',
+                    scriptUrl: SCRIPT_URL,
+                });
+            })(),
+            {
+                loading: 'Approving user...',
+                success: 'User approved.',
+                error: (error: any) => error?.message || 'Approval failed',
+            },
+        );
+    };
+
+    const handleRejectPendingUser = async (email: string) => {
+        await toast.promise(
+            (async () => {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'rejectUser', userId: email }),
+                });
+                const result = await response.json();
+                if (!response.ok || result?.success === false) {
+                    throw new Error(result?.message || 'Failed to update Google Sheets status');
+                }
+
+                await updateUserStatusMut({
+                    email,
+                    status: 'REJECTED',
+                    scriptUrl: SCRIPT_URL,
+                });
+            })(),
+            {
+                loading: 'Rejecting application...',
+                success: 'Application rejected.',
+                error: (error: any) => error?.message || 'Rejection failed',
+            },
+        );
+    };
+
     // Machine Session Handlers
     const handleStartMachine = async (id: string) => {
         try {
@@ -644,6 +719,19 @@ export default function TeamDashboard() {
         }
     };
 
+    const handleAddItemToProject = async (projectId: string) => {
+        if (!projectAssignmentTarget || !user?.email) return;
+
+        await addItemToProjectMut({
+            projectId,
+            userEmail: user.email,
+            requestId: projectAssignmentTarget.id,
+        });
+
+        toast.success("Item added to the project box.");
+        setProjectAssignmentTarget(null);
+    };
+
     // Helpers
     const formatTime = (minutes: number) => {
         const hrs = Math.floor(minutes / 60);
@@ -676,6 +764,73 @@ export default function TeamDashboard() {
         acc[item.category].push(item);
         return acc;
     }, {} as Record<string, InventoryItem[]>);
+    const activeMachineCount = (convexMachines || []).filter((machine) => machine.status === 'ENGAGED').length;
+    const memberProjects = projectWorkspace?.projects ?? [];
+    const viewerHasProjectMembership = memberProjects.some((project) => project.viewerIsMember);
+    const showProjectsTab = memberProjects.length > 0 && (!!adminSettings?.allowPublicProjectAccess || viewerHasProjectMembership);
+    const pendingApprovalUsers = allUsers.filter((member) => member.status === 'PENDING');
+    const hasLandingContent = (convexDashboardUpdates?.length ?? 0) > 0 || pendingApprovalUsers.length > 0;
+    const activeProjectOptions = useMemo(
+        () =>
+            memberProjects
+                .filter((project) => project.status === 'ACTIVE' && project.viewerIsMember)
+                .map((project) => ({
+                    projectId: project.projectId,
+                    name: project.name,
+                })),
+        [memberProjects],
+    );
+    const projectAssignmentByRequestId = useMemo(() => {
+        const assignmentMap = new Map<string, ProjectAssignmentRecord>();
+        (projectAssignments || []).forEach((assignment) => {
+            assignmentMap.set(assignment.requestId, assignment);
+        });
+        return assignmentMap;
+    }, [projectAssignments]);
+    const teamStats = [
+        {
+            label: 'Inventory Lines',
+            value: inventory.length,
+            hint: 'Items your team can issue and track.',
+        },
+        {
+            label: 'Pending Actions',
+            value: pendingReturns.length + pendingCheckouts.length,
+            hint: 'Returns and checkout approvals waiting on review.',
+        },
+        {
+            label: 'Active Loans',
+            value: activeRequests.length,
+            hint: 'Approved requests currently out in the lab.',
+        },
+        {
+            label: 'Live Machines',
+            value: activeMachineCount,
+            hint: 'Machines engaged in ongoing sessions right now.',
+        },
+    ];
+
+    useEffect(() => {
+        if (!hasLandingContent && activeTab === 'landing') {
+            setActiveTab(showProjectsTab ? 'projects' : 'store');
+        }
+    }, [activeTab, hasLandingContent, showProjectsTab]);
+
+    useEffect(() => {
+        if (!showProjectsTab && activeTab === 'projects') {
+            setActiveTab(hasLandingContent ? 'landing' : 'store');
+        }
+    }, [activeTab, hasLandingContent, showProjectsTab]);
+
+    const teamTabCount =
+        (hasLandingContent ? 1 : 0) +
+        1 +
+        1 +
+        (showProjectsTab ? 1 : 0) +
+        1 +
+        1 +
+        1 +
+        1;
 
     // --- MAIN RENDER ---
     return (
@@ -754,9 +909,14 @@ export default function TeamDashboard() {
 
             {/* MAIN CONTENT WITH TABS */}
             <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-                <Tabs defaultValue="store" className="space-y-6">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <TabsList className="bg-white border border-slate-200 p-1 h-auto shadow-sm gap-1 self-start sm:self-auto overflow-x-auto max-w-full">
+                        <TabsList className={`bg-white border border-slate-200 p-1 h-auto shadow-sm gap-1 self-start sm:self-auto overflow-x-auto max-w-full ${teamTabCount >= 7 ? 'w-full' : ''}`}>
+                            {hasLandingContent && (
+                                <TabsTrigger value="landing" className={`data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 ${activeTab !== 'landing' ? 'shadow-[0_0_18px_rgba(16,185,129,0.28)] ring-1 ring-emerald-200 animate-pulse' : ''}`}>
+                                    <Sparkles className="w-4 h-4 mr-2" /> Landing
+                                </TabsTrigger>
+                            )}
                             <TabsTrigger value="store" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <ShoppingBag className="w-4 h-4 mr-2" /> Store
                             </TabsTrigger>
@@ -764,6 +924,11 @@ export default function TeamDashboard() {
                                 <History className="w-4 h-4 mr-2" /> My Items
                                 {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
                             </TabsTrigger>
+                            {showProjectsTab && (
+                                <TabsTrigger value="projects" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                    <FolderKanban className="w-4 h-4 mr-2" /> Projects
+                                </TabsTrigger>
+                            )}
                             <TabsTrigger value="users" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <UsersIcon className="w-4 h-4 mr-2" /> Community
                             </TabsTrigger>
@@ -779,6 +944,33 @@ export default function TeamDashboard() {
                             </TabsTrigger>
                         </TabsList>
                     </div>
+
+                    {hasLandingContent && (
+                        <TabsContent value="landing" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
+                            <DashboardLanding
+                                audience="team"
+                                userName={user?.name}
+                                title="Operations hub"
+                                description="Use this landing tab as the team’s daily briefing surface for notices, embedded references, machine activity, and the most important operational metrics."
+                                stats={teamStats}
+                                updates={convexDashboardUpdates || []}
+                                machines={convexMachines || []}
+                                pendingApprovals={pendingApprovalUsers.map((member) => ({
+                                    email: member.email,
+                                    name: member.name,
+                                    createdDate: member.createdDate,
+                                }))}
+                                onApprovePendingUser={handleApprovePendingUser}
+                                onRejectPendingUser={handleRejectPendingUser}
+                            />
+                        </TabsContent>
+                    )}
+
+                    {showProjectsTab && (
+                        <TabsContent value="projects" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
+                            <ProjectsWorkspace workspace={projectWorkspace} userEmail={user?.email} />
+                        </TabsContent>
+                    )}
 
                     {/* --- STORE TAB --- */}
                     <TabsContent value="store" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
@@ -916,6 +1108,13 @@ export default function TeamDashboard() {
                                                         <span className="text-xs bg-slate-100 px-2 py-0.5 rounded font-medium text-slate-600">x{item.quantity}</span>
                                                         <span className="text-xs text-slate-400">{new Date(item.timestamp).toLocaleDateString()}</span>
                                                     </div>
+                                                    {projectAssignmentByRequestId.get(item.id) && (
+                                                        <div className="mt-2">
+                                                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                                                Project: {projectAssignmentByRequestId.get(item.id)?.projectName}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {item.status === 'PENDING' ? (
@@ -937,17 +1136,32 @@ export default function TeamDashboard() {
                                                         </Button>
                                                     </div>
                                                 ) : (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="mt-auto w-full text-xs hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setReturnItem(item);
-                                                        }}
-                                                    >
-                                                        Return Item
-                                                    </Button>
+                                                    <div className="mt-auto flex flex-col gap-2">
+                                                        {!projectAssignmentByRequestId.get(item.id) && activeProjectOptions.length > 0 && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="w-full text-xs border-slate-200 hover:bg-slate-50"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setProjectAssignmentTarget(item);
+                                                                }}
+                                                            >
+                                                                Add To Project
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="w-full text-xs hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setReturnItem(item);
+                                                            }}
+                                                        >
+                                                            Return Item
+                                                        </Button>
+                                                    </div>
                                                 )}
                                             </Card>
                                         ))}
@@ -1349,6 +1563,7 @@ export default function TeamDashboard() {
                                                     <th className="px-4 py-3">User</th>
                                                     <th className="px-4 py-3">Item</th>
                                                     <th className="px-4 py-3">Qty</th>
+                                                    <th className="px-4 py-3">Project</th>
                                                     <th className="px-4 py-3">Date Borrowed</th>
                                                 </tr>
                                             </thead>
@@ -1358,6 +1573,9 @@ export default function TeamDashboard() {
                                                         <td className="px-4 py-3 font-medium text-slate-900">{req.userName}</td>
                                                         <td className="px-4 py-3">{req.itemName}</td>
                                                         <td className="px-4 py-3 text-slate-500">x{req.quantity}</td>
+                                                        <td className="px-4 py-3 text-slate-500">
+                                                            {projectAssignmentByRequestId.get(req.date)?.projectName || "Not linked"}
+                                                        </td>
                                                         <td className="px-4 py-3 text-slate-400">{new Date(req.date).toLocaleDateString()}</td>
                                                     </tr>
                                                 ))}
@@ -1609,6 +1827,16 @@ export default function TeamDashboard() {
                     <Button onClick={handleCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700">Confirm Request</Button>
                 </DialogContent>
             </Dialog>
+
+            <ProjectAssignmentDialog
+                open={!!projectAssignmentTarget}
+                onOpenChange={(open) => {
+                    if (!open) setProjectAssignmentTarget(null);
+                }}
+                itemName={projectAssignmentTarget?.itemName || ''}
+                projects={activeProjectOptions}
+                onAssign={handleAddItemToProject}
+            />
 
             {/* RETURN CONFIRM DIALOG - Missing in previous code, essential for 'Return Item' action */}
             <Dialog open={!!returnItem} onOpenChange={(o) => !o && setReturnItem(null)}>

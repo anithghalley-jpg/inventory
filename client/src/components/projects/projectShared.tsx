@@ -1,0 +1,328 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getOptimizedImageUrl } from "@/lib/utils";
+
+export const EMOJIS = ["👍", "👏", "🔥", "💡", "🎉", "🙂"];
+
+export type ProjectStatus =
+  | "DRAFT"
+  | "BOX_PENDING"
+  | "BOX_APPROVED"
+  | "PLAN_PENDING"
+  | "ACTIVE"
+  | "COMPLETED"
+  | "ARCHIVED";
+
+export type TimelinePostKind = "comment" | "note" | "question";
+
+export type CheckpointFieldType =
+  | "short_text"
+  | "long_text"
+  | "number"
+  | "date"
+  | "link"
+  | "image_links"
+  | "video_links"
+  | "labeled_links";
+
+export interface ProjectCardMember {
+  userEmail: string;
+  userName: string;
+  userRole: string;
+  projectNote?: string;
+  profileImageUrl?: string;
+}
+
+export interface ProjectCardRecord {
+  projectId: string;
+  name: string;
+  status: ProjectStatus;
+  createdAt?: string;
+  updatedAt: string;
+  lastActivityAt?: string;
+  teamImageUrl?: string;
+  boxImageUrl?: string;
+  members: ProjectCardMember[];
+  memberCount: number;
+  likeCount: number;
+  viewerIsMember?: boolean;
+}
+
+export interface ProjectDetailRecord {
+  projectId: string;
+  name: string;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastActivityAt?: string;
+  teamImageUrl?: string;
+  members: ProjectCardMember[];
+  items: {
+    requestId: string;
+    itemName: string;
+    quantity: number;
+    userEmail: string;
+    taggedAt: string;
+  }[];
+  likeCount: number;
+  viewerHasLiked: boolean;
+  permissions: {
+    isMember: boolean;
+    canRenameProject: boolean;
+    canUpdateTeamImage: boolean;
+    canUpdateOwnProfile: boolean;
+    canComment: boolean;
+    canPostMedia: boolean;
+    canCreateCheckpoint: boolean;
+    canRespondToCheckpoint: boolean;
+    canModerateTimeline: boolean;
+    canApproveBuiltInStages: boolean;
+    canEditBuiltInPrompts: boolean;
+  };
+  timeline: Array<
+    | {
+        itemType: "system";
+        id: string;
+        stage: "team_setup" | "box" | "plan";
+        title: string;
+        description: string;
+        createdAt: string;
+        status: string;
+        details: Record<string, unknown>;
+      }
+    | {
+        itemType: "checkpoint";
+        id: string;
+        title: string;
+        description: string;
+        createdAt: string;
+        updatedAt: string;
+        status: "OPEN" | "COMPLETED";
+        createdByEmail: string;
+        createdByName: string;
+        createdByRole: string;
+        allowMemberResponses: boolean;
+        fields: Array<{
+          fieldId: string;
+          label: string;
+          fieldType: CheckpointFieldType;
+          required: boolean;
+          position: number;
+        }>;
+        responses: Array<{
+          responseId: string;
+          submittedByEmail: string;
+          submittedByName: string;
+          submittedByRole: string;
+          values: Array<{
+            fieldId: string;
+            label: string;
+            fieldType: string;
+            singleValue?: string;
+            multiValues?: string[];
+          }>;
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      }
+    | {
+        itemType: "post";
+        id: string;
+        kind: TimelinePostKind;
+        createdAt: string;
+        updatedAt: string;
+        authorEmail: string;
+        authorName: string;
+        authorRole: string;
+        body: string;
+        images: string[];
+        videos: string[];
+        links: { label: string; url: string }[];
+        reactions: Array<{
+          emoji: string;
+          count: number;
+          viewerReacted: boolean;
+          users: string[];
+        }>;
+      }
+  >;
+  questionConfig: {
+    boxTitle: string;
+    boxDescription: string;
+    sketchPrompt: string;
+    sketchHelp: string;
+    completedBehaviorPrompt: string;
+    materialsRequiredPrompt: string;
+    initialPlansPrompt: string;
+    firstStepsPrompt: string;
+  };
+  boxImageUrl?: string;
+  boxSubmittedAt?: string;
+  boxApprovedAt?: string;
+  boxApprovedBy?: string;
+  boxRejectionNote?: string;
+  sketchImages?: string[];
+  completedBehavior?: string;
+  materialsRequired?: string;
+  initialPlans?: string;
+  firstSteps?: string;
+  planSubmittedAt?: string;
+  planApprovedAt?: string;
+  planApprovedBy?: string;
+  planRejectionNote?: string;
+}
+
+export function normalizeImageUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+
+  const driveView = trimmed.match(/^https:\/\/drive\.google\.com\/uc\?export=view&id=(.+)$/);
+  const driveFile = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+
+  if (driveView?.[1]) return `https://lh3.googleusercontent.com/d/${driveView[1]}=w1200`;
+  if (driveFile?.[1]) return `https://lh3.googleusercontent.com/d/${driveFile[1]}=w1200`;
+
+  return getOptimizedImageUrl(trimmed);
+}
+
+export function normalizeVideoUrl(url: string) {
+  const trimmed = url.trim();
+  const youtubeWatch = trimmed.match(/[?&]v=([^&]+)/);
+  const youtubeShort = trimmed.match(/youtu\.be\/([^?&]+)/);
+  const youtubeEmbed = trimmed.match(/youtube\.com\/embed\/([^?&]+)/);
+  const driveFile = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+
+  if (youtubeEmbed?.[1]) return `https://www.youtube.com/embed/${youtubeEmbed[1]}`;
+  if (youtubeWatch?.[1]) return `https://www.youtube.com/embed/${youtubeWatch[1]}`;
+  if (youtubeShort?.[1]) return `https://www.youtube.com/embed/${youtubeShort[1]}`;
+  if (driveFile?.[1]) return `https://drive.google.com/file/d/${driveFile[1]}/preview`;
+
+  return trimmed;
+}
+
+export function formatDateTime(value?: string) {
+  if (!value) return "Not available";
+  return new Date(value).toLocaleString();
+}
+
+export function formatDateOnly(value?: string) {
+  if (!value) return "";
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function getStatusBadgeClass(status: string) {
+  if (status === "APPROVED" || status === "ACTIVE" || status === "COMPLETED") {
+    return "bg-emerald-100 text-emerald-800 hover:bg-emerald-100";
+  }
+  if (status === "PENDING" || status === "BOX_PENDING" || status === "PLAN_PENDING" || status === "OPEN") {
+    return "bg-amber-100 text-amber-800 hover:bg-amber-100";
+  }
+  if (status === "REJECTED" || status === "ARCHIVED") {
+    return "bg-rose-100 text-rose-700 hover:bg-rose-100";
+  }
+  return "bg-slate-100 text-slate-700 hover:bg-slate-100";
+}
+
+export function createEmptyCheckpointField() {
+  return {
+    label: "",
+    fieldType: "short_text" as CheckpointFieldType,
+    required: false,
+  };
+}
+
+export function ProjectAvatar({
+  imageUrl,
+  label,
+  className = "h-10 w-10",
+}: {
+  imageUrl?: string;
+  label: string;
+  className?: string;
+}) {
+  const normalized = normalizeImageUrl(imageUrl ?? "");
+  return (
+    <Avatar className={`${className} border border-slate-200 shadow-sm`}>
+      {normalized ? <AvatarImage src={normalized} alt={label} referrerPolicy="no-referrer" /> : null}
+      <AvatarFallback className="bg-slate-100 text-slate-600">{label.charAt(0)}</AvatarFallback>
+    </Avatar>
+  );
+}
+
+export function MediaList({
+  images = [],
+  videos = [],
+  links = [],
+}: {
+  images?: string[];
+  videos?: string[];
+  links?: { label: string; url: string }[];
+}) {
+  const cleanImages = images.filter((image) => image.trim());
+  const cleanVideos = videos.filter((video) => video.trim());
+  const cleanLinks = links.filter((link) => link.label.trim() && link.url.trim());
+
+  if (!cleanImages.length && !cleanVideos.length && !cleanLinks.length) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4">
+      {cleanImages.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {cleanImages.map((image, index) => (
+            <div
+              key={`${image}-${index}`}
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
+            >
+              <img
+                src={normalizeImageUrl(image)}
+                alt="Timeline attachment"
+                className="h-48 w-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {cleanVideos.length > 0 && (
+        <div className="space-y-3">
+          {cleanVideos.map((video, index) => (
+            <div
+              key={`${video}-${index}`}
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950"
+            >
+              <iframe
+                src={normalizeVideoUrl(video)}
+                title={`Timeline video ${index + 1}`}
+                className="aspect-video w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {cleanLinks.length > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {cleanLinks.map((link, index) => (
+            <a
+              key={`${link.url}-${index}`}
+              href={link.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:text-slate-900"
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

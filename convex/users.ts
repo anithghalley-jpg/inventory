@@ -14,6 +14,7 @@ function formatUserForSheets(user: {
   totalTime: number;
   rfid?: string;
   myPageLink?: string;
+  profileImageUrl?: string;
   tags: string[];
   note?: string;
 }) {
@@ -29,6 +30,7 @@ function formatUserForSheets(user: {
     totalTime: user.totalTime,
     rfid: user.rfid ?? "",
     myPageLink: user.myPageLink ?? "",
+    profileImageUrl: user.profileImageUrl ?? "",
     tags: user.tags,
     note: user.note ?? "",
   };
@@ -127,6 +129,7 @@ export const login = mutation({
         totalTime: 0,
         rfid: "",
         myPageLink: "",
+        profileImageUrl: "",
         tags: [],
         note: "",
       });
@@ -192,6 +195,7 @@ export const updateProfile = mutation({
     role: v.optional(v.union(v.literal("ADMIN"), v.literal("USER"), v.literal("TEAM"))),
     note: v.optional(v.string()),
     myPageLink: v.optional(v.string()),
+    profileImageUrl: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     scriptUrl: v.string(),
   },
@@ -206,6 +210,7 @@ export const updateProfile = mutation({
     if (args.role !== undefined) patch.role = args.role;
     if (args.note !== undefined) patch.note = args.note;
     if (args.myPageLink !== undefined) patch.myPageLink = args.myPageLink;
+    if (args.profileImageUrl !== undefined) patch.profileImageUrl = args.profileImageUrl;
     if (args.tags !== undefined) patch.tags = args.tags;
 
     await ctx.db.patch(user._id, patch);
@@ -236,6 +241,7 @@ export const upsertFromSheetSnapshot = mutation({
     totalTime: v.optional(v.number()),
     rfid: v.optional(v.string()),
     myPageLink: v.optional(v.string()),
+    profileImageUrl: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     note: v.optional(v.string()),
   },
@@ -253,6 +259,7 @@ export const upsertFromSheetSnapshot = mutation({
       totalTime: args.totalTime ?? 0,
       rfid: args.rfid ?? "",
       myPageLink: args.myPageLink ?? "",
+      profileImageUrl: args.profileImageUrl ?? existing?.profileImageUrl ?? "",
       tags: args.tags ?? [],
       note: args.note ?? "",
     };
@@ -265,5 +272,30 @@ export const upsertFromSheetSnapshot = mutation({
     const userId = await ctx.db.insert("users", snapshot);
     const user = await ctx.db.get(userId);
     return { success: true, user };
+  },
+});
+
+export const updateProjectProfile = mutation({
+  args: {
+    email: v.string(),
+    profileImageUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", args.email)).first();
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await ctx.db.patch(user._id, {
+      profileImageUrl: args.profileImageUrl,
+    });
+
+    return {
+      success: true,
+      user: {
+        ...user,
+        profileImageUrl: args.profileImageUrl,
+      },
+    };
   },
 });

@@ -11,10 +11,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor } from 'lucide-react';
+import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
 import { getTagStyle } from '@/lib/tagUtils';
+import DashboardLanding from '@/components/DashboardLanding';
+import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
+import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -213,7 +216,6 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
 
   // State
-  const [activeTab, setActiveTab] = useState('store');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [myItems, setMyItems] = useState<UsageRecord[]>([]);
   const [requests, setRequests] = useState<any[]>([]); // Store raw requests
@@ -236,14 +238,25 @@ export default function Dashboard() {
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [newItemNameRequest, setNewItemNameRequest] = useState('');
   const [newItemRemarksRequest, setNewItemRemarksRequest] = useState('');
+  const [activeTab, setActiveTab] = useState('store');
 
   const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
   const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
 
   // Machine Logic
   const convexMachines = useQuery(api.machines.getAll);
+  const convexDashboardUpdates = useQuery(api.dashboardUpdates.getForAudience, {
+    audience: "user",
+    userEmail: user?.email || "",
+  });
+  const projectWorkspace = useQuery(api.projects.getMemberWorkspace, {
+    userEmail: user?.email || "",
+  });
+  const adminSettings = useQuery(api.settings.getAdmin);
+  const projectAssignments = useQuery(api.projects.getAssignmentsOverview);
   const startMachineMutation = useMutation(api.machines.startSession);
   const endMachineMutation = useMutation(api.machines.endSession);
+  const addItemToProjectMut = useMutation(api.projects.addItemToProject);
 
   // Sync state with user context updates
   useEffect(() => {
@@ -256,6 +269,7 @@ export default function Dashboard() {
   const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
   const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
   const [fabricationNote, setFabricationNote] = useState('');
+  const [projectAssignmentTarget, setProjectAssignmentTarget] = useState<UsageRecord | null>(null);
 
   const handleStartMachine = async (id: string) => {
     try {
@@ -565,6 +579,19 @@ export default function Dashboard() {
     }
   };
 
+  const handleAddItemToProject = async (projectId: string) => {
+    if (!projectAssignmentTarget || !user?.email) return;
+
+    await addItemToProjectMut({
+      projectId,
+      userEmail: user.email,
+      requestId: projectAssignmentTarget.id,
+    });
+
+    toast.success('Item added to the project box.');
+    setProjectAssignmentTarget(null);
+  };
+
   const formatTime = (minutes: number) => {
     const hrs = Math.floor(minutes / 60);
     const mins = minutes % 60;
@@ -599,6 +626,82 @@ export default function Dashboard() {
 
   // Sort categories alphabetically
   const sortedCategories = Object.keys(groupedItems).sort();
+  const activeMachineCount = (convexMachines || []).filter((machine) => machine.status === 'ENGAGED').length;
+  const approvedCommunityCount = allUsers.filter((member) => member.status === 'APPROVED').length;
+  const memberProjects = projectWorkspace?.projects ?? [];
+  const viewerHasProjectMembership = memberProjects.some((project) => project.viewerIsMember);
+  const showProjectsTab = memberProjects.length > 0 && (!!adminSettings?.allowPublicProjectAccess || viewerHasProjectMembership);
+  const hasLandingContent = (convexDashboardUpdates?.length ?? 0) > 0;
+  const activeProjectOptions = useMemo(
+    () =>
+      memberProjects
+        .filter((project) => project.status === 'ACTIVE' && project.viewerIsMember)
+        .map((project) => ({
+          projectId: project.projectId,
+          name: project.name,
+        })),
+    [memberProjects],
+  );
+  const projectAssignmentByRequestId = useMemo(() => {
+    const assignmentMap = new Map<string, { projectId: string; projectName: string; projectStatus: string }>();
+    (projectAssignments || []).forEach((assignment) => {
+      assignmentMap.set(assignment.requestId, {
+        projectId: assignment.projectId,
+        projectName: assignment.projectName,
+        projectStatus: assignment.projectStatus,
+      });
+    });
+    return assignmentMap;
+  }, [projectAssignments]);
+  const dashboardStats = [
+    {
+      label: 'Available Items',
+      value: inventory.length,
+      hint: 'Inventory you can browse and request now.',
+    },
+    {
+      label: 'My Active Items',
+      value: myItems.filter((item) => item.returnRequestStatus !== 'RETURN_PENDING').length,
+      hint: 'Open checkouts currently assigned to you.',
+    },
+    {
+      label: 'Live Machines',
+      value: activeMachineCount,
+      hint: 'Equipment engaged in the lab right now.',
+    },
+    {
+      label: 'Community',
+      value: approvedCommunityCount,
+      hint: 'Approved makers visible in the directory.',
+    },
+  ];
+
+  useEffect(() => {
+    if (hasLandingContent) {
+      if (!activeTab) {
+        setActiveTab('landing');
+      }
+      return;
+    }
+
+    if (activeTab === 'landing') {
+      setActiveTab(showProjectsTab ? 'projects' : 'store');
+    }
+  }, [activeTab, hasLandingContent, showProjectsTab]);
+
+  useEffect(() => {
+    if (!showProjectsTab && activeTab === 'projects') {
+      setActiveTab(hasLandingContent ? 'landing' : 'store');
+    }
+  }, [activeTab, hasLandingContent, showProjectsTab]);
+
+  const dashboardTabCount =
+    (hasLandingContent ? 1 : 0) +
+    1 +
+    1 +
+    (showProjectsTab ? 1 : 0) +
+    1 +
+    1;
 
 
   return (
@@ -693,8 +796,22 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="container py-8">
-        <Tabs defaultValue="store" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-4 bg-muted">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList
+            className={`grid w-full bg-muted ${
+              dashboardTabCount === 6
+                ? 'max-w-2xl grid-cols-6'
+                : dashboardTabCount === 5
+                  ? 'max-w-xl grid-cols-5'
+                  : 'max-w-lg grid-cols-4'
+            }`}
+          >
+            {hasLandingContent && (
+              <TabsTrigger value="landing" className={`flex items-center gap-2 ${activeTab !== 'landing' ? 'shadow-[0_0_18px_rgba(16,185,129,0.28)] ring-1 ring-emerald-200 animate-pulse' : ''}`}>
+                <Sparkles className="w-4 h-4" />
+                Landing
+              </TabsTrigger>
+            )}
             <TabsTrigger value="store" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               Store
@@ -704,6 +821,12 @@ export default function Dashboard() {
               My Items
               {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
             </TabsTrigger>
+            {showProjectsTab && (
+              <TabsTrigger value="projects" className="flex items-center gap-2">
+                <FolderKanban className="w-4 h-4" />
+                Projects
+              </TabsTrigger>
+            )}
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               Community
@@ -713,6 +836,26 @@ export default function Dashboard() {
               Machines
             </TabsTrigger>
           </TabsList>
+
+          {hasLandingContent && (
+            <TabsContent value="landing" className="space-y-6">
+              <DashboardLanding
+                audience="user"
+                userName={user?.name}
+                title="Welcome back"
+                description="Start here for featured announcements, media-rich updates, and a calmer overview before you jump into inventory, community, or machine workflows."
+                stats={dashboardStats}
+                updates={convexDashboardUpdates || []}
+                machines={convexMachines || []}
+              />
+            </TabsContent>
+          )}
+
+          {showProjectsTab && (
+            <TabsContent value="projects" className="space-y-6">
+              <ProjectsWorkspace workspace={projectWorkspace} userEmail={user?.email} />
+            </TabsContent>
+          )}
 
           {/* TAB 1: STORE */}
           <TabsContent value="store" className="space-y-6">
@@ -892,6 +1035,11 @@ export default function Dashboard() {
                                 Pending Approval
                               </span>
                             )}
+                            {projectAssignmentByRequestId.get(record.id) && (
+                              <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                                Project: {projectAssignmentByRequestId.get(record.id)?.projectName}
+                              </span>
+                            )}
                           </div>
 
                           {record.action === 'APPROVED' && (
@@ -914,14 +1062,26 @@ export default function Dashboard() {
                           Waiting for Approval
                         </div>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs w-full sm:w-auto hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                          onClick={() => setReturnItem(record)}
-                        >
-                          Return Item
-                        </Button>
+                        <div className="flex w-full flex-col gap-2 sm:w-auto">
+                          {!projectAssignmentByRequestId.get(record.id) && activeProjectOptions.length > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs w-full sm:w-auto border-slate-200 hover:bg-slate-50"
+                              onClick={() => setProjectAssignmentTarget(record)}
+                            >
+                              Add To Project
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs w-full sm:w-auto hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                            onClick={() => setReturnItem(record)}
+                          >
+                            Return Item
+                          </Button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -1394,6 +1554,16 @@ export default function Dashboard() {
               )}
             </DialogContent>
           </Dialog>
+
+          <ProjectAssignmentDialog
+            open={!!projectAssignmentTarget}
+            onOpenChange={(open) => {
+              if (!open) setProjectAssignmentTarget(null);
+            }}
+            itemName={projectAssignmentTarget?.itemName || ''}
+            projects={activeProjectOptions}
+            onAssign={handleAddItemToProject}
+          />
 
           <MachineTurnNotification scriptUrl={SCRIPT_URL} />
         </Tabs>

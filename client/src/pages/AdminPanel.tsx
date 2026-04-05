@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
+import AdminProjectsTab from '@/components/AdminProjectsTab';
 
 /**
  * Design: Modern Minimalist - Admin Panel
@@ -94,6 +95,22 @@ interface FabInternEntry {
   remarks: string;
 }
 
+interface DashboardUpdateItem {
+  id: string;
+  entryId: string;
+  title: string;
+  body: string;
+  kind: 'announcement' | 'update';
+  audience: 'all' | 'user' | 'team';
+  images: string[];
+  videos: string[];
+  links: { label: string; url: string }[];
+  pinned: boolean;
+  published: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export default function AdminPanel() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
@@ -114,6 +131,9 @@ export default function AdminPanel() {
   const upsertFabInternMut = useMutation(api.fabInterns.upsert);
   const deleteFabInternMut = useMutation(api.fabInterns.remove);
   const updateAdminSettingsMut = useMutation(api.settings.updateAdmin);
+  const upsertDashboardUpdateMut = useMutation(api.dashboardUpdates.upsert);
+  const deleteDashboardUpdateMut = useMutation(api.dashboardUpdates.remove);
+  const createHoldingReminderMut = useMutation(api.dashboardUpdates.createHoldingReminder);
   const convexInventory = useQuery(api.inventory.getAll);
   const convexUsers = useQuery(api.users.getAll);
   const convexRequests = useQuery(api.requests.getAll);
@@ -124,6 +144,8 @@ export default function AdminPanel() {
   const removeAspectMut = useMutation(api.aspects.remove);
   const convexFabAcademy = useQuery(api.fabAcademy.getAll);
   const convexFabInterns = useQuery(api.fabInterns.getAll);
+  const convexDashboardUpdates = useQuery(api.dashboardUpdates.getAll);
+  const convexProjectAssignments = useQuery(api.projects.getAssignmentsOverview);
   const convexSettings = useQuery(api.settings.getAdmin);
   const convexMachines = useQuery(api.machines.getAll);
   const registerMachineMut = useMutation(api.machines.register);
@@ -162,6 +184,7 @@ export default function AdminPanel() {
   const [activeRequests, setActiveRequests] = useState<any[]>([]); // All active holdings
   const [pendingReturns, setPendingReturns] = useState<any[]>([]); // Returns waiting for approval
   const [pendingCheckouts, setPendingCheckouts] = useState<any[]>([]); // New: Checkouts waiting for approval
+  const [expandedHoldingUsers, setExpandedHoldingUsers] = useState<string[]>([]);
   const [selectedReturn, setSelectedReturn] = useState<any | null>(null); // For Receive Modal
   const [returnRemarks, setReturnRemarks] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -208,7 +231,33 @@ export default function AdminPanel() {
     remarks: '',
   });
   const [showAddFabIntern, setShowAddFabIntern] = useState(false);
+  const [dashboardUpdates, setDashboardUpdates] = useState<DashboardUpdateItem[]>([]);
+  const [showAddDashboardUpdate, setShowAddDashboardUpdate] = useState(false);
+  const [dashboardUpdateForm, setDashboardUpdateForm] = useState<{
+    entryId: string;
+    title: string;
+    body: string;
+    kind: 'announcement' | 'update';
+    audience: 'all' | 'user' | 'team';
+    images: string[];
+    videos: string[];
+    links: { label: string; url: string }[];
+    pinned: boolean;
+    published: boolean;
+  }>({
+    entryId: '',
+    title: '',
+    body: '',
+    kind: 'announcement',
+    audience: 'all',
+    images: [''],
+    videos: [''],
+    links: [{ label: '', url: '' }],
+    pinned: false,
+    published: true,
+  });
   const [allowTeamInventoryEdit, setAllowTeamInventoryEdit] = useState(false);
+  const [allowPublicProjectAccess, setAllowPublicProjectAccess] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     users: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
     requests: { sheetRows: number; unsyncedRows: number; canCheck: boolean };
@@ -271,6 +320,7 @@ export default function AdminPanel() {
   React.useEffect(() => {
     if (!convexSettings) return;
     setAllowTeamInventoryEdit(!!convexSettings.allowTeamInventory);
+    setAllowPublicProjectAccess(!!convexSettings.allowPublicProjectAccess);
   }, [convexSettings]);
 
   React.useEffect(() => {
@@ -302,6 +352,27 @@ export default function AdminPanel() {
       }))
     );
   }, [convexFabInterns]);
+
+  React.useEffect(() => {
+    if (convexDashboardUpdates === undefined) return;
+    setDashboardUpdates(
+      convexDashboardUpdates.map((item) => ({
+        id: item._id,
+        entryId: item.entryId,
+        title: item.title,
+        body: item.body,
+        kind: item.kind,
+        audience: item.audience,
+        images: item.images ?? [],
+        videos: item.videos ?? [],
+        links: item.links ?? [],
+        pinned: item.pinned,
+        published: item.published,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }))
+    );
+  }, [convexDashboardUpdates]);
 
   React.useEffect(() => {
     if (!convexUsers || !convexRequests) return;
@@ -585,6 +656,72 @@ export default function AdminPanel() {
         error: (e: any) => `Sync failed: ${e.message}`
       }
     );
+  };
+
+  const resetDashboardUpdateForm = () => {
+    setDashboardUpdateForm({
+      entryId: '',
+      title: '',
+      body: '',
+      kind: 'announcement',
+      audience: 'all',
+      images: [''],
+      videos: [''],
+      links: [{ label: '', url: '' }],
+      pinned: false,
+      published: true,
+    });
+  };
+
+  const handleSaveDashboardUpdate = async () => {
+    if (!dashboardUpdateForm.title.trim() || !dashboardUpdateForm.body.trim()) {
+      toast.error('Title and message are required.');
+      return;
+    }
+
+    toast.promise(
+      upsertDashboardUpdateMut({
+        entryId: dashboardUpdateForm.entryId || undefined,
+        title: dashboardUpdateForm.title,
+        body: dashboardUpdateForm.body,
+        kind: dashboardUpdateForm.kind,
+        audience: dashboardUpdateForm.audience,
+        images: dashboardUpdateForm.images,
+        videos: dashboardUpdateForm.videos,
+        links: dashboardUpdateForm.links,
+        pinned: dashboardUpdateForm.pinned,
+        published: dashboardUpdateForm.published,
+      }).then(async (result) => {
+        setShowAddDashboardUpdate(false);
+        resetDashboardUpdateForm();
+        return result;
+      }),
+      {
+        loading: 'Saving dashboard update...',
+        success: 'Dashboard update published!',
+        error: (e) => `Failed: ${e.message}`,
+      }
+    );
+  };
+
+  const handleDeleteDashboardUpdate = async (entryId: string) => {
+    if (!window.confirm('Delete this dashboard update?')) return;
+
+    toast.promise(
+      deleteDashboardUpdateMut({ entryId }).then(async (result) => result),
+      {
+        loading: 'Deleting update...',
+        success: 'Dashboard update deleted.',
+        error: (e) => `Failed: ${e.message}`,
+      }
+    );
+  };
+
+  const handleSendHoldingReminder = async (request: any) => {
+    return await createHoldingReminderMut({
+      requestId: request.date,
+      createdBy: user?.name || 'Admin',
+    });
   };
 
   // ======== HOME CONTENT ========
@@ -1195,6 +1332,18 @@ export default function AdminPanel() {
     setHasMore(false);
   };
 
+  const projectAssignmentByRequestId = React.useMemo(() => {
+    const assignmentMap = new Map<string, { projectId: string; projectName: string; projectStatus: string }>();
+    (convexProjectAssignments || []).forEach((assignment) => {
+      assignmentMap.set(assignment.requestId, {
+        projectId: assignment.projectId,
+        projectName: assignment.projectName,
+        projectStatus: assignment.projectStatus,
+      });
+    });
+    return assignmentMap;
+  }, [convexProjectAssignments]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -1238,7 +1387,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="users" className="space-y-20" onValueChange={(tab) => { if (tab === 'settings') fetchSyncStatus(); }}>
-          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-4xl grid-cols-7' : 'max-w-3xl grid-cols-6'} bg-muted`}>
+          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-6xl grid-cols-9' : 'max-w-3xl grid-cols-6'} bg-muted`}>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -1273,6 +1422,18 @@ export default function AdminPanel() {
               <Zap className="w-4 h-4" />
               <span className="hidden sm:inline">Machines</span>
             </TabsTrigger>
+            {user?.role === 'ADMIN' && (
+              <TabsTrigger value="projects" className="flex items-center gap-2">
+                <FolderKanban className="w-4 h-4" />
+                <span className="hidden sm:inline">Projects</span>
+              </TabsTrigger>
+            )}
+            {user?.role === 'ADMIN' && (
+              <TabsTrigger value="updates" className="flex items-center gap-2">
+                <Megaphone className="w-4 h-4" />
+                <span className="hidden sm:inline">Updates</span>
+              </TabsTrigger>
+            )}
             {user?.role === 'ADMIN' && (
               <TabsTrigger value="settings" className="flex items-center gap-2">
                 <Filter className="w-4 h-4" />
@@ -2132,23 +2293,107 @@ export default function AdminPanel() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {users.map((u: any, i) => (
                       <Card key={i} className="p-5 hover:shadow-md transition-all">
-                        <div className="flex items-center gap-3 mb-4 border-b pb-3">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                            {u.name.charAt(0)}
+                        <div className="flex items-start justify-between gap-3 mb-4 border-b pb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                              {u.name.charAt(0)}
+                            </div>
+                            <div>
+                              <h4 className="font-bold leading-tight">{u.name}</h4>
+                              <p className="text-xs text-muted-foreground">{u.email}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h4 className="font-bold leading-tight">{u.name}</h4>
-                            <p className="text-xs text-muted-foreground">{u.email}</p>
-                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => setExpandedHoldingUsers((prev) =>
+                              prev.includes(u.email)
+                                ? prev.filter((email) => email !== u.email)
+                                : [...prev, u.email]
+                            )}
+                          >
+                            {expandedHoldingUsers.includes(u.email) ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </Button>
                         </div>
 
                         <div className="space-y-2">
-                          {u.items.map((item: any, j: number) => (
-                            <div key={j} className="flex justify-between items-center text-sm bg-muted/40 p-2 rounded">
-                              <span>{item.itemName}</span>
-                              <span className="font-bold bg-background px-2 rounded border border-border">x{item.quantity}</span>
-                            </div>
-                          ))}
+                          {u.items.map((item: any, j: number) => {
+                            const inventoryItem = inventory.find((inv) => inv.id === item.itemId || inv.name === item.itemName);
+                            const projectAssignment = projectAssignmentByRequestId.get(item.date);
+                            return (
+                              <div key={j} className="rounded-xl bg-muted/40 p-3">
+                                <div className="flex justify-between items-center text-sm">
+                                  <span className="font-medium">{item.itemName}</span>
+                                  <span className="font-bold bg-background px-2 rounded border border-border">x{item.quantity}</span>
+                                </div>
+
+                                {expandedHoldingUsers.includes(u.email) && (
+                                  <div className="mt-3 space-y-3 border-t pt-3">
+                                    <div className="flex gap-3">
+                                      <div className="w-16 h-16 rounded-lg overflow-hidden bg-slate-100 border border-border shrink-0">
+                                        {inventoryItem?.imageUrl ? (
+                                          <img
+                                            src={getOptimizedImageUrl(inventoryItem.imageUrl)}
+                                            alt={item.itemName}
+                                            className="w-full h-full object-cover"
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
+                                            No image
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground space-y-1">
+                                        <p><span className="font-semibold text-foreground">Issued:</span> {new Date(item.date).toLocaleString()}</p>
+                                        <p><span className="font-semibold text-foreground">Issued by:</span> {item.actionBy || 'Team/Admin'}</p>
+                                        <p><span className="font-semibold text-foreground">Return status:</span> {item.returnStatus || 'Not started'}</p>
+                                        <p>
+                                          <span className="font-semibold text-foreground">Project:</span>{" "}
+                                          {projectAssignment ? `${projectAssignment.projectName} (${projectAssignment.projectStatus})` : 'Not linked'}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                      <Button
+                                        size="sm"
+                                        className="bg-amber-600 hover:bg-amber-700"
+                                        onClick={() => {
+                                          toast.promise(
+                                            handleSendHoldingReminder(item),
+                                            {
+                                              loading: 'Creating reminder notice...',
+                                              success: 'Pinned reminder notice created.',
+                                              error: (e) => `Failed: ${e.message}`,
+                                            }
+                                          );
+                                        }}
+                                      >
+                                        <Mail className="w-4 h-4 mr-2" />
+                                        Send Reminder
+                                      </Button>
+                                      {inventoryItem?.links && (
+                                        <a
+                                          href={inventoryItem.links}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
+                                        >
+                                          View Item Link
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                         <div className="mt-4 pt-2 border-t text-xs text-center text-muted-foreground">
                           Total Items: {u.items.reduce((sum: number, x: any) => sum + Number(x.quantity), 0)}
@@ -2192,6 +2437,13 @@ export default function AdminPanel() {
             </Dialog>
 
           </TabsContent>
+
+          {/* TAB 4: LAPTOP MONITOR */}
+          {user?.role === 'ADMIN' && (
+            <TabsContent value="projects" className="space-y-6">
+              <AdminProjectsTab currentUserEmail={user?.email || ''} />
+            </TabsContent>
+          )}
 
           {/* TAB 4: LAPTOP MONITOR */}
           <TabsContent value="monitor" className="space-y-6">
@@ -2410,6 +2662,453 @@ export default function AdminPanel() {
             </div>
           </TabsContent>
 
+          {user?.role === 'ADMIN' && (
+            <TabsContent value="updates" className="space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold">Dashboard Landing Updates</h2>
+                  <p className="text-muted-foreground">
+                    Manage announcements and update cards that appear on the new user and team dashboard landing sections.
+                  </p>
+                </div>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => {
+                    if (showAddDashboardUpdate) {
+                      setShowAddDashboardUpdate(false);
+                      resetDashboardUpdateForm();
+                      return;
+                    }
+                    resetDashboardUpdateForm();
+                    setShowAddDashboardUpdate(true);
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  {showAddDashboardUpdate ? 'Close Composer' : 'Create Update'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.8fr] gap-6">
+                <Card className="p-6 space-y-5">
+                  {showAddDashboardUpdate && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold text-foreground">
+                            {dashboardUpdateForm.entryId ? 'Edit Landing Update' : 'Compose Landing Update'}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            Use this feed for announcements, schedule changes, and dashboard-specific updates.
+                          </p>
+                        </div>
+                        {dashboardUpdateForm.pinned && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                            <Pin className="w-3 h-3" />
+                            Pinned
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Type</label>
+                          <select
+                            value={dashboardUpdateForm.kind}
+                            onChange={(e) => setDashboardUpdateForm((prev) => ({
+                              ...prev,
+                              kind: e.target.value as 'announcement' | 'update',
+                            }))}
+                            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="announcement">Announcement</option>
+                            <option value="update">Update</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Audience</label>
+                          <select
+                            value={dashboardUpdateForm.audience}
+                            onChange={(e) => setDashboardUpdateForm((prev) => ({
+                              ...prev,
+                              audience: e.target.value as 'all' | 'user' | 'team',
+                            }))}
+                            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="all">All Dashboards</option>
+                            <option value="user">User Dashboard</option>
+                            <option value="team">Team Dashboard</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Title</label>
+                        <Input
+                          className="mt-1"
+                          value={dashboardUpdateForm.title}
+                          onChange={(e) => setDashboardUpdateForm((prev) => ({ ...prev, title: e.target.value }))}
+                          placeholder="Example: CNC room closes at 4 PM today"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Message</label>
+                        <textarea
+                          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                          rows={5}
+                          value={dashboardUpdateForm.body}
+                          onChange={(e) => setDashboardUpdateForm((prev) => ({ ...prev, body: e.target.value }))}
+                          placeholder="Write the message that should appear on the landing section."
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-xs font-medium text-muted-foreground">Images</label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setDashboardUpdateForm((prev) => ({
+                              ...prev,
+                              images: [...prev.images, ''],
+                            }))}
+                          >
+                            <Plus className="w-3 h-3 mr-1" />
+                            Add Image
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          {dashboardUpdateForm.images.map((image, index) => (
+                            <div key={`image-${index}`} className="flex gap-2">
+                              <Input
+                                value={image}
+                                onChange={(e) => setDashboardUpdateForm((prev) => {
+                                  const images = [...prev.images];
+                                  images[index] = e.target.value;
+                                  return { ...prev, images };
+                                })}
+                                placeholder="Image URL"
+                              />
+                              {dashboardUpdateForm.images.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="px-2 shrink-0"
+                                  onClick={() => setDashboardUpdateForm((prev) => ({
+                                    ...prev,
+                                    images: prev.images.filter((_, currentIndex) => currentIndex !== index),
+                                  }))}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-xs font-medium text-muted-foreground">Embedded Videos</label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setDashboardUpdateForm((prev) => ({
+                              ...prev,
+                              videos: [...prev.videos, ''],
+                            }))}
+                          >
+                            <Plus className="w-3 h-3 mr-1" />
+                            Add Video
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          {dashboardUpdateForm.videos.map((video, index) => (
+                            <div key={`video-${index}`} className="flex gap-2">
+                              <Input
+                                value={video}
+                                onChange={(e) => setDashboardUpdateForm((prev) => {
+                                  const videos = [...prev.videos];
+                                  videos[index] = e.target.value;
+                                  return { ...prev, videos };
+                                })}
+                                placeholder="Embed or share URL"
+                              />
+                              {dashboardUpdateForm.videos.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="px-2 shrink-0"
+                                  onClick={() => setDashboardUpdateForm((prev) => ({
+                                    ...prev,
+                                    videos: prev.videos.filter((_, currentIndex) => currentIndex !== index),
+                                  }))}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Use an embeddable URL when possible. YouTube watch links and Google Drive file links will be converted on the landing page.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-xs font-medium text-muted-foreground">Helpful Links</label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setDashboardUpdateForm((prev) => ({
+                              ...prev,
+                              links: [...prev.links, { label: '', url: '' }],
+                            }))}
+                          >
+                            <Plus className="w-3 h-3 mr-1" />
+                            Add Link
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          {dashboardUpdateForm.links.map((link, index) => (
+                            <div key={`link-${index}`} className="grid grid-cols-[1fr_1.5fr_auto] gap-2">
+                              <Input
+                                value={link.label}
+                                onChange={(e) => setDashboardUpdateForm((prev) => {
+                                  const links = [...prev.links];
+                                  links[index] = { ...links[index], label: e.target.value };
+                                  return { ...prev, links };
+                                })}
+                                placeholder="Link label"
+                              />
+                              <Input
+                                value={link.url}
+                                onChange={(e) => setDashboardUpdateForm((prev) => {
+                                  const links = [...prev.links];
+                                  links[index] = { ...links[index], url: e.target.value };
+                                  return { ...prev, links };
+                                })}
+                                placeholder="https://..."
+                              />
+                              {dashboardUpdateForm.links.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="px-2"
+                                  onClick={() => setDashboardUpdateForm((prev) => ({
+                                    ...prev,
+                                    links: prev.links.filter((_, currentIndex) => currentIndex !== index),
+                                  }))}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div className="flex flex-wrap gap-4">
+                          <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                            <input
+                              type="checkbox"
+                              checked={dashboardUpdateForm.pinned}
+                              onChange={(e) => setDashboardUpdateForm((prev) => ({ ...prev, pinned: e.target.checked }))}
+                            />
+                            Pin to top
+                          </label>
+                          <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                            <input
+                              type="checkbox"
+                              checked={dashboardUpdateForm.published}
+                              onChange={(e) => setDashboardUpdateForm((prev) => ({ ...prev, published: e.target.checked }))}
+                            />
+                            Publish now
+                          </label>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowAddDashboardUpdate(false);
+                              resetDashboardUpdateForm();
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveDashboardUpdate}>
+                            Save Update
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {dashboardUpdates.length === 0 ? (
+                      <div className="p-6 border-2 border-dashed rounded-xl text-center text-muted-foreground text-sm">
+                        No landing updates yet. Create one to populate the new dashboard landing sections.
+                      </div>
+                    ) : dashboardUpdates.map((item) => (
+                      <div key={item.entryId} className="p-4 border rounded-xl bg-muted/20 flex flex-col md:flex-row md:items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${
+                              item.kind === 'announcement' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+                            }`}>
+                              {item.kind === 'announcement' ? <Megaphone className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
+                              {item.kind}
+                            </span>
+                            <span className="px-2 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 uppercase">
+                              {item.audience === 'all' ? 'All Dashboards' : `${item.audience} dashboard`}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-[11px] font-semibold uppercase ${
+                              item.published ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                            }`}>
+                              {item.published ? 'Published' : 'Draft'}
+                            </span>
+                            {item.pinned && (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-700 uppercase">
+                                <Pin className="w-3 h-3" />
+                                Pinned
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-semibold text-foreground">{item.title}</h3>
+                          <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">{item.body}</p>
+                          {(item.images.length > 0 || item.videos.length > 0 || item.links.length > 0) && (
+                            <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                              {item.images.length > 0 && (
+                                <span className="px-2 py-1 rounded-full bg-fuchsia-100 text-fuchsia-700 font-semibold">
+                                  {item.images.length} image{item.images.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {item.videos.length > 0 && (
+                                <span className="px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 font-semibold">
+                                  {item.videos.length} video{item.videos.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {item.links.length > 0 && (
+                                <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                                  {item.links.length} link{item.links.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-[11px] text-slate-400 mt-3">
+                            Updated {new Date(item.updatedAt).toLocaleString()}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0"
+                            onClick={() => {
+                              setDashboardUpdateForm({
+                                entryId: item.entryId,
+                                title: item.title,
+                                body: item.body,
+                                kind: item.kind,
+                                audience: item.audience,
+                                images: item.images.length > 0 ? item.images : [''],
+                                videos: item.videos.length > 0 ? item.videos : [''],
+                                links: item.links.length > 0 ? item.links : [{ label: '', url: '' }],
+                                pinned: item.pinned,
+                                published: item.published,
+                              });
+                              setShowAddDashboardUpdate(true);
+                            }}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                            onClick={() => handleDeleteDashboardUpdate(item.entryId)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                <div className="space-y-6">
+                  <Card className="p-6">
+                    <h3 className="text-lg font-semibold mb-3">How This Feeds The Landing Page</h3>
+                    <div className="space-y-3 text-sm text-muted-foreground">
+                      <p><span className="font-semibold text-foreground">Announcement</span> is best for closures, launches, schedules, or important notices.</p>
+                      <p><span className="font-semibold text-foreground">Update</span> is best for operational notes, temporary changes, or workflow reminders.</p>
+                      <p><span className="font-semibold text-foreground">Pinned</span> keeps a message ahead of the rest of the feed on both dashboards.</p>
+                      <p><span className="font-semibold text-foreground">Draft</span> lets you save the message without showing it yet.</p>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">Live Machine Snapshot</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Active machine states are shown automatically on the dashboard landing section.
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        <Zap className="w-3 h-3" />
+                        {(convexMachines || []).filter((machine) => machine.status === 'ENGAGED' || machine.status === 'RESERVED').length} live
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {(convexMachines || []).filter((machine) => machine.status === 'ENGAGED' || machine.status === 'RESERVED').length === 0 ? (
+                        <div className="p-4 rounded-xl border border-dashed text-sm text-muted-foreground">
+                          No machines are currently engaged or reserved.
+                        </div>
+                      ) : (
+                        (convexMachines || [])
+                          .filter((machine) => machine.status === 'ENGAGED' || machine.status === 'RESERVED')
+                          .map((machine) => (
+                            <div key={machine.machineId} className="p-4 rounded-xl border bg-muted/20">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-semibold">{machine.name}</p>
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {machine.status === 'ENGAGED'
+                                      ? `Engaged by ${machine.currentUser || 'a lab member'}`
+                                      : `Reserved for ${machine.currentTurnName || 'next in queue'}`}
+                                  </p>
+                                </div>
+                                <span className={`px-2 py-1 rounded-full text-[11px] font-semibold uppercase ${
+                                  machine.status === 'ENGAGED' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {machine.status === 'ENGAGED' ? 'Engaged' : 'Reserved'}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </Card>
+                </div>
+              </div>
+            </TabsContent>
+          )}
+
           {/* HOME CMS TAB (ADMIN ONLY) */}
           {user?.role === 'ADMIN' && (
             <TabsContent value="settings" className="space-y-6">
@@ -2431,7 +3130,7 @@ export default function AdminPanel() {
                           <input
                             type="checkbox"
                             name="toggle"
-                            id="toggle"
+                            id="toggle-team-inventory"
                             className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
                             checked={allowTeamInventoryEdit}
                             onChange={(e) => {
@@ -2440,18 +3139,50 @@ export default function AdminPanel() {
                               toast.promise(
                                 updateAdminSettingsMut({
                                   allowTeamInventory: checked,
+                                  allowPublicProjectAccess,
                                   scriptUrl: SCRIPT_URL,
                                 }),
                                 { loading: 'Saving...', success: 'Settings updated!', error: 'Failed to update' }
                               );
                             }}
                           />
-                          <label htmlFor="toggle" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                          <label htmlFor="toggle-team-inventory" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                           <style>{`
                             .toggle-checkbox:checked { right: 0; border-color: #10b981; }
                             .toggle-checkbox:checked + .toggle-label { background-color: #10b981; }
                             .toggle-checkbox { right: 24px; transition: all 0.2s ease; border-color: #d1d5db; z-index: 10; }
                           `}</style>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-semibold text-foreground">Allow Public Project Viewing</h4>
+                          <p className="text-sm text-muted-foreground max-w-sm">
+                            If enabled, approved users who are not in a project can still open the Projects tab and browse project cards.
+                          </p>
+                        </div>
+                        <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                          <input
+                            type="checkbox"
+                            name="toggle-public-projects"
+                            id="toggle-public-projects"
+                            className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                            checked={allowPublicProjectAccess}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setAllowPublicProjectAccess(checked);
+                              toast.promise(
+                                updateAdminSettingsMut({
+                                  allowTeamInventory: allowTeamInventoryEdit,
+                                  allowPublicProjectAccess: checked,
+                                  scriptUrl: SCRIPT_URL,
+                                }),
+                                { loading: 'Saving...', success: 'Settings updated!', error: 'Failed to update' }
+                              );
+                            }}
+                          />
+                          <label htmlFor="toggle-public-projects" className="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                         </div>
                       </div>
                     </div>

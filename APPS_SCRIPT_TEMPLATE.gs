@@ -80,6 +80,8 @@ function computeSettingsSyncHash(settingsData) {
   return computeMd5Hash(JSON.stringify({
     key: String(settingsData.key || ''),
     value: String(settingsData.value || ''),
+    allowTeamInventory: String(settingsData.allowTeamInventory || ''),
+    allowPublicProjectAccess: String(settingsData.allowPublicProjectAccess || ''),
   }));
 }
 
@@ -162,18 +164,8 @@ function ensureFabAcademyHeaders(sheet) {
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }
 
-// CORS Headers
-function setCorsHeaders(output) {
-  return output
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
-
 // Main request handler
 function doPost(e) {
-  const output = ContentService.createTextOutput();
-  
   try {
     const data = JSON.parse(e.postData.contents);
     const action = data.action;
@@ -263,6 +255,9 @@ function doPost(e) {
       case 'updateUserNote':
         response = handleUpdateUserNote(data);
         break;
+      case 'sendHoldingReminderEmail':
+        response = handleSendHoldingReminderEmail(data);
+        break;
       case 'getHomeContent':
         response = handleGetHomeContent(data);
         break;
@@ -349,16 +344,20 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
  
   } catch (error) {
-    const output = ContentService.createTextOutput();
-    return setCorsHeaders(output).setMimeType(ContentService.MimeType.JSON)
-      .setContent(JSON.stringify({ success: false, message: error.toString() }));
+    console.error("Critical doPost error: " + error.toString());
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      message: error.toString() 
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
-// Handle OPTIONS requests for CORS
+/**
+ * Handle GET requests (and some OPTIONS redirects)
+ */
 function doGet(e) {
-  const output = ContentService.createTextOutput();
-  return setCorsHeaders(output).setContent('OK');
+  return ContentService.createTextOutput('Inventory Management System - Apps Script Active')
+    .setMimeType(ContentService.MimeType.TEXT);
 }
 
 // ===== USER MANAGEMENT =====
@@ -1727,17 +1726,72 @@ function handleUpdateUserNote(data) {
   return { success: false, message: 'User not found' };
 }
 
+function handleSendHoldingReminderEmail(data) {
+  const {
+    userEmail,
+    userName,
+    itemName,
+    quantity,
+    issuedAt,
+    issuedBy,
+    itemImageUrl,
+    itemReferenceUrl,
+    subject,
+    message,
+  } = data;
+
+  if (!userEmail) return { success: false, message: 'Missing recipient email' };
+
+  const safeSubject = subject || ('Return reminder: ' + String(itemName || 'Checked out item'));
+  const safeMessage = message || 'Please follow up with the item return procedure.';
+  const issuedDate = issuedAt ? new Date(issuedAt).toLocaleString() : 'Unknown';
+
+  const htmlBody = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;">',
+    '<h2 style="margin:0 0 12px;color:#111827;">' + safeSubject + '</h2>',
+    '<p>Hello ' + (userName || 'there') + ',</p>',
+    '<p>' + safeMessage + '</p>',
+    '<div style="margin:16px 0;padding:16px;border:1px solid #e5e7eb;border-radius:14px;background:#f9fafb;">',
+    '<p style="margin:0 0 8px;"><strong>Item:</strong> ' + (itemName || 'N/A') + '</p>',
+    '<p style="margin:0 0 8px;"><strong>Quantity:</strong> ' + (quantity || 0) + '</p>',
+    '<p style="margin:0 0 8px;"><strong>Date issued:</strong> ' + issuedDate + '</p>',
+    '<p style="margin:0;"><strong>Issued by:</strong> ' + (issuedBy || 'Team member') + '</p>',
+    '</div>',
+    itemImageUrl
+      ? '<p><a href="' + itemImageUrl + '" target="_blank">View linked item image</a></p>'
+      : '',
+    itemReferenceUrl
+      ? '<p><a href="' + itemReferenceUrl + '" target="_blank">Open item reference link</a></p>'
+      : '',
+    '<p>This reminder has also been pinned on your dashboard until you begin the return procedure.</p>',
+    '<p>Thank you.</p>',
+    '</div>'
+  ].join('');
+
+  MailApp.sendEmail({
+    to: userEmail,
+    subject: safeSubject,
+    htmlBody: htmlBody,
+  });
+
+  return { success: true };
+}
+
 /**
  * Manage Global System Settings (e.g. Allow Team Inventory Edit)
  */
 function handleManageAdminSettings(data) {
-  const { allowTeamInventoryEdit } = data;
+  const { allowTeamInventoryEdit, allowPublicProjectAccess } = data;
   // If no "Settings" sheet, save directly to Firestore under 'settings/admin'
   let sheet = null;
   try { sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings'); } catch(e){}
   
   if (!sheet) {
-    const doc = { adminSettingsTitle: 'admin', allowTeamInventory: !!allowTeamInventoryEdit };
+    const doc = {
+      adminSettingsTitle: 'admin',
+      allowTeamInventory: !!allowTeamInventoryEdit,
+      allowPublicProjectAccess: !!allowPublicProjectAccess,
+    };
     try { postToConvex('/syncRow', { table: 'settings', key: 'adminSettingsTitle', keyValue: 'admin', data: doc }); }
     catch (e) {}
     return { success: true, warning: 'Saved to Convex only. Create "Settings" sheet to persist.' };
@@ -1755,25 +1809,52 @@ function handleManageAdminSettings(data) {
   if (!found) {
     sheet.appendRow(['allowTeamInventoryEdit', String(allowTeamInventoryEdit)]);
   }
+
+  let projectVisibilityFound = false;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === 'allowPublicProjectAccess') {
+      sheet.getRange(i + 1, 2).setValue(String(allowPublicProjectAccess));
+      projectVisibilityFound = true;
+      break;
+    }
+  }
+  if (!projectVisibilityFound) {
+    sheet.appendRow(['allowPublicProjectAccess', String(allowPublicProjectAccess)]);
+  }
   
-  try { postToConvex('/syncRow', { table: 'settings', key: 'adminSettingsTitle', keyValue: 'admin', data: { adminSettingsTitle: 'admin', allowTeamInventory: !!allowTeamInventoryEdit } }); } catch(e) {}
+  try {
+    postToConvex('/syncRow', {
+      table: 'settings',
+      key: 'adminSettingsTitle',
+      keyValue: 'admin',
+      data: {
+        adminSettingsTitle: 'admin',
+        allowTeamInventory: !!allowTeamInventoryEdit,
+        allowPublicProjectAccess: !!allowPublicProjectAccess,
+      }
+    });
+  } catch(e) {}
   return { success: true };
 }
 
 function handleGetSettings(data) {
   let sheet = null;
   try { sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings'); } catch(e){}
-  const defaults = { allowTeamInventoryEdit: false };
+  const defaults = { allowTeamInventoryEdit: false, allowPublicProjectAccess: false };
   if (!sheet) return { success: true, settings: defaults };
   
   const values = sheet.getDataRange().getValues();
   let allow = false;
+  let allowProjects = false;
   for (let i = 1; i < values.length; i++) {
     if (values[i][0] === 'allowTeamInventoryEdit') {
       allow = String(values[i][1]).toLowerCase() === 'true';
     }
+    if (values[i][0] === 'allowPublicProjectAccess') {
+      allowProjects = String(values[i][1]).toLowerCase() === 'true';
+    }
   }
-  return { success: true, settings: { allowTeamInventoryEdit: allow } };
+  return { success: true, settings: { allowTeamInventoryEdit: allow, allowPublicProjectAccess: allowProjects } };
 }
 
 /**
@@ -2497,31 +2578,41 @@ function handleDeleteFabAcademyRow(data) {
 
 function handleUpsertSettingsRow(data) {
   const sheet = getOrCreateSheet('Settings');
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+  } else if (sheet.getLastRow() === 1 && sheet.getLastColumn() < 2) {
+    sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+  }
+
   const values = sheet.getDataRange().getValues();
   let rowIndex = findRowIndexByValue(values, 0, 'allowTeamInventoryEdit');
   if (rowIndex === -1) {
-    if (sheet.getLastRow() === 0) {
-      sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
-    } else if (sheet.getLastRow() === 1 && sheet.getLastColumn() < 2) {
-      sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
-    }
     rowIndex = sheet.getLastRow() + 1;
   }
 
-  sheet.getRange(rowIndex, 1, 1, 2).setValues([[
-    'allowTeamInventoryEdit',
-    String(!!data.allowTeamInventory),
-  ]]);
+  sheet.getRange(rowIndex, 1, 1, 2).setValues([['allowTeamInventoryEdit', String(!!data.allowTeamInventory)]]);
+
+  const refreshedValues = sheet.getDataRange().getValues();
+  let projectRowIndex = findRowIndexByValue(refreshedValues, 0, 'allowPublicProjectAccess');
+  if (projectRowIndex === -1) {
+    projectRowIndex = sheet.getLastRow() + 1;
+  }
+
+  sheet.getRange(projectRowIndex, 1, 1, 2).setValues([['allowPublicProjectAccess', String(!!data.allowPublicProjectAccess)]]);
   return { success: true };
 }
 
 function handleDeleteSettingsRow(data) {
   const sheet = getSheet('Settings');
   if (!sheet) return { success: true };
-  const values = sheet.getDataRange().getValues();
-  const rowIndex = findRowIndexByValue(values, 0, 'allowTeamInventoryEdit');
-  if (rowIndex === -1) return { success: true };
-  sheet.deleteRow(rowIndex);
+  const keys = ['allowPublicProjectAccess', 'allowTeamInventoryEdit'];
+  for (let index = 0; index < keys.length; index++) {
+    const values = sheet.getDataRange().getValues();
+    const rowIndex = findRowIndexByValue(values, 0, keys[index]);
+    if (rowIndex !== -1) {
+      sheet.deleteRow(rowIndex);
+    }
+  }
   return { success: true };
 }
 

@@ -1,6 +1,28 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { enqueueSheetsSyncJob } from "./sheetsSync";
+
+async function dismissHoldingReminder(ctx: MutationCtx, requestId: string) {
+  const reminders = await ctx.db
+    .query("dashboardUpdates")
+    .withIndex("by_relatedRequestId", (q) => q.eq("relatedRequestId", requestId))
+    .take(10);
+
+  for (const reminder of reminders) {
+    await ctx.db.delete(reminder._id);
+  }
+}
+
+async function clearProjectAssignments(ctx: MutationCtx, requestId: string) {
+  const projectItems = await ctx.db
+    .query("projectItems")
+    .withIndex("by_requestId", (q) => q.eq("requestId", requestId))
+    .take(20);
+
+  for (const projectItem of projectItems) {
+    await ctx.db.delete(projectItem._id);
+  }
+}
 
 function formatRequestForSheets(request: {
   date: string;
@@ -177,6 +199,9 @@ export const initiateReturn = mutation({
       returnTarget: args.returnTarget
     });
 
+    await dismissHoldingReminder(ctx, reqDoc.date);
+    await clearProjectAssignments(ctx, reqDoc.date);
+
     await enqueueSheetsSyncJob(ctx, {
       scriptUrl: args.scriptUrl,
       entityType: "requests",
@@ -210,6 +235,9 @@ export const processReturn = mutation({
       returnReceiver,
       returnRemarks: args.remarks,
     });
+
+    await dismissHoldingReminder(ctx, reqDoc.date);
+    await clearProjectAssignments(ctx, reqDoc.date);
 
     const invDoc = await ctx.db.query("inventory").withIndex("by_itemId", q => q.eq("itemId", reqDoc.itemId)).first();
     if (invDoc) {
