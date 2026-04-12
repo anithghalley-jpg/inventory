@@ -23,10 +23,19 @@ export const syncTable = internalMutation({
       }
     } else if (table === "users") {
       const existing = await ctx.db.query("users").collect();
+      const existingMap = new Map();
       for (const doc of existing) {
+        existingMap.set(doc.email, doc);
         await ctx.db.delete(doc._id);
       }
       for (const item of data) {
+        const oldUser = existingMap.get(item.email);
+        if (oldUser) {
+          item.laptopStatus = oldUser.laptopStatus;
+          item.sessionStart = oldUser.sessionStart;
+          item.sessionEnd = oldUser.sessionEnd;
+          item.totalTime = oldUser.totalTime;
+        }
         await ctx.db.insert("users", item);
       }
     } else if (table === "requests") {
@@ -96,8 +105,16 @@ export const syncRow = internalMutation({
       else await ctx.db.insert("inventory", data);
     } else if (table === "users") {
       existing = await ctx.db.query("users").withIndex("by_email", q => q.eq("email", keyValue)).first();
-      if (existing) await ctx.db.patch(existing._id, data);
-      else await ctx.db.insert("users", data);
+      if (existing) {
+        // Prevent Google Sheets sync from overwriting volatile active session data 
+        data.laptopStatus = existing.laptopStatus;
+        data.sessionStart = existing.sessionStart;
+        data.sessionEnd = existing.sessionEnd;
+        data.totalTime = existing.totalTime;
+        await ctx.db.patch(existing._id, data);
+      } else {
+        await ctx.db.insert("users", data);
+      }
     } else if (table === "requests") {
       existing = await ctx.db.query("requests").withIndex("by_date", q => q.eq("date", keyValue)).first();
       if (existing) await ctx.db.patch(existing._id, data);

@@ -12,6 +12,8 @@ const MAX_LIKES = 500;
 
 const VISIBLE_PROJECT_STATUSES = new Set([
   "DRAFT",
+  "SETUP_PENDING",
+  "SETUP_APPROVED",
   "BOX_PENDING",
   "BOX_APPROVED",
   "PLAN_PENDING",
@@ -75,8 +77,18 @@ const checkpointFieldValidator = v.object({
 
 const checkpointResponseValueValidator = v.object({
   fieldId: v.string(),
+  label: v.string(),
+  fieldType: v.string(),
   singleValue: v.optional(v.string()),
   multiValues: v.optional(v.array(v.string())),
+});
+
+const planningFieldValidator = v.object({
+  fieldId: v.string(),
+  label: v.string(),
+  fieldType: checkpointFieldTypeValidator,
+  required: v.boolean(),
+  position: v.number(),
 });
 
 const DEFAULT_QUESTION_CONFIG = {
@@ -130,7 +142,8 @@ async function getProjectMembers(ctx: QueryCtx | MutationCtx, projectId: string)
       const user = await getUserByEmail(ctx, member.userEmail);
       return {
         ...member,
-        profileImageUrl: user?.profileImageUrl ?? "",
+        // Prefer per-project profileImageUrl on the member row; fall back to user's global one
+        profileImageUrl: member.profileImageUrl ?? user?.profileImageUrl ?? "",
       };
     }),
   );
@@ -262,6 +275,10 @@ async function buildProjectCard(
     likeCount: likes.length,
     questionConfig: getQuestionConfig(project),
     viewerIsMember: isMember,
+    // Rejection notes so the landing tab can surface notifications
+    setupRejectionNote: project.setupRejectionNote ?? "",
+    boxRejectionNote: project.boxRejectionNote ?? "",
+    planRejectionNote: project.planRejectionNote ?? "",
   };
 }
 
@@ -378,8 +395,9 @@ async function buildProjectDetail(
       id: `${project.projectId}-plan-stage`,
       stage: "plan",
       title: "Project planning",
-      description:
-        "Submit sketches, completed behavior, required materials, initial plans, and the first build step.",
+      description: project.planningFields?.length
+        ? `Submit responses for: ${project.planningFields.map((f) => f.label).join(", ")}`
+        : "Submit sketches, completed behavior, required materials, initial plans, and the first build step.",
       createdAt: project.planSubmittedAt || project.createdAt,
       status:
         project.status === "PLAN_PENDING"
@@ -400,6 +418,8 @@ async function buildProjectDetail(
         approvedAt: project.planApprovedAt ?? "",
         approvedBy: project.planApprovedBy ?? "",
         rejectionNote: project.planRejectionNote ?? "",
+        planningFields: project.planningFields ?? [],
+        planningResponses: project.planningResponses ?? [],
       },
     },
   ];
@@ -463,11 +483,18 @@ async function buildProjectDetail(
     lastActivityAt: project.lastActivityAt ?? project.updatedAt,
     teamImageUrl: project.teamImageUrl ?? "",
     questionConfig,
+    // Setup stage
+    setupSubmittedAt: project.setupSubmittedAt ?? "",
+    setupApprovedAt: project.setupApprovedAt ?? "",
+    setupApprovedBy: project.setupApprovedBy ?? "",
+    setupRejectionNote: project.setupRejectionNote ?? "",
+    // Box stage
     boxImageUrl: project.boxImageUrl ?? "",
     boxSubmittedAt: project.boxSubmittedAt ?? "",
     boxApprovedAt: project.boxApprovedAt ?? "",
     boxApprovedBy: project.boxApprovedBy ?? "",
     boxRejectionNote: project.boxRejectionNote ?? "",
+    // Plan stage
     sketchImages: project.sketchImages ?? [],
     completedBehavior: project.completedBehavior ?? "",
     materialsRequired: project.materialsRequired ?? "",
@@ -477,6 +504,8 @@ async function buildProjectDetail(
     planApprovedAt: project.planApprovedAt ?? "",
     planApprovedBy: project.planApprovedBy ?? "",
     planRejectionNote: project.planRejectionNote ?? "",
+    planningFields: project.planningFields ?? [],
+    planningResponses: project.planningResponses ?? [],
     members,
     items,
     likeCount: likes.length,
@@ -512,7 +541,10 @@ export const getMemberWorkspace = query({
       return { projects: [] };
     }
 
-    const viewer = await assertApprovedViewer(ctx, args.userEmail);
+    const viewer = await getUserByEmail(ctx, args.userEmail);
+    if (!viewer || viewer.status !== "APPROVED") {
+      return { projects: [] };
+    }
     const projects = await ctx.db
       .query("projects")
       .withIndex("by_updatedAt")
@@ -579,6 +611,7 @@ export const upsertProject = mutation({
     projectId: v.optional(v.string()),
     name: v.string(),
     memberEmails: v.array(v.string()),
+    planningFields: v.optional(v.array(planningFieldValidator)),
   },
   handler: async (ctx, args) => {
     await assertAdmin(ctx, args.actorEmail);
@@ -606,6 +639,7 @@ export const upsertProject = mutation({
     if (existingProject) {
       await ctx.db.patch(existingProject._id, {
         name: trimmedName,
+        planningFields: args.planningFields ?? existingProject.planningFields,
         updatedAt: now,
       });
     } else {
@@ -632,6 +666,8 @@ export const upsertProject = mutation({
         planApprovedAt: "",
         planApprovedBy: "",
         planRejectionNote: "",
+        planningFields: args.planningFields ?? [],
+        planningResponses: [],
         questionConfig: DEFAULT_QUESTION_CONFIG,
       });
     }
@@ -718,33 +754,6 @@ export const updateProjectIdentity = mutation({
   },
 });
 
-export const updateMyProfile = mutation({
-  args: {
-    projectId: v.string(),
-    userEmail: v.string(),
-    profileImageUrl: v.string(),
-    projectNote: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const membership = await assertProjectMember(ctx, args.projectId, args.userEmail);
-    const user = await getUserByEmail(ctx, args.userEmail);
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const now = new Date().toISOString();
-    await ctx.db.patch(user._id, {
-      profileImageUrl: sanitizeText(args.profileImageUrl),
-    });
-    await ctx.db.patch(membership._id, {
-      projectNote: sanitizeText(args.projectNote),
-    });
-    await touchProject(ctx, args.projectId, now);
-
-    return { success: true };
-  },
-});
 
 export const updateQuestionConfig = mutation({
   args: {
@@ -779,6 +788,28 @@ export const updateQuestionConfig = mutation({
   },
 });
 
+export const updatePlanningFields = mutation({
+  args: {
+    actorEmail: v.string(),
+    projectId: v.string(),
+    fields: v.array(planningFieldValidator),
+  },
+  handler: async (ctx, args) => {
+    await assertAdmin(ctx, args.actorEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(project._id, {
+      planningFields: args.fields,
+      updatedAt: now,
+      lastActivityAt: now,
+    });
+
+    return { success: true };
+  },
+});
+
 export const submitBox = mutation({
   args: {
     projectId: v.string(),
@@ -791,7 +822,7 @@ export const submitBox = mutation({
     if (!project) {
       throw new Error("Project not found");
     }
-    if (!["DRAFT", "BOX_PENDING"].includes(project.status)) {
+    if (!["DRAFT", "SETUP_PENDING", "SETUP_APPROVED", "BOX_PENDING"].includes(project.status)) {
       throw new Error("Box submission is not allowed at this stage");
     }
 
@@ -836,7 +867,7 @@ export const reviewBox = mutation({
             lastActivityAt: now,
           }
         : {
-            status: "DRAFT",
+            status: "SETUP_APPROVED",   // stay at step 2 — step 1 approval is NOT revoked
             boxApprovedAt: "",
             boxApprovedBy: "",
             boxRejectionNote: sanitizeText(args.rejectionNote ?? ""),
@@ -853,11 +884,14 @@ export const submitPlan = mutation({
   args: {
     projectId: v.string(),
     userEmail: v.string(),
-    sketchImages: v.array(v.string()),
-    completedBehavior: v.string(),
-    materialsRequired: v.string(),
-    initialPlans: v.string(),
-    firstSteps: v.string(),
+    // Legacy static fields
+    sketchImages: v.optional(v.array(v.string())),
+    completedBehavior: v.optional(v.string()),
+    materialsRequired: v.optional(v.string()),
+    initialPlans: v.optional(v.string()),
+    firstSteps: v.optional(v.string()),
+    // New dynamic fields
+    values: v.optional(v.array(checkpointResponseValueValidator)),
   },
   handler: async (ctx, args) => {
     await assertProjectMember(ctx, args.projectId, args.userEmail);
@@ -870,18 +904,47 @@ export const submitPlan = mutation({
     }
 
     const now = new Date().toISOString();
-    await ctx.db.patch(project._id, {
+    const patch: any = {
       status: "PLAN_PENDING",
-      sketchImages: sanitizeUrlArray(args.sketchImages),
-      completedBehavior: sanitizeText(args.completedBehavior),
-      materialsRequired: sanitizeText(args.materialsRequired),
-      initialPlans: sanitizeText(args.initialPlans),
-      firstSteps: sanitizeText(args.firstSteps),
       planSubmittedAt: now,
       planRejectionNote: "",
       updatedAt: now,
       lastActivityAt: now,
-    });
+    };
+
+    if (args.values) {
+      const normalizedValues: {
+        fieldId: string;
+        label: string;
+        fieldType: string;
+        singleValue: string;
+        multiValues: string[];
+      }[] = [];
+
+      const fieldMap = new Map((project.planningFields ?? []).map((f) => [f.fieldId, f]));
+
+      for (const value of args.values) {
+        const field = fieldMap.get(value.fieldId);
+        if (!field) continue;
+        normalizedValues.push({
+          fieldId: field.fieldId,
+          label: field.label,
+          fieldType: field.fieldType,
+          singleValue: sanitizeText(value.singleValue ?? ""),
+          multiValues: sanitizeUrlArray(value.multiValues ?? []),
+        });
+      }
+      patch.planningResponses = normalizedValues;
+    } else {
+      // Legacy support
+      if (args.sketchImages !== undefined) patch.sketchImages = sanitizeUrlArray(args.sketchImages);
+      if (args.completedBehavior !== undefined) patch.completedBehavior = sanitizeText(args.completedBehavior);
+      if (args.materialsRequired !== undefined) patch.materialsRequired = sanitizeText(args.materialsRequired);
+      if (args.initialPlans !== undefined) patch.initialPlans = sanitizeText(args.initialPlans);
+      if (args.firstSteps !== undefined) patch.firstSteps = sanitizeText(args.firstSteps);
+    }
+
+    await ctx.db.patch(project._id, patch);
 
     return { success: true };
   },
@@ -924,6 +987,163 @@ export const reviewPlan = mutation({
     );
 
     return { success: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team Setup Stage
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Save a member's per-project profile image and role note. */
+export const updateMyProfile = mutation({
+  args: {
+    projectId: v.string(),
+    userEmail: v.string(),
+    profileImageUrl: v.string(),
+    projectNote: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const membership = await assertProjectMember(ctx, args.projectId, args.userEmail);
+    const now = new Date().toISOString();
+    await ctx.db.patch(membership._id, {
+      profileImageUrl: sanitizeText(args.profileImageUrl),
+      projectNote: sanitizeText(args.projectNote),
+    });
+    await touchProject(ctx, args.projectId, now);
+    return { success: true };
+  },
+});
+
+/**
+ * Any member can submit on behalf of the whole team.
+ * Pre-condition: ALL members must have profileImageUrl + projectNote set,
+ * and the project must have a teamImageUrl.
+ */
+export const submitTeamSetup = mutation({
+  args: {
+    projectId: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await assertProjectMember(ctx, args.projectId, args.userEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) throw new Error("Project not found");
+    if (!["DRAFT", "SETUP_PENDING"].includes(project.status)) {
+      throw new Error("Team setup can only be submitted from DRAFT or SETUP_PENDING");
+    }
+    if (!project.teamImageUrl?.trim()) {
+      throw new Error("Team image is required before submitting for approval");
+    }
+
+    // Verify ALL members have profileImageUrl + projectNote
+    const members = await ctx.db
+      .query("projectMembers")
+      .withIndex("by_projectId_and_order", (q) => q.eq("projectId", args.projectId))
+      .take(MAX_MEMBERS_PER_PROJECT);
+
+    for (const member of members) {
+      if (!member.profileImageUrl?.trim()) {
+        throw new Error(`Member ${member.userName} has not set a profile image yet`);
+      }
+      if (!member.projectNote?.trim()) {
+        throw new Error(`Member ${member.userName} has not added a role or project note yet`);
+      }
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(project._id, {
+      status: "SETUP_PENDING",
+      setupSubmittedAt: now,
+      setupRejectionNote: "",
+      updatedAt: now,
+      lastActivityAt: now,
+    });
+
+    return { success: true };
+  },
+});
+
+/** Admin approves or rejects the team setup submission. */
+export const reviewTeamSetup = mutation({
+  args: {
+    actorEmail: v.string(),
+    projectId: v.string(),
+    approve: v.boolean(),
+    rejectionNote: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await assertAdmin(ctx, args.actorEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) throw new Error("Project not found");
+    if (project.status !== "SETUP_PENDING") {
+      throw new Error("Project is not awaiting team setup review");
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(
+      project._id,
+      args.approve
+        ? {
+            status: "SETUP_APPROVED",
+            setupApprovedAt: now,
+            setupApprovedBy: args.actorEmail,
+            setupRejectionNote: "",
+            updatedAt: now,
+            lastActivityAt: now,
+          }
+        : {
+            status: "DRAFT",
+            setupApprovedAt: "",
+            setupApprovedBy: "",
+            setupRejectionNote: sanitizeText(args.rejectionNote ?? ""),
+            updatedAt: now,
+            lastActivityAt: now,
+          },
+    );
+
+    return { success: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-question plan comments (admin → team)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const addPlanComment = mutation({
+  args: {
+    actorEmail: v.string(),
+    projectId: v.string(),
+    questionKey: v.string(),
+    comment: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await assertAdmin(ctx, args.actorEmail);
+    const now = new Date().toISOString();
+    await ctx.db.insert("projectPlanComments", {
+      projectId: args.projectId,
+      questionKey: sanitizeText(args.questionKey),
+      authorEmail: args.actorEmail,
+      authorName: actor.name,
+      comment: sanitizeText(args.comment),
+      createdAt: now,
+    });
+    return { success: true };
+  },
+});
+
+export const getPlanComments = query({
+  args: {
+    projectId: v.string(),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await assertApprovedViewer(ctx, args.userEmail);
+    const comments = await ctx.db
+      .query("projectPlanComments")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .order("asc")
+      .take(200);
+    return comments;
   },
 });
 

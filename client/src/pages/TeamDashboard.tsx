@@ -769,7 +769,20 @@ export default function TeamDashboard() {
     const viewerHasProjectMembership = memberProjects.some((project) => project.viewerIsMember);
     const showProjectsTab = memberProjects.length > 0 && (!!adminSettings?.allowPublicProjectAccess || viewerHasProjectMembership);
     const pendingApprovalUsers = allUsers.filter((member) => member.status === 'PENDING');
-    const hasLandingContent = (convexDashboardUpdates?.length ?? 0) > 0 || pendingApprovalUsers.length > 0;
+
+    // Project rejection notifications — any project the user is a member of that has an unresolved rejection note
+    const projectRejectionAlerts = memberProjects.filter((project) => {
+        if (!project.viewerIsMember) return false;
+        const s = project.status;
+        // Show rejection alert only when the team needs to resubmit (rejection note present + not yet re-pending)
+        if (s === 'DRAFT' && project.setupRejectionNote) return true;          // Setup rejected
+        if (s === 'SETUP_APPROVED' && project.boxRejectionNote) return true;   // Box rejected
+        if (s === 'BOX_APPROVED' && project.planRejectionNote) return true;    // Plan rejected
+        return false;
+    });
+
+    const hasLandingContent = (convexDashboardUpdates?.length ?? 0) > 0 || pendingApprovalUsers.length > 0 || projectRejectionAlerts.length > 0;
+
     const activeProjectOptions = useMemo(
         () =>
             memberProjects
@@ -947,11 +960,46 @@ export default function TeamDashboard() {
 
                     {hasLandingContent && (
                         <TabsContent value="landing" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
+
+                            {/* ── Project rejection notifications ── */}
+                            {projectRejectionAlerts.length > 0 && (
+                                <div className="space-y-3">
+                                    {projectRejectionAlerts.map((project) => {
+                                        const isSetup = project.status === 'DRAFT' && project.setupRejectionNote;
+                                        const isBox = project.status === 'SETUP_APPROVED' && project.boxRejectionNote;
+                                        const isPlan = project.status === 'BOX_APPROVED' && project.planRejectionNote;
+                                        const stepLabel = isSetup ? 'Step 1 — Team Setup' : isBox ? 'Step 2 — Project Box' : 'Step 3 — Project Planning';
+                                        const note = (isSetup ? project.setupRejectionNote : isBox ? project.boxRejectionNote : project.planRejectionNote) ?? '';
+                                        return (
+                                            <div
+                                                key={project.projectId}
+                                                className="flex items-start gap-4 rounded-2xl border border-red-200 bg-red-50 p-4"
+                                            >
+                                                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" />
+                                                    </svg>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold text-red-800">
+                                                        {project.name} — {stepLabel} Rejected
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-red-700 italic">"{note}"</p>
+                                                    <p className="mt-2 text-xs text-red-500">
+                                                        Go to your <span className="font-semibold">Projects tab</span> to resubmit only this step.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
                             <DashboardLanding
                                 audience="team"
                                 userName={user?.name}
                                 title="Operations hub"
-                                description="Use this landing tab as the team’s daily briefing surface for notices, embedded references, machine activity, and the most important operational metrics."
+                                description="Use this landing tab as the team's daily briefing surface for notices, embedded references, machine activity, and the most important operational metrics."
                                 stats={teamStats}
                                 updates={convexDashboardUpdates || []}
                                 machines={convexMachines || []}

@@ -1,10 +1,14 @@
+import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getOptimizedImageUrl } from "@/lib/utils";
+import { X, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 export const EMOJIS = ["👍", "👏", "🔥", "💡", "🎉", "🙂"];
 
 export type ProjectStatus =
   | "DRAFT"
+  | "SETUP_PENDING"
+  | "SETUP_APPROVED"
   | "BOX_PENDING"
   | "BOX_APPROVED"
   | "PLAN_PENDING"
@@ -45,6 +49,10 @@ export interface ProjectCardRecord {
   memberCount: number;
   likeCount: number;
   viewerIsMember?: boolean;
+  // Rejection notes (present when admin rejects a step and team must resubmit)
+  setupRejectionNote?: string;
+  boxRejectionNote?: string;
+  planRejectionNote?: string;
 }
 
 export interface ProjectDetailRecord {
@@ -155,6 +163,12 @@ export interface ProjectDetailRecord {
     initialPlansPrompt: string;
     firstStepsPrompt: string;
   };
+  // Setup stage
+  setupSubmittedAt?: string;
+  setupApprovedAt?: string;
+  setupApprovedBy?: string;
+  setupRejectionNote?: string;
+  // Box stage
   boxImageUrl?: string;
   boxSubmittedAt?: string;
   boxApprovedAt?: string;
@@ -169,6 +183,20 @@ export interface ProjectDetailRecord {
   planApprovedAt?: string;
   planApprovedBy?: string;
   planRejectionNote?: string;
+  planningFields?: Array<{
+    fieldId: string;
+    label: string;
+    fieldType: CheckpointFieldType;
+    required: boolean;
+    position: number;
+  }>;
+  planningResponses?: Array<{
+    fieldId: string;
+    label: string;
+    fieldType: string;
+    singleValue?: string;
+    multiValues?: string[];
+  }>;
 }
 
 export function normalizeImageUrl(url: string) {
@@ -324,5 +352,99 @@ export function MediaList({
         </div>
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zoomable image with full-screen lightbox
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function ImageWithLightbox({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const normalized = normalizeImageUrl(src);
+  if (!normalized) return null;
+
+  return (
+    <>
+      <img
+        src={normalized}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        onClick={() => { setOpen(true); setZoom(1); }}
+        className={`cursor-zoom-in transition-opacity hover:opacity-90 ${className ?? ""}`}
+      />
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/92 backdrop-blur-md"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="absolute right-4 top-4 z-10 flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/30"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <span className="min-w-[50px] text-center text-sm font-semibold text-white">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom((z) => Math.min(5, z + 0.25))}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/30"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/30"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setOpen(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/30"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div
+            className="overflow-auto"
+            style={{ maxWidth: "95vw", maxHeight: "88vh" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={normalized}
+              alt={alt}
+              referrerPolicy="no-referrer"
+              draggable={false}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+                transition: "transform 0.2s ease",
+                maxWidth: zoom === 1 ? "88vw" : "none",
+                height: "auto",
+                display: "block",
+              }}
+            />
+          </div>
+
+          <p className="mt-4 text-xs text-white/40">Click outside or ✕ to close</p>
+        </div>
+      )}
+    </>
   );
 }

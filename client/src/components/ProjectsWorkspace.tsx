@@ -46,6 +46,7 @@ import {
   type ProjectDetailRecord,
   type TimelinePostKind,
 } from "@/components/projects/projectShared";
+import ProjectStepFlow from "@/components/projects/ProjectStepFlow";
 
 interface ProjectsWorkspaceProps {
   workspace?: { projects: ProjectCardRecord[] };
@@ -105,13 +106,13 @@ function ProjectCardTile({
     <button
       type="button"
       onClick={onOpen}
-      className={`w-full rounded-[1.5rem] border p-4 text-left transition-all ${
+      className={`w-full group rounded-[2rem] border p-4 text-left transition-all duration-300 ${
         selected
-          ? "border-slate-300 bg-slate-50 shadow-sm"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+          ? "border-slate-400 bg-slate-50 shadow-md ring-1 ring-slate-400"
+          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-xl hover:-translate-y-1"
       }`}
     >
-      <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-slate-100">
+      <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100 shadow-inner">
         {previewImage ? (
           <img
             src={normalizeImageUrl(previewImage)}
@@ -220,7 +221,7 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [previewMode, setPreviewMode] = useState<Record<string, "team" | "box">>({});
-  const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
+  const [leftRailCollapsed, setLeftRailCollapsed] = useState(true);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [identityDialogOpen, setIdentityDialogOpen] = useState(false);
   const [composerDialogOpen, setComposerDialogOpen] = useState(false);
@@ -381,14 +382,19 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   const handleSubmitCheckpointResponse = async (checkpointId: string) => {
     if (!projectDetail || !userEmail) return;
 
-    const values = Object.entries(responseValues[checkpointId] ?? {}).map(([fieldId, value]) => ({
-      fieldId,
-      singleValue: value.singleValue.trim() || undefined,
-      multiValues: value.multiValueText
-        .split("\n")
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    }));
+    const values = Object.entries(responseValues[checkpointId] ?? {}).map(([fieldId, value]) => {
+      const fieldDef = (projectDetail.timeline.find(item => item.itemType === 'checkpoint' && item.id === checkpointId) as any)?.fields?.find((f: any) => f.fieldId === fieldId);
+      return {
+        fieldId,
+        label: fieldDef?.label || "Unknown Field",
+        fieldType: fieldDef?.fieldType || "short_text",
+        singleValue: value.singleValue.trim() || undefined,
+        multiValues: value.multiValueText
+          .split("\n")
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      };
+    });
 
     await submitCheckpointResponseMut({
       userEmail,
@@ -731,38 +737,41 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   return (
     <section className="space-y-6">
       {!selectedProjectId || !projectDetail ? (
-        <Card className="rounded-[1.75rem] border-slate-200 bg-white p-5 shadow-sm">
-          <div className="space-y-5">
+        <div className="space-y-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Projects</p>
-              <h2 className="text-2xl font-black tracking-tight text-slate-900">Project Cards</h2>
-              <p className="text-sm text-slate-500">
-                Open any card to expand the project timeline. You can also star a project or leave a comment from here.
+              <h2 className="text-4xl font-black tracking-tight text-slate-900">Project Cards</h2>
+              <p className="text-sm leading-6 text-slate-500 max-w-lg">
+                Individual project workspaces for team collaboration. Click any card to expand the 
+                project timeline and view the full workspace.
               </p>
             </div>
 
-            <Input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search project name or member"
-              className="border-slate-200 bg-slate-50"
-            />
-
-            <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-              {filteredProjects.map((project) => (
-                <ProjectCardTile
-                  key={project.projectId}
-                  project={project}
-                  previewMode={previewMode[project.projectId] ?? "team"}
-                  onPreviewChange={(mode) => setPreviewMode((prev) => ({ ...prev, [project.projectId]: mode }))}
-                  onOpen={() => openProject(project.projectId)}
-                  onStar={() => handleToggleLike(project.projectId)}
-                  onComment={() => openComposer(project.projectId, "post")}
-                />
-              ))}
+            <div className="w-full lg:max-w-sm">
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search project name or member"
+                className="h-12 border-slate-200 bg-white shadow-sm rounded-2xl px-5 text-sm"
+              />
             </div>
           </div>
-        </Card>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {filteredProjects.map((project) => (
+              <ProjectCardTile
+                key={project.projectId}
+                project={project}
+                previewMode={previewMode[project.projectId] ?? "team"}
+                onPreviewChange={(mode) => setPreviewMode((prev) => ({ ...prev, [project.projectId]: mode }))}
+                onOpen={() => openProject(project.projectId)}
+                onStar={() => handleToggleLike(project.projectId)}
+                onComment={() => openComposer(project.projectId, "post")}
+              />
+            ))}
+          </div>
+        </div>
       ) : (
         <div className={`grid gap-6 ${leftRailCollapsed ? "xl:grid-cols-1" : "xl:grid-cols-[0.88fr_1.12fr]"}`}>
           {!leftRailCollapsed ? (
@@ -878,59 +887,21 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
               </div>
             </div>
 
-            <div className="space-y-6 px-6 py-6">
-              <div className="relative">
-                <div className="absolute left-1/2 top-0 hidden h-full w-px -translate-x-1/2 bg-slate-200 md:block" />
-                <div className="space-y-8">
-                  {projectDetail.timeline.map((item, index) => {
-                    const leftAligned = index % 2 === 0;
-                    return (
-                      <div
-                        key={item.id}
-                        className="relative grid gap-4 md:grid-cols-[minmax(0,1fr)_6rem_minmax(0,1fr)] md:items-start"
-                      >
-                        <TimelineMarker createdAt={item.createdAt} mobile />
-                        <div className={leftAligned ? "md:col-start-1" : "md:col-start-3"}>
-                          {renderTimelineCard(item)}
-                        </div>
-                        <div className="hidden md:block md:col-start-2">
-                          <TimelineMarker createdAt={item.createdAt} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <Card className="rounded-[1.5rem] border-slate-200 bg-slate-50 p-5 shadow-none">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-slate-500" />
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900">Project Box Items</h3>
-                    <p className="text-sm text-slate-500">Items currently linked to this project box.</p>
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {projectDetail.items.length > 0 ? (
-                    projectDetail.items.map((item) => (
-                      <div key={item.requestId} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <p className="font-semibold text-slate-900">{item.itemName}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Owner: {item.userEmail} • Qty: {item.quantity}
-                        </p>
-                        <p className="mt-2 text-xs uppercase tracking-[0.22em] text-slate-400">
-                          Added {formatDateOnly(item.taggedAt)}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-5 text-sm text-slate-500 md:col-span-2">
-                      No items have been linked to this project box yet.
-                    </div>
-                  )}
-                </div>
-              </Card>
-            </div>
+            <ProjectStepFlow
+              projectDetail={projectDetail}
+              userEmail={userEmail ?? ""}
+              onSaveIdentity={async (name, teamImageUrl) => {
+                await updateProjectIdentityMut({
+                  projectId: projectDetail.projectId,
+                  userEmail: userEmail ?? "",
+                  name,
+                  teamImageUrl,
+                });
+                toast.success("Project identity updated.");
+              }}
+              renderTimelineItem={renderTimelineCard}
+              onOpenComposer={() => openComposer(projectDetail.projectId, "post")}
+            />
           </Card>
         </div>
       )}

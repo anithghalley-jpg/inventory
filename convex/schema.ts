@@ -160,6 +160,8 @@ export default defineSchema({
     name: v.string(),
     status: v.union(
       v.literal("DRAFT"),
+      v.literal("SETUP_PENDING"),
+      v.literal("SETUP_APPROVED"),
       v.literal("BOX_PENDING"),
       v.literal("BOX_APPROVED"),
       v.literal("PLAN_PENDING"),
@@ -177,6 +179,11 @@ export default defineSchema({
     boxApprovedAt: v.optional(v.string()),
     boxApprovedBy: v.optional(v.string()),
     boxRejectionNote: v.optional(v.string()),
+    // Setup stage fields
+    setupSubmittedAt: v.optional(v.string()),
+    setupApprovedAt: v.optional(v.string()),
+    setupApprovedBy: v.optional(v.string()),
+    setupRejectionNote: v.optional(v.string()),
     sketchImages: v.array(v.string()),
     completedBehavior: v.string(),
     materialsRequired: v.string(),
@@ -186,6 +193,21 @@ export default defineSchema({
     planApprovedAt: v.optional(v.string()),
     planApprovedBy: v.optional(v.string()),
     planRejectionNote: v.optional(v.string()),
+    // Dynamic planning fields (replaces/extends the 5 hardcoded fields above)
+    planningFields: v.optional(v.array(v.object({
+      fieldId: v.string(),
+      label: v.string(),
+      fieldType: v.string(),
+      required: v.boolean(),
+      position: v.number(),
+    }))),
+    planningResponses: v.optional(v.array(v.object({
+      fieldId: v.string(),
+      label: v.string(),
+      fieldType: v.string(),
+      singleValue: v.optional(v.string()),
+      multiValues: v.optional(v.array(v.string())),
+    }))),
     questionConfig: v.optional(v.object({
       boxTitle: v.string(),
       boxDescription: v.string(),
@@ -206,12 +228,25 @@ export default defineSchema({
     userName: v.string(),
     userRole: v.string(),
     projectNote: v.string(),
+    profileImageUrl: v.optional(v.string()),
     joinedAt: v.string(),
     order: v.number(),
   })
     .index("by_projectId_and_userEmail", ["projectId", "userEmail"])
     .index("by_projectId_and_order", ["projectId", "order"])
     .index("by_userEmail", ["userEmail"]),
+
+  // Per-question admin comments on plan submissions
+  projectPlanComments: defineTable({
+    projectId: v.string(),
+    questionKey: v.string(),    // e.g. "completedBehavior", "materialsRequired", …
+    authorEmail: v.string(),
+    authorName: v.string(),
+    comment: v.string(),
+    createdAt: v.string(),
+  })
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_and_question", ["projectId", "questionKey"]),
 
   projectItems: defineTable({
     projectId: v.string(),
