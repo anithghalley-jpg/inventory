@@ -585,18 +585,33 @@ export default function AdminPanel() {
 
   const handleUpdateUser = async () => {
     if (!editingUserEmail) return;
-    toast.promise(
-      updateUserProfileMut({
+
+    // Optional status update promise
+    const targetUser = allUsers.find(u => u.email === editingUserEmail);
+    let statusPromise = Promise.resolve(null);
+    if (targetUser && targetUser.status !== editUserForm.status) {
+      statusPromise = updateUserStatusMut({
         email: editingUserEmail,
-        role: editUserForm.role as 'ADMIN' | 'USER' | 'TEAM',
-        note: editUserForm.note,
-        myPageLink: editUserForm.myPageLink,
-        tags: editUserForm.tags,
+        status: editUserForm.status as 'PENDING' | 'APPROVED' | 'REJECTED',
         scriptUrl: SCRIPT_URL,
-      }).then(async (result) => {
+      }).then((res) => res as unknown as null);
+    }
+
+    // Profile update promise
+    const profilePromise = updateUserProfileMut({
+      email: editingUserEmail,
+      role: editUserForm.role as 'ADMIN' | 'USER' | 'TEAM',
+      note: editUserForm.note,
+      myPageLink: editUserForm.myPageLink,
+      tags: editUserForm.tags,
+      scriptUrl: SCRIPT_URL,
+    });
+
+    toast.promise(
+      Promise.all([profilePromise, statusPromise]).then(async ([result]) => {
         setAllUsers(prev => prev.map(u =>
           u.email === editingUserEmail
-            ? { ...u, role: editUserForm.role, note: editUserForm.note, myPageLink: editUserForm.myPageLink, tags: editUserForm.tags } as any
+            ? { ...u, role: editUserForm.role, note: editUserForm.note, myPageLink: editUserForm.myPageLink, tags: editUserForm.tags, status: editUserForm.status } as any
             : u
         ));
         setEditingUserEmail(null);
@@ -1580,16 +1595,6 @@ export default function AdminPanel() {
                         <p className="text-sm font-medium text-foreground bg-background rounded-md px-3 py-2 border border-border">{editUserForm.name || '—'}</p>
                       </div>
 
-                      {/* Status */}
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Status</p>
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                          editUserForm.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' :
-                          editUserForm.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>{editUserForm.status || '—'}</span>
-                      </div>
-
                       {/* Laptop */}
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Laptop</p>
@@ -1620,18 +1625,34 @@ export default function AdminPanel() {
                   <div className="space-y-4">
                     <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Editable Fields</p>
 
-                    {/* Role dropdown */}
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-foreground">Role</label>
-                      <select
-                        value={editUserForm.role}
-                        onChange={(e) => setEditUserForm(f => ({ ...f, role: e.target.value }))}
-                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-emerald-500 outline-none"
-                      >
-                        <option value="USER">USER</option>
-                        <option value="TEAM">TEAM</option>
-                        <option value="ADMIN">ADMIN</option>
-                      </select>
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Role dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-foreground">Role</label>
+                        <select
+                          value={editUserForm.role}
+                          onChange={(e) => setEditUserForm(f => ({ ...f, role: e.target.value }))}
+                          className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-emerald-500 outline-none"
+                        >
+                          <option value="USER">USER</option>
+                          <option value="TEAM">TEAM</option>
+                          <option value="ADMIN">ADMIN</option>
+                        </select>
+                      </div>
+
+                      {/* Status dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-foreground">Status</label>
+                        <select
+                          value={editUserForm.status}
+                          onChange={(e) => setEditUserForm(f => ({ ...f, status: e.target.value }))}
+                          className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:ring-2 focus:ring-emerald-500 outline-none"
+                        >
+                          <option value="PENDING">PENDING</option>
+                          <option value="APPROVED">APPROVED</option>
+                          <option value="REJECTED">REJECTED</option>
+                        </select>
+                      </div>
                     </div>
 
                     {/* Page Link */}
