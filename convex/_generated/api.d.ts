@@ -13,6 +13,7 @@ import type * as home from "../home.js";
 import type * as http from "../http.js";
 import type * as inventory from "../inventory.js";
 import type * as requests from "../requests.js";
+import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 import type * as sheetsSync from "../sheetsSync.js";
 import type * as sync from "../sync.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   inventory: typeof inventory;
   requests: typeof requests;
+  seed: typeof seed;
   settings: typeof settings;
   sheetsSync: typeof sheetsSync;
   sync: typeof sync;
