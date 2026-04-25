@@ -7,12 +7,14 @@ const SETTINGS_KEY = "admin";
 function formatSettingsForSheets(settings: {
   adminSettingsTitle: string;
   allowTeamInventory: boolean;
+  allowPublicProjectAccess: boolean;
   homeDescription?: string;
   theme?: string;
 }) {
   return {
     adminSettingsTitle: settings.adminSettingsTitle,
     allowTeamInventory: settings.allowTeamInventory,
+    allowPublicProjectAccess: settings.allowPublicProjectAccess,
     homeDescription: settings.homeDescription ?? "",
     theme: settings.theme ?? "",
   };
@@ -30,6 +32,7 @@ export const getAdmin = query({
       settings ?? {
         adminSettingsTitle: SETTINGS_KEY,
         allowTeamInventory: false,
+        allowPublicProjectAccess: false,
         homeDescription: "",
         theme: "",
       }
@@ -40,6 +43,7 @@ export const getAdmin = query({
 export const updateAdmin = mutation({
   args: {
     allowTeamInventory: v.boolean(),
+    allowPublicProjectAccess: v.boolean(),
     scriptUrl: v.string(),
   },
   handler: async (ctx, args) => {
@@ -51,6 +55,7 @@ export const updateAdmin = mutation({
     const settingsDoc = {
       adminSettingsTitle: SETTINGS_KEY,
       allowTeamInventory: args.allowTeamInventory,
+      allowPublicProjectAccess: args.allowPublicProjectAccess,
       homeDescription: existing?.homeDescription ?? "",
       theme: existing?.theme ?? "",
     };

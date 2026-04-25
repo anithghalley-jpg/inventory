@@ -35,7 +35,17 @@ interface FabAcademyContent {
   remarks: string;
 }
 
-type CommunityTab = "fab-academy" | "tra-students";
+interface FabInternsContent {
+  id: string;
+  studentName: string;
+  imageUrl: string;
+  internshipYear: string;
+  videoUrl: string;
+  documentationUrl: string;
+  remarks: string;
+}
+
+type CommunityTab = "fab-academy" | "tra-students" | "fab-interns";
 type PlateDepth = "background" | "midground" | "foreground";
 
 type HeroPlate = {
@@ -220,6 +230,7 @@ function MediaImage({
       src={candidates[candidateIndex]}
       alt={alt}
       className={className}
+      referrerPolicy="no-referrer"
       onError={() => setCandidateIndex(current => current + 1)}
     />
   );
@@ -595,16 +606,27 @@ function MobileFabCardMedia({
 export default function Community() {
   const [homeData, setHomeData] = useState<HomeContent[]>([]);
   const [fabAcademyData, setFabAcademyData] = useState<FabAcademyContent[]>([]);
+  const [fabInternData, setFabInternData] = useState<FabInternsContent[]>([]);
   const [selectedFabCardId, setSelectedFabCardId] = useState<string | null>(
+    null
+  );
+  const [selectedInternCardId, setSelectedInternCardId] = useState<string | null>(
     null
   );
   const [fabPreviewMode, setFabPreviewMode] = useState<"image" | "video">(
     "image"
   );
+  const [internPreviewMode, setInternPreviewMode] = useState<"image" | "video">(
+    "image"
+  );
   const [fabPreviewAspectRatio, setFabPreviewAspectRatio] = useState(16 / 9);
+  const [internPreviewAspectRatio, setInternPreviewAspectRatio] = useState(16 / 9);
   const [fabScrollContainerEl, setFabScrollContainerEl] =
     useState<HTMLDivElement | null>(null);
   const [mobileFabFlippedId, setMobileFabFlippedId] = useState<string | null>(
+    null
+  );
+  const [mobileInternFlippedId, setMobileInternFlippedId] = useState<string | null>(
     null
   );
   const [isLoading, setIsLoading] = useState(true);
@@ -627,9 +649,15 @@ export default function Community() {
   const activeTabRef = useRef<CommunityTab>("fab-academy");
   const fabAcademyDataRef = useRef<FabAcademyContent[]>([]);
   const selectedFabCardIdRef = useRef<string | null>(null);
+  const internPreviewSectionRef = useRef<HTMLDivElement>(null);
+  const internSelectedDetailsRef = useRef<HTMLDivElement>(null);
+  const internGraduateHeaderRef = useRef<HTMLDivElement>(null);
+  const internGraduateListRef = useRef<HTMLDivElement>(null);
+  const [internGraduateScrollHeight, setInternGraduateScrollHeight] = useState<number | null>(null);
 
   const convexHomeData = useQuery(api.home.getAll);
   const convexFabAcademyData = useQuery(api.fabAcademy.getAll);
+  const convexFabInternsData = useQuery(api.fabInterns.getAll);
 
   const fetchFromSheets = useCallback(async () => {
     try {
@@ -718,6 +746,29 @@ export default function Community() {
   }, [convexFabAcademyData]);
 
   useEffect(() => {
+    if (convexFabInternsData !== undefined) {
+      const data: FabInternsContent[] = convexFabInternsData
+        .map(doc => ({
+          id: doc.entryId || doc._id,
+          studentName: doc.studentName || "",
+          imageUrl: doc.imageUrl || "",
+          internshipYear: doc.internshipYear || "",
+          videoUrl: doc.videoUrl || "",
+          documentationUrl: doc.documentationUrl || "",
+          remarks: doc.remarks || "",
+        }))
+        .sort(
+          (a, b) =>
+            String(b.internshipYear).localeCompare(String(a.internshipYear)) ||
+            a.studentName.localeCompare(b.studentName)
+        );
+      setFabInternData(data);
+      setDataSource("convex");
+      setIsLoading(false);
+    }
+  }, [convexFabInternsData]);
+
+  useEffect(() => {
     if (convexHomeData === null || convexFabAcademyData === null) {
       fetchFromSheets();
     }
@@ -749,6 +800,20 @@ export default function Community() {
     selectedFabCardIdRef.current = selectedFabCardId;
   }, [selectedFabCardId]);
 
+  useEffect(() => {
+    if (fabInternData.length === 0) {
+      setSelectedInternCardId(null);
+      setInternPreviewMode("image");
+      return;
+    }
+
+    setSelectedInternCardId(current =>
+      current && fabInternData.some(intern => intern.id === current)
+        ? current
+        : fabInternData[0].id
+    );
+  }, [fabInternData]);
+
   const getEmbedUrl = (url: string) => {
     if (!url) return "";
     if (url.includes("/preview")) return url;
@@ -771,6 +836,13 @@ export default function Community() {
       imageUrl: entry.imageUrl,
       kind: "image" as const,
     }));
+    const internMedia = fabInternData.slice(0, 4).map(entry => ({
+      tab: "fab-interns" as const,
+      title: entry.studentName,
+      subtitle: entry.internshipYear ? `Intern ${entry.internshipYear}` : "Fab Intern",
+      imageUrl: entry.imageUrl,
+      kind: "image" as const,
+    }));
     const traMedia = traVideos.slice(0, 3).map(item => ({
       tab: "tra-students" as const,
       title: item.heading,
@@ -779,7 +851,7 @@ export default function Community() {
       kind: "video" as const,
     }));
 
-    const mediaPool = [...fabMedia, ...traMedia];
+    const mediaPool = [...fabMedia, ...internMedia, ...traMedia];
     return HERO_PLATE_LAYOUTS.slice(0, mediaPool.length).map(
       (layout, index) => ({
         ...layout,
@@ -787,7 +859,7 @@ export default function Community() {
         id: `${mediaPool[index].tab}-${index}`,
       })
     );
-  }, [fabAcademyData, traVideos]);
+  }, [fabAcademyData, fabInternData, traVideos]);
 
   const selectedFabStudent = useMemo(() => {
     if (fabAcademyData.length === 0) return null;
@@ -802,6 +874,25 @@ export default function Community() {
     : "";
   const isFabVideoVisible =
     fabPreviewMode === "video" && !!selectedFabStudent?.videoUrl;
+
+  const selectedInternStudent = useMemo(() => {
+    if (fabInternData.length === 0) return null;
+    return (
+      fabInternData.find(intern => intern.id === selectedInternCardId) ??
+      fabInternData[0]
+    );
+  }, [fabInternData, selectedInternCardId]);
+
+  const selectedInternIndex = useMemo(() => {
+    if (!selectedInternStudent) return -1;
+    return fabInternData.findIndex(intern => intern.id === selectedInternStudent.id);
+  }, [fabInternData, selectedInternStudent]);
+
+  const selectedInternEmbedUrl = selectedInternStudent
+    ? getEmbedUrl(selectedInternStudent.videoUrl)
+    : "";
+  const isInternVideoVisible =
+    internPreviewMode === "video" && !!selectedInternStudent?.videoUrl;
 
   useEffect(() => {
     if (!selectedFabStudent || isFabVideoVisible) {
@@ -848,6 +939,52 @@ export default function Community() {
       cancelled = true;
     };
   }, [isFabVideoVisible, selectedFabStudent]);
+
+  useEffect(() => {
+    if (!selectedInternStudent || isInternVideoVisible) {
+      setInternPreviewAspectRatio(16 / 9);
+      return;
+    }
+
+    const candidates = buildDriveImageCandidates(selectedInternStudent.imageUrl);
+    if (candidates.length === 0) {
+      setInternPreviewAspectRatio(16 / 9);
+      return;
+    }
+
+    let cancelled = false;
+    let candidateIndex = 0;
+
+    const loadNextCandidate = () => {
+      if (cancelled || candidateIndex >= candidates.length) {
+        if (!cancelled) {
+          setInternPreviewAspectRatio(16 / 9);
+        }
+        return;
+      }
+
+      const image = new Image();
+      image.onload = () => {
+        if (cancelled) return;
+        const naturalRatio =
+          image.naturalWidth > 0 && image.naturalHeight > 0
+            ? image.naturalWidth / image.naturalHeight
+            : 16 / 9;
+        setInternPreviewAspectRatio(Math.min(1.8, Math.max(1, naturalRatio)));
+      };
+      image.onerror = () => {
+        candidateIndex += 1;
+        loadNextCandidate();
+      };
+      image.src = candidates[candidateIndex];
+    };
+
+    loadNextCandidate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isInternVideoVisible, selectedInternStudent]);
 
   const setFabCardRef = useCallback(
     (studentId: string, node: HTMLElement | null) => {
@@ -1051,6 +1188,64 @@ export default function Community() {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== "fab-interns") {
+      setInternGraduateScrollHeight(null);
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+
+    let frameId = 0;
+    const measureInternScroll = () => {
+      cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        if (window.innerWidth < 1280) {
+          setInternGraduateScrollHeight(null);
+          return;
+        }
+
+        const previewEl = internPreviewSectionRef.current;
+        const detailEl = internSelectedDetailsRef.current;
+        const headerEl = internGraduateHeaderRef.current;
+        if (!previewEl || !detailEl || !headerEl) {
+          setInternGraduateScrollHeight(null);
+          return;
+        }
+
+        const previewHeight = previewEl.getBoundingClientRect().height;
+        const detailHeight = detailEl.getBoundingClientRect().height;
+        const headerHeight = internGraduateHeaderRef.current?.getBoundingClientRect().height ?? 0;
+        const desktopGap = 32;
+        const nextHeight = Math.max(
+          220,
+          Math.floor(previewHeight + detailHeight + desktopGap - headerHeight)
+        );
+
+        setInternGraduateScrollHeight(current =>
+          current === nextHeight ? current : nextHeight
+        );
+      });
+    };
+
+    measureInternScroll();
+    const observer = new ResizeObserver(() => measureInternScroll());
+
+    if (contentRef.current) observer.observe(contentRef.current);
+    if (internPreviewSectionRef.current) observer.observe(internPreviewSectionRef.current);
+    if (internSelectedDetailsRef.current) observer.observe(internSelectedDetailsRef.current);
+    if (internGraduateHeaderRef.current) observer.observe(internGraduateHeaderRef.current);
+    if (internGraduateListRef.current) observer.observe(internGraduateListRef.current);
+
+    window.addEventListener("resize", measureInternScroll);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+      window.removeEventListener("resize", measureInternScroll);
+    };
+  }, [activeTab, fabInternData.length, selectedInternCardId, internPreviewMode, internPreviewAspectRatio]);
+
   const selectFabStudent = (
     studentId: string,
     mode: "image" | "video" = "image",
@@ -1077,6 +1272,25 @@ export default function Community() {
     );
     setSelectedFabCardId(studentId);
     setFabPreviewMode("image");
+  };
+
+  const selectIntern = (internId: string, mode: "image" | "video" = "image") => {
+    setSelectedInternCardId(internId);
+    setInternPreviewMode(mode);
+  };
+
+  const cycleIntern = (direction: 1 | -1) => {
+    if (fabInternData.length === 0) return;
+    const currentIndex = fabInternData.findIndex(intern => intern.id === selectedInternCardId);
+    const nextIndex = (currentIndex + direction + fabInternData.length) % fabInternData.length;
+    setSelectedInternCardId(fabInternData[nextIndex].id);
+    setInternPreviewMode("image");
+  };
+
+  const handleMobileInternCardTap = (internId: string) => {
+    setMobileInternFlippedId(current => (current === internId ? null : internId));
+    setSelectedInternCardId(internId);
+    setInternPreviewMode("image");
   };
 
   const handleSelectTab = (tab: CommunityTab) => {
@@ -1256,7 +1470,7 @@ export default function Community() {
           >
             <section className="rounded-[30px] border border-white/70 bg-white/56 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.07)] backdrop-blur-2xl md:p-8">
               <div className="flex justify-center">
-                <TabsList className="grid w-full grid-cols-2 rounded-full bg-white/72 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] md:w-[340px]">
+                <TabsList className="grid w-full grid-cols-3 rounded-full bg-white/72 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] md:w-[480px]">
                   <TabsTrigger
                     value="fab-academy"
                     className="rounded-full font-medium"
@@ -1265,9 +1479,15 @@ export default function Community() {
                   </TabsTrigger>
                   <TabsTrigger
                     value="tra-students"
-                    className="rounded-full font-medium"
+                    className="rounded-full font-medium text-xs sm:text-sm"
                   >
                     TRA Students
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="fab-interns"
+                    className="rounded-full font-medium"
+                  >
+                    Fab Interns
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -1679,6 +1899,380 @@ export default function Community() {
                                 );
                               })}
                             </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </TabsContent>
+
+                <TabsContent
+                  value="fab-interns"
+                  className="m-0 outline-none focus:ring-0"
+                >
+                  {isLoading ? (
+                    <div className="flex flex-col items-center py-20">
+                      <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
+                      <p className="animate-pulse text-muted-foreground">
+                        Loading interns...
+                      </p>
+                    </div>
+                  ) : fabInternData.length === 0 || !selectedInternStudent ? (
+                    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[26px] border border-dashed border-slate-200 bg-slate-50 text-center">
+                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm">
+                        <Users className="h-8 w-8 text-indigo-400" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-slate-900">
+                        No Internship Entries Yet
+                      </h3>
+                      <p className="mt-2 max-w-md text-slate-500">
+                        Intern showcases will appear here once added by the admin.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="xl:hidden">
+                        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                          Fab Interns
+                        </p>
+                        <div className="space-y-4">
+                          {fabInternData.map((intern, idx) => {
+                            const isFlipped = mobileInternFlippedId === intern.id;
+                            const embedUrl = getEmbedUrl(intern.videoUrl);
+
+                            return (
+                              <motion.div
+                                key={intern.id}
+                                initial={reducedMotion ? undefined : { opacity: 0, y: 16 }}
+                                animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                                transition={{
+                                  duration: 0.35,
+                                  ease: "easeOut",
+                                  delay: idx * 0.04,
+                                }}
+                                style={{ perspective: "1000px" }}
+                              >
+                                <div
+                                  style={{
+                                    transformStyle: "preserve-3d",
+                                    transition: "transform 0.55s cubic-bezier(0.4,0,0.2,1)",
+                                    transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                                    position: "relative",
+                                  }}
+                                >
+                                  <div
+                                    onClick={() => handleMobileInternCardTap(intern.id)}
+                                    style={{
+                                      backfaceVisibility: "hidden",
+                                      WebkitBackfaceVisibility: "hidden",
+                                      position: isFlipped ? "absolute" : "relative",
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                    }}
+                                    className="cursor-pointer rounded-[22px] border border-white/60 bg-white/52 p-4 shadow-[0_8px_16px_rgba(0,0,0,0.05)] backdrop-blur transition-colors hover:bg-white/60"
+                                  >
+                                    <div className="flex items-start gap-4">
+                                      <div className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-[16px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
+                                        <MediaImage
+                                          imageUrl={intern.imageUrl}
+                                          alt={intern.studentName}
+                                          className="absolute inset-0 h-full w-full object-contain p-1"
+                                        />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-700">
+                                            {intern.internshipYear || "Intern"}
+                                          </span>
+                                        </div>
+                                        <h3 className="mt-2 text-base font-bold leading-tight text-slate-900">
+                                          {intern.studentName}
+                                        </h3>
+                                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-500">
+                                          {intern.remarks || "Internship details coming soon."}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      backfaceVisibility: "hidden",
+                                      WebkitBackfaceVisibility: "hidden",
+                                      transform: "rotateY(180deg)",
+                                      position: isFlipped ? "relative" : "absolute",
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                    }}
+                                    className="overflow-hidden rounded-[22px] border border-indigo-300 bg-[#0c0c1e] shadow-[0_18px_40px_rgba(79,70,229,0.15)]"
+                                  >
+                                    <div className="relative w-full aspect-video">
+                                      {intern.videoUrl && embedUrl ? (
+                                        <iframe
+                                          src={embedUrl}
+                                          allow="autoplay; encrypted-media"
+                                          allowFullScreen
+                                          className="absolute inset-0 h-full w-full border-0"
+                                        />
+                                      ) : (
+                                        <MediaImage
+                                          imageUrl={intern.imageUrl}
+                                          alt={intern.studentName}
+                                          className="absolute inset-0 h-full w-full object-cover"
+                                        />
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between px-4 py-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-bold text-white">
+                                          {intern.studentName}
+                                        </p>
+                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">
+                                          Intern {intern.internshipYear}
+                                        </p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMobileInternCardTap(intern.id)}
+                                        className="ml-4 shrink-0 rounded-full border border-white/25 bg-white/12 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-colors active:bg-white/20"
+                                      >
+                                        Back
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="hidden xl:grid gap-12 xl:grid-cols-[minmax(0,560px)_1px_minmax(0,360px)] xl:grid-rows-[auto_auto_auto] xl:items-start xl:justify-center xl:overflow-hidden">
+                        <div ref={internPreviewSectionRef} className="relative z-20 space-y-6 xl:col-start-1 xl:row-start-1 xl:pr-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Selected Intern
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => cycleIntern(-1)}
+                                className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-indigo-300 hover:text-indigo-700"
+                              >
+                                Previous
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => cycleIntern(1)}
+                                className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-indigo-300 hover:text-indigo-700"
+                              >
+                                Next
+                              </button>
+                            </div>
+                          </div>
+
+                          <motion.div
+                            key={`${selectedInternStudent.id}-${internPreviewMode}`}
+                            initial={reducedMotion ? undefined : { opacity: 0, y: 12 }}
+                            animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                            transition={{ duration: 0.35, ease: "easeOut" }}
+                            className="space-y-4"
+                          >
+                            <div className="max-w-[560px]">
+                              <div
+                                className="relative overflow-hidden rounded-[28px] border border-white/60 bg-[#0c0c1e] shadow-[0_26px_60px_rgba(49,46,129,0.16)]"
+                                style={{ aspectRatio: internPreviewAspectRatio }}
+                              >
+                                {isInternVideoVisible && selectedInternEmbedUrl ? (
+                                  <iframe
+                                    src={selectedInternEmbedUrl}
+                                    allow="autoplay; encrypted-media"
+                                    allowFullScreen
+                                    className="absolute inset-0 h-full w-full border-0"
+                                  />
+                                ) : (
+                                  <MediaImage
+                                    imageUrl={selectedInternStudent.imageUrl}
+                                    alt={selectedInternStudent.studentName}
+                                    className="absolute inset-0 h-full w-full object-cover"
+                                  />
+                                )}
+                              </div>
+                              <div className="community-screen-shadow mx-auto mt-4 h-6 w-[58%] opacity-30" />
+                            </div>
+                          </motion.div>
+                        </div>
+
+                        <div className="relative z-10 hidden bg-[linear-gradient(180deg,transparent,rgba(99,102,241,0.95),transparent)] xl:row-span-2 xl:block" />
+
+                        <div className="relative z-10 xl:col-start-3 xl:row-span-2 xl:row-start-1">
+                          <div ref={internGraduateHeaderRef} className="mb-2 xl:pl-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Creative Interns
+                            </p>
+                          </div>
+
+                          <div
+                            ref={internGraduateListRef}
+                            className="space-y-4 xl:overflow-y-auto xl:overflow-x-hidden xl:overscroll-contain xl:pl-4 xl:pr-2"
+                            style={internGraduateScrollHeight ? { height: `${internGraduateScrollHeight}px` } : undefined}
+                          >
+                            {fabInternData.map((intern, idx) => {
+                              const isSelected = intern.id === selectedInternStudent.id;
+                              const isShowingVideo = isInternVideoVisible && isSelected;
+
+                              return (
+                                <motion.article
+                                  key={intern.id}
+                                  initial={reducedMotion ? undefined : { opacity: 0, y: 10 }}
+                                  animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                                  transition={{ duration: 0.3, ease: "easeOut" }}
+                                  onClick={() => selectIntern(intern.id)}
+                                  className={`group w-full max-w-[360px] shrink-0 cursor-pointer rounded-[24px] border p-3 transition-all active:scale-[0.98] md:p-4 ${isSelected ? "border-indigo-300 bg-indigo-50/68 shadow-[0_18px_36px_rgba(79,70,229,0.12)]" : "border-white/60 bg-white/34 hover:border-indigo-200 hover:bg-white/48"}`}
+                                >
+                                  <div className="grid grid-cols-[108px,minmax(0,1fr)] gap-4">
+                                    <div className="relative h-[120px] overflow-hidden rounded-[18px] border border-white/55 bg-[linear-gradient(180deg,#f1efe6,#e9efe9)]">
+                                      <MediaImage
+                                        imageUrl={intern.imageUrl}
+                                        alt={intern.studentName}
+                                        className="absolute inset-0 h-full w-full object-contain p-1 transition-transform duration-500 group-hover:scale-[1.02]"
+                                      />
+                                    </div>
+
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-indigo-700">
+                                          {intern.internshipYear || "Intern"}
+                                        </span>
+                                      </div>
+
+                                      <h3 className="mt-3 text-base font-bold leading-tight text-slate-900 md:text-lg">
+                                        {intern.studentName}
+                                      </h3>
+                                      <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">
+                                        {intern.remarks || "Internship summary coming soon."}
+                                      </p>
+
+                                      <div className="mt-4 flex flex-wrap gap-2">
+                                        {intern.videoUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              selectIntern(intern.id, isShowingVideo ? "image" : "video");
+                                            }}
+                                            className="rounded-full bg-indigo-700 px-3 py-1.5 text-[10px] font-bold uppercase text-white transition-colors hover:bg-indigo-800"
+                                          >
+                                            {isShowingVideo ? "Close" : "Watch"}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </motion.article>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div ref={internSelectedDetailsRef} className="space-y-3 xl:col-start-1 xl:row-start-2 xl:pr-3">
+                          <div className="relative max-w-[680px] rounded-[26px] border border-white/50 bg-white/38 px-4 pb-5 pt-6 shadow-[0_12px_24px_rgba(15,23,42,0.03)] backdrop-blur md:px-5">
+                            <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-[0_10px_24px_rgba(79,70,229,0.16)] md:left-5 md:h-20 md:w-20">
+                              <MediaImage
+                                imageUrl={selectedInternStudent.imageUrl}
+                                alt={selectedInternStudent.studentName}
+                                className="absolute inset-0 h-full w-full object-cover"
+                              />
+                            </div>
+
+                            <div className="pl-20 md:pl-24">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.26em] text-indigo-700">
+                                  Intern {selectedInternStudent.internshipYear || "Scholar"}
+                                </span>
+                                {isInternVideoVisible ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setInternPreviewMode("image")}
+                                    className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-indigo-700"
+                                  >
+                                    Photo preview
+                                    <ChevronUp className="h-4 w-4" />
+                                  </button>
+                                ) : (
+                                  selectedInternStudent.videoUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setInternPreviewMode("video")}
+                                      className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition-colors hover:text-indigo-700"
+                                    >
+                                      Show video
+                                      <ChevronDown className="h-4 w-4" />
+                                    </button>
+                                  )
+                                )}
+                              </div>
+
+                              <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+                                {selectedInternStudent.studentName}
+                              </h3>
+                              <p className="mt-3 text-sm leading-7 text-slate-600 md:text-base">
+                                {selectedInternStudent.remarks || "Internship story and achievements will appear here soon."}
+                              </p>
+
+                              <div className="mt-4 flex flex-wrap gap-3">
+                                {selectedInternStudent.documentationUrl && (
+                                  <a
+                                    href={selectedInternStudent.documentationUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 shadow-lg shadow-indigo-200"
+                                  >
+                                    View Achievements
+                                    <ArrowUpRight className="h-4 w-4" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="w-full space-y-3 xl:col-span-3 xl:row-start-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Intern Carousel
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {selectedInternIndex + 1} / {fabInternData.length}
+                            </p>
+                          </div>
+                          <div className="flex gap-4 overflow-x-auto pb-4 xl:pr-2">
+                            {fabInternData.map(intern => {
+                              const isSelected = intern.id === selectedInternStudent.id;
+
+                              return (
+                                <button
+                                  key={intern.id}
+                                  type="button"
+                                  onClick={() => selectIntern(intern.id)}
+                                  className={`relative h-28 min-w-[124px] overflow-hidden rounded-[20px] border transition-all ${isSelected ? "scale-105 border-2 border-indigo-400 shadow-[0_16px_34px_rgba(79,70,229,0.2)]" : "border border-white/70 bg-white/80 hover:border-indigo-200"}`}
+                                >
+                                  <MediaImage
+                                    imageUrl={intern.imageUrl}
+                                    alt={intern.studentName}
+                                    className="absolute inset-0 h-full w-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(15,23,42,0.66))]" />
+                                  <div className="absolute inset-x-3 bottom-2 text-center text-white">
+                                    <p className="truncate text-[10px] font-bold uppercase tracking-tight">
+                                      {intern.studentName}
+                                    </p>
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>

@@ -8,10 +8,15 @@
  * @module
  */
 
+import type * as aspects from "../aspects.js";
+import type * as dashboardUpdates from "../dashboardUpdates.js";
 import type * as fabAcademy from "../fabAcademy.js";
+import type * as fabInterns from "../fabInterns.js";
 import type * as home from "../home.js";
 import type * as http from "../http.js";
 import type * as inventory from "../inventory.js";
+import type * as machines from "../machines.js";
+import type * as projects from "../projects.js";
 import type * as requests from "../requests.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
@@ -26,10 +31,15 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  aspects: typeof aspects;
+  dashboardUpdates: typeof dashboardUpdates;
   fabAcademy: typeof fabAcademy;
+  fabInterns: typeof fabInterns;
   home: typeof home;
   http: typeof http;
   inventory: typeof inventory;
+  machines: typeof machines;
+  projects: typeof projects;
   requests: typeof requests;
   seed: typeof seed;
   settings: typeof settings;

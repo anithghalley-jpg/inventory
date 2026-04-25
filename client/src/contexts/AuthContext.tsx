@@ -14,6 +14,7 @@ export interface User {
   laptopStatus?: 'Online' | 'Offline';
   totalTime?: number;
   tags?: string[];
+  profileImageUrl?: string;
 }
 
 interface AuthContextType {
@@ -50,7 +51,8 @@ function normalizeUser(data: any): User {
     createdDate: data.createdDate || new Date().toISOString(),
     laptopStatus: data.laptopStatus || 'Offline',
     totalTime: data.totalTime || 0,
-    tags: Array.isArray(data.tags) ? data.tags : (data.tags ? String(data.tags).split(',').map((tag: string) => tag.trim()).filter(Boolean) : [])
+    tags: Array.isArray(data.tags) ? data.tags : (data.tags ? String(data.tags).split(',').map((tag: string) => tag.trim()).filter(Boolean) : []),
+    profileImageUrl: data.profileImageUrl || '',
   };
 }
 
@@ -115,6 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       totalTime: sheetUser.totalTime,
       rfid: (data.user.rfid || '') as string,
       myPageLink: (data.user.myPageLink || '') as string,
+      profileImageUrl: (data.user.profileImageUrl || '') as string,
       tags: sheetUser.tags,
       note: (data.user.note || '') as string,
     });

@@ -23,10 +23,19 @@ export const syncTable = internalMutation({
       }
     } else if (table === "users") {
       const existing = await ctx.db.query("users").collect();
+      const existingMap = new Map();
       for (const doc of existing) {
+        existingMap.set(doc.email, doc);
         await ctx.db.delete(doc._id);
       }
       for (const item of data) {
+        const oldUser = existingMap.get(item.email);
+        if (oldUser) {
+          item.laptopStatus = oldUser.laptopStatus;
+          item.sessionStart = oldUser.sessionStart;
+          item.sessionEnd = oldUser.sessionEnd;
+          item.totalTime = oldUser.totalTime;
+        }
         await ctx.db.insert("users", item);
       }
     } else if (table === "requests") {
@@ -58,8 +67,22 @@ export const syncTable = internalMutation({
       for (const doc of existing) {
         await ctx.db.delete(doc._id);
       }
+    } else if (table === "machines") {
+      const existing = await ctx.db.query("machines").collect();
+      for (const doc of existing) {
+        await ctx.db.delete(doc._id);
+      }
       for (const item of data) {
-        await ctx.db.insert("settings", item);
+        // Sanitize machine data to match schema
+        const sanitized = {
+          machineId: item.machineId || item.id,
+          name: item.name,
+          status: item.status || (item.isOnline ? "ENGAGED" : "AVAILABLE"),
+          currentUser: item.currentUser,
+          lastUsed: item.lastUsed,
+          lastNote: item.lastNote,
+        };
+        await ctx.db.insert("machines", sanitized);
       }
     }
   },
@@ -82,8 +105,16 @@ export const syncRow = internalMutation({
       else await ctx.db.insert("inventory", data);
     } else if (table === "users") {
       existing = await ctx.db.query("users").withIndex("by_email", q => q.eq("email", keyValue)).first();
-      if (existing) await ctx.db.patch(existing._id, data);
-      else await ctx.db.insert("users", data);
+      if (existing) {
+        // Prevent Google Sheets sync from overwriting volatile active session data 
+        data.laptopStatus = existing.laptopStatus;
+        data.sessionStart = existing.sessionStart;
+        data.sessionEnd = existing.sessionEnd;
+        data.totalTime = existing.totalTime;
+        await ctx.db.patch(existing._id, data);
+      } else {
+        await ctx.db.insert("users", data);
+      }
     } else if (table === "requests") {
       existing = await ctx.db.query("requests").withIndex("by_date", q => q.eq("date", keyValue)).first();
       if (existing) await ctx.db.patch(existing._id, data);
@@ -103,6 +134,19 @@ export const syncRow = internalMutation({
         .first();
       if (existing) await ctx.db.patch(existing._id, data);
       else await ctx.db.insert("settings", data);
+    } else if (table === "machines") {
+      // Sanitize machine data to match schema
+      const sanitized = {
+        machineId: data.machineId || data.id,
+        name: data.name,
+        status: data.status || (data.isOnline ? "ENGAGED" : "AVAILABLE"),
+        currentUser: data.currentUser,
+        lastUsed: data.lastUsed,
+        lastNote: data.lastNote,
+      };
+      existing = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", keyValue)).first();
+      if (existing) await ctx.db.patch(existing._id, sanitized);
+      else await ctx.db.insert("machines", sanitized);
     }
   }
 });
@@ -131,6 +175,8 @@ export const deleteRow = internalMutation({
         .query("settings")
         .withIndex("by_adminSettingsTitle", q => q.eq("adminSettingsTitle", keyValue))
         .first();
+    } else if (table === "machines") {
+      existing = await ctx.db.query("machines").withIndex("by_machineId", q => q.eq("machineId", keyValue)).first();
     }
     
     if (existing) {
@@ -204,6 +250,16 @@ export const deleteMissingRows = internalMutation({
       const existing = await ctx.db.query("settings").collect();
       for (const doc of existing) {
         const primaryKey = String(doc.adminSettingsTitle || '');
+        if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
+          await ctx.db.delete(doc._id);
+        } else {
+          seen.add(primaryKey);
+        }
+      }
+    } else if (table === "machines") {
+      const existing = await ctx.db.query("machines").collect();
+      for (const doc of existing) {
+        const primaryKey = String(doc.machineId || '');
         if (!validSet.has(primaryKey) || seen.has(primaryKey)) {
           await ctx.db.delete(doc._id);
         } else {

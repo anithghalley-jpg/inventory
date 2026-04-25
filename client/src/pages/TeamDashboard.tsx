@@ -4,15 +4,22 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import DashboardLanding from '@/components/DashboardLanding';
+import { MachineCard } from '@/components/MachineCard';
+import { MachineTurnNotification } from '@/components/MachineTurnNotification';
+import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
+import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -137,24 +144,24 @@ const isFabUser = (u: any) => {
 
 // Helper: Custom Saluting Figure Icon (Half Body)
 const SaluteIcon = ({ className = "w-4 h-4", style }: { className?: string, style?: React.CSSProperties }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2.5" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
-    className={className}
-    style={style}
-  >
-    {/* Head */}
-    <circle cx="9" cy="7" r="4" />
-    {/* Torso */}
-    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    {/* Saluting Arm/Hand */}
-    <path d="M18 10l2-2l-2-2" className="animate-pulse" />
-    <path d="M15 10h5" />
-  </svg>
+    <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        style={style}
+    >
+        {/* Head */}
+        <circle cx="9" cy="7" r="4" />
+        {/* Torso */}
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        {/* Saluting Arm/Hand */}
+        <path d="M18 10l2-2l-2-2" className="animate-pulse" />
+        <path d="M15 10h5" />
+    </svg>
 );
 
 // Helper to sort tags (FA 20XX tags at the beginning)
@@ -212,6 +219,13 @@ interface UsageRecord {
     status?: string;
 }
 
+interface ProjectAssignmentRecord {
+    projectId: string;
+    projectName: string;
+    projectStatus: string;
+    requestId: string;
+}
+
 export default function TeamDashboard() {
     const { user, logout, isAuthenticated } = useAuth();
     const [, navigate] = useLocation();
@@ -242,6 +256,8 @@ export default function TeamDashboard() {
     const [returnTarget, setReturnTarget] = useState('');
     const [selectedReturn, setSelectedReturn] = useState<any | null>(null);
     const [returnRemarks, setReturnRemarks] = useState('');
+    const [projectAssignmentTarget, setProjectAssignmentTarget] = useState<UsageRecord | null>(null);
+    const [activeTab, setActiveTab] = useState('store');
 
     const [communitySearchQuery, setCommunitySearchQuery] = useState('');
     const [selectedCommunityTag, setSelectedCommunityTag] = useState('all');
@@ -249,6 +265,11 @@ export default function TeamDashboard() {
     // Laptop State
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
     const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
+
+    // Machine Logic State
+    const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
+    const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
+    const [fabricationNote, setFabricationNote] = useState('');
 
     // Community Search & Filter Logic
     const availableTags = useMemo(() => {
@@ -263,26 +284,26 @@ export default function TeamDashboard() {
 
     const filteredCommunityUsers = useMemo(() => {
         return allUsers.filter(u => {
-            const matchesSearch = !communitySearchQuery || 
+            const matchesSearch = !communitySearchQuery ||
                 (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
                 (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
-            
-            const matchesTag = selectedCommunityTag === 'all' || 
+
+            const matchesTag = selectedCommunityTag === 'all' ||
                 (u.tags && u.tags.includes(selectedCommunityTag));
-                
+
             return matchesSearch && matchesTag;
         });
     }, [allUsers, communitySearchQuery, selectedCommunityTag]);
 
-    const filteredTeam = useMemo(() => 
+    const filteredTeam = useMemo(() =>
         filteredCommunityUsers
             .filter(u => u.role === 'TEAM' || u.role === 'ADMIN')
             .sort((a, b) => (b.tags?.length || 0) - (a.tags?.length || 0)),
-    [filteredCommunityUsers]);
+        [filteredCommunityUsers]);
 
-    const filteredStudents = useMemo(() => 
+    const filteredStudents = useMemo(() =>
         filteredCommunityUsers.filter(u => u.role === 'USER'),
-    [filteredCommunityUsers]);
+        [filteredCommunityUsers]);
 
     // Initial Side Effects
     useEffect(() => {
@@ -294,7 +315,7 @@ export default function TeamDashboard() {
 
     // Track if we're using the fallback (Sheets) or Convex
     const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
-    
+
     const convexInventory = useQuery(api.inventory.getAll);
 
     // Helper: load inventory from Google Sheets (Golden Rule fallback)
@@ -366,10 +387,26 @@ export default function TeamDashboard() {
     const approveCheckoutMut = useMutation(api.requests.approveCheckoutRequest);
     const cancelCheckoutRequestMut = useMutation(api.requests.cancelCheckoutRequest);
     const toggleLaptopMut = useMutation(api.users.toggleLaptop);
+    const updateUserStatusMut = useMutation(api.users.updateStatus);
+
+    // Machine Queries & Mutations
+    const convexMachines = useQuery(api.machines.getAll);
+    const convexDashboardUpdates = useQuery(api.dashboardUpdates.getForAudience, {
+        audience: "team",
+        userEmail: user?.email || "",
+    });
+    const projectWorkspace = useQuery(api.projects.getMemberWorkspace, {
+        userEmail: user?.email || "",
+    });
+    const projectAssignments = useQuery(api.projects.getAssignmentsOverview);
+    const adminSettings = useQuery(api.settings.getAdmin);
+    const startMachineMutation = useMutation(api.machines.startSession);
+    const endMachineMutation = useMutation(api.machines.endSession);
+    const addItemToProjectMut = useMutation(api.projects.addItemToProject);
 
     useEffect(() => {
         if (!convexUsers || !convexRequests) return;
-        
+
         setAllUsers(convexUsers.map((u: any) => ({ ...u, id: u._id })));
 
         const vApprovers = convexUsers
@@ -417,7 +454,7 @@ export default function TeamDashboard() {
     }, [convexUsers, convexRequests, user]);
 
     // Keep function for the manual refresh button to not break UI
-    const fetchUsers = async () => {};
+    const fetchUsers = async () => { };
 
     const fetchAllData = async () => {
         toast.success("Synchronized with Convex!");
@@ -559,11 +596,11 @@ export default function TeamDashboard() {
                 scriptUrl: SCRIPT_URL,
             });
             if (newStatus === 'Offline') {
-                toast.success('Session Ended.'); 
+                toast.success('Session Ended.');
             } else {
                 toast.success('Lab Session Started');
             }
-            
+
         } catch (e) {
             toast.error("Status update failed");
             setLaptopStatus(checked ? 'Offline' : 'Online');
@@ -585,6 +622,114 @@ export default function TeamDashboard() {
                 error: (err) => `Failed: ${err.message}`
             }
         );
+    };
+
+    const handleApprovePendingUser = async (email: string) => {
+        await toast.promise(
+            (async () => {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'approveUser', userId: email }),
+                });
+                const result = await response.json();
+                if (!response.ok || result?.success === false) {
+                    throw new Error(result?.message || 'Failed to update Google Sheets approval');
+                }
+
+                await updateUserStatusMut({
+                    email,
+                    status: 'APPROVED',
+                    scriptUrl: SCRIPT_URL,
+                });
+            })(),
+            {
+                loading: 'Approving user...',
+                success: 'User approved.',
+                error: (error: any) => error?.message || 'Approval failed',
+            },
+        );
+    };
+
+    const handleRejectPendingUser = async (email: string) => {
+        await toast.promise(
+            (async () => {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'rejectUser', userId: email }),
+                });
+                const result = await response.json();
+                if (!response.ok || result?.success === false) {
+                    throw new Error(result?.message || 'Failed to update Google Sheets status');
+                }
+
+                await updateUserStatusMut({
+                    email,
+                    status: 'REJECTED',
+                    scriptUrl: SCRIPT_URL,
+                });
+            })(),
+            {
+                loading: 'Rejecting application...',
+                success: 'Application rejected.',
+                error: (error: any) => error?.message || 'Rejection failed',
+            },
+        );
+    };
+
+    // Machine Session Handlers
+    const handleStartMachine = async (id: string) => {
+        try {
+            await startMachineMutation({
+                machineId: id,
+                userEmail: user?.email || '',
+                userName: user?.name || '',
+                scriptUrl: SCRIPT_URL
+            });
+            toast.success("Machine Session Started");
+        } catch (e: any) {
+            toast.error(e.message || "Failed to start machine");
+        }
+    };
+
+    const handleEndMachineClick = (id: string) => {
+        setMachineToEnd(id);
+        setFabricationNote('');
+        setShowMachineNoteModal(true);
+    };
+
+    const handleConfirmEndMachine = async () => {
+        if (!machineToEnd || !fabricationNote.trim()) return;
+
+        const id = machineToEnd;
+        const note = fabricationNote;
+
+        setShowMachineNoteModal(false);
+        setMachineToEnd(null);
+        setFabricationNote('');
+
+        try {
+            await endMachineMutation({
+                machineId: id,
+                note: note,
+                scriptUrl: SCRIPT_URL
+            });
+            toast.success("Session Ended.");
+        } catch (e: any) {
+            toast.error(e.message || "Failed to end machine session");
+        }
+    };
+
+    const handleAddItemToProject = async (projectId: string) => {
+        if (!projectAssignmentTarget || !user?.email) return;
+
+        await addItemToProjectMut({
+            projectId,
+            userEmail: user.email,
+            requestId: projectAssignmentTarget.id,
+        });
+
+        toast.success("Item added to the project box.");
+        setProjectAssignmentTarget(null);
     };
 
     // Helpers
@@ -619,6 +764,86 @@ export default function TeamDashboard() {
         acc[item.category].push(item);
         return acc;
     }, {} as Record<string, InventoryItem[]>);
+    const activeMachineCount = (convexMachines || []).filter((machine) => machine.status === 'ENGAGED').length;
+    const memberProjects = projectWorkspace?.projects ?? [];
+    const viewerHasProjectMembership = memberProjects.some((project) => project.viewerIsMember);
+    const showProjectsTab = memberProjects.length > 0 && (!!adminSettings?.allowPublicProjectAccess || viewerHasProjectMembership);
+    const pendingApprovalUsers = allUsers.filter((member) => member.status === 'PENDING');
+
+    // Project rejection notifications — any project the user is a member of that has an unresolved rejection note
+    const projectRejectionAlerts = memberProjects.filter((project) => {
+        if (!project.viewerIsMember) return false;
+        const s = project.status;
+        // Show rejection alert only when the team needs to resubmit (rejection note present + not yet re-pending)
+        if (s === 'DRAFT' && project.setupRejectionNote) return true;          // Setup rejected
+        if (s === 'SETUP_APPROVED' && project.boxRejectionNote) return true;   // Box rejected
+        if (s === 'BOX_APPROVED' && project.planRejectionNote) return true;    // Plan rejected
+        return false;
+    });
+
+    const hasLandingContent = (convexDashboardUpdates?.length ?? 0) > 0 || pendingApprovalUsers.length > 0 || projectRejectionAlerts.length > 0;
+
+    const activeProjectOptions = useMemo(
+        () =>
+            memberProjects
+                .filter((project) => project.status === 'ACTIVE' && project.viewerIsMember)
+                .map((project) => ({
+                    projectId: project.projectId,
+                    name: project.name,
+                })),
+        [memberProjects],
+    );
+    const projectAssignmentByRequestId = useMemo(() => {
+        const assignmentMap = new Map<string, ProjectAssignmentRecord>();
+        (projectAssignments || []).forEach((assignment) => {
+            assignmentMap.set(assignment.requestId, assignment);
+        });
+        return assignmentMap;
+    }, [projectAssignments]);
+    const teamStats = [
+        {
+            label: 'Inventory Lines',
+            value: inventory.length,
+            hint: 'Items your team can issue and track.',
+        },
+        {
+            label: 'Pending Actions',
+            value: pendingReturns.length + pendingCheckouts.length,
+            hint: 'Returns and checkout approvals waiting on review.',
+        },
+        {
+            label: 'Active Loans',
+            value: activeRequests.length,
+            hint: 'Approved requests currently out in the lab.',
+        },
+        {
+            label: 'Live Machines',
+            value: activeMachineCount,
+            hint: 'Machines engaged in ongoing sessions right now.',
+        },
+    ];
+
+    useEffect(() => {
+        if (!hasLandingContent && activeTab === 'landing') {
+            setActiveTab(showProjectsTab ? 'projects' : 'store');
+        }
+    }, [activeTab, hasLandingContent, showProjectsTab]);
+
+    useEffect(() => {
+        if (!showProjectsTab && activeTab === 'projects') {
+            setActiveTab(hasLandingContent ? 'landing' : 'store');
+        }
+    }, [activeTab, hasLandingContent, showProjectsTab]);
+
+    const teamTabCount =
+        (hasLandingContent ? 1 : 0) +
+        1 +
+        1 +
+        (showProjectsTab ? 1 : 0) +
+        1 +
+        1 +
+        1 +
+        1;
 
     // --- MAIN RENDER ---
     return (
@@ -649,8 +874,8 @@ export default function TeamDashboard() {
                                     return (
                                         <Tooltip key={idx}>
                                             <TooltipTrigger asChild>
-                                                <span 
-                                                    style={{ 
+                                                <span
+                                                    style={{
                                                         '--dynamic-glow': dynamic.glow,
                                                         '--dynamic-border': dynamic.border
                                                     } as React.CSSProperties}
@@ -697,9 +922,14 @@ export default function TeamDashboard() {
 
             {/* MAIN CONTENT WITH TABS */}
             <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-                <Tabs defaultValue="store" className="space-y-6">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <TabsList className="bg-white border border-slate-200 p-1 h-auto shadow-sm gap-1 self-start sm:self-auto overflow-x-auto max-w-full">
+                        <TabsList className={`bg-white border border-slate-200 p-1 h-auto shadow-sm gap-1 self-start sm:self-auto overflow-x-auto max-w-full ${teamTabCount >= 7 ? 'w-full' : ''}`}>
+                            {hasLandingContent && (
+                                <TabsTrigger value="landing" className={`data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 ${activeTab !== 'landing' ? 'shadow-[0_0_18px_rgba(16,185,129,0.28)] ring-1 ring-emerald-200 animate-pulse' : ''}`}>
+                                    <Sparkles className="w-4 h-4 mr-2" /> Landing
+                                </TabsTrigger>
+                            )}
                             <TabsTrigger value="store" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <ShoppingBag className="w-4 h-4 mr-2" /> Store
                             </TabsTrigger>
@@ -707,6 +937,11 @@ export default function TeamDashboard() {
                                 <History className="w-4 h-4 mr-2" /> My Items
                                 {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
                             </TabsTrigger>
+                            {showProjectsTab && (
+                                <TabsTrigger value="projects" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                    <FolderKanban className="w-4 h-4 mr-2" /> Projects
+                                </TabsTrigger>
+                            )}
                             <TabsTrigger value="users" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <UsersIcon className="w-4 h-4 mr-2" /> Community
                             </TabsTrigger>
@@ -717,8 +952,73 @@ export default function TeamDashboard() {
                             <TabsTrigger value="monitor" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <Monitor className="w-4 h-4 mr-2" /> Monitor
                             </TabsTrigger>
+                            <TabsTrigger value="machines" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <Zap className="w-4 h-4 mr-2" /> Machines
+                            </TabsTrigger>
                         </TabsList>
                     </div>
+
+                    {hasLandingContent && (
+                        <TabsContent value="landing" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
+
+                            {/* ── Project rejection notifications ── */}
+                            {projectRejectionAlerts.length > 0 && (
+                                <div className="space-y-3">
+                                    {projectRejectionAlerts.map((project) => {
+                                        const isSetup = project.status === 'DRAFT' && project.setupRejectionNote;
+                                        const isBox = project.status === 'SETUP_APPROVED' && project.boxRejectionNote;
+                                        const isPlan = project.status === 'BOX_APPROVED' && project.planRejectionNote;
+                                        const stepLabel = isSetup ? 'Step 1 — Team Setup' : isBox ? 'Step 2 — Project Box' : 'Step 3 — Project Planning';
+                                        const note = (isSetup ? project.setupRejectionNote : isBox ? project.boxRejectionNote : project.planRejectionNote) ?? '';
+                                        return (
+                                            <div
+                                                key={project.projectId}
+                                                className="flex items-start gap-4 rounded-2xl border border-red-200 bg-red-50 p-4"
+                                            >
+                                                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" />
+                                                    </svg>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold text-red-800">
+                                                        {project.name} — {stepLabel} Rejected
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-red-700 italic">"{note}"</p>
+                                                    <p className="mt-2 text-xs text-red-500">
+                                                        Go to your <span className="font-semibold">Projects tab</span> to resubmit only this step.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            <DashboardLanding
+                                audience="team"
+                                userName={user?.name}
+                                title="Operations hub"
+                                description="Use this landing tab as the team's daily briefing surface for notices, embedded references, machine activity, and the most important operational metrics."
+                                stats={teamStats}
+                                updates={convexDashboardUpdates || []}
+                                machines={convexMachines || []}
+                                pendingApprovals={pendingApprovalUsers.map((member) => ({
+                                    email: member.email,
+                                    name: member.name,
+                                    createdDate: member.createdDate,
+                                }))}
+                                onApprovePendingUser={handleApprovePendingUser}
+                                onRejectPendingUser={handleRejectPendingUser}
+                            />
+                        </TabsContent>
+                    )}
+
+                    {showProjectsTab && (
+                        <TabsContent value="projects" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
+                            <ProjectsWorkspace workspace={projectWorkspace} userEmail={user?.email} />
+                        </TabsContent>
+                    )}
 
                     {/* --- STORE TAB --- */}
                     <TabsContent value="store" className="space-y-6 focus-visible:outline-none focus-visible:ring-0">
@@ -856,6 +1156,13 @@ export default function TeamDashboard() {
                                                         <span className="text-xs bg-slate-100 px-2 py-0.5 rounded font-medium text-slate-600">x{item.quantity}</span>
                                                         <span className="text-xs text-slate-400">{new Date(item.timestamp).toLocaleDateString()}</span>
                                                     </div>
+                                                    {projectAssignmentByRequestId.get(item.id) && (
+                                                        <div className="mt-2">
+                                                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                                                Project: {projectAssignmentByRequestId.get(item.id)?.projectName}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {item.status === 'PENDING' ? (
@@ -877,17 +1184,32 @@ export default function TeamDashboard() {
                                                         </Button>
                                                     </div>
                                                 ) : (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="mt-auto w-full text-xs hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setReturnItem(item);
-                                                        }}
-                                                    >
-                                                        Return Item
-                                                    </Button>
+                                                    <div className="mt-auto flex flex-col gap-2">
+                                                        {!projectAssignmentByRequestId.get(item.id) && activeProjectOptions.length > 0 && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="w-full text-xs border-slate-200 hover:bg-slate-50"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setProjectAssignmentTarget(item);
+                                                                }}
+                                                            >
+                                                                Add To Project
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="w-full text-xs hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setReturnItem(item);
+                                                            }}
+                                                        >
+                                                            Return Item
+                                                        </Button>
+                                                    </div>
                                                 )}
                                             </Card>
                                         ))}
@@ -957,8 +1279,8 @@ export default function TeamDashboard() {
                                                             '--user-icon': dynamic.icon
                                                         } as React.CSSProperties}
                                                         className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${hasPageLink
-                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                : "border-slate-200 hover:shadow-md"
+                                                            ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                            : "border-slate-200 hover:shadow-md"
                                                             }`}
                                                         onClick={() => {
                                                             if (hasPageLink) {
@@ -979,18 +1301,18 @@ export default function TeamDashboard() {
                                                                         )}
                                                                     </div>
                                                                     {/* Circular FAB Seal */}
-                                                                    <div 
+                                                                    <div
                                                                         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
-                                                                        style={{ 
-                                                                            backgroundColor: 'var(--user-badge-bg)', 
-                                                                            color: 'var(--user-text)', 
-                                                                            borderColor: 'var(--user-border)' 
+                                                                        style={{
+                                                                            backgroundColor: 'var(--user-badge-bg)',
+                                                                            color: 'var(--user-text)',
+                                                                            borderColor: 'var(--user-border)'
                                                                         }}
                                                                     >
                                                                         FAB
                                                                     </div>
                                                                 </div>
-                                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Fab Academy / Student'}</p>
+                                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Student'}</p>
 
                                                                 {/* Badges - One Horizontal Line */}
                                                                 {u.tags && u.tags.length > 0 && (
@@ -1042,8 +1364,8 @@ export default function TeamDashboard() {
                                                                 '--user-icon': dynamic.icon
                                                             } as React.CSSProperties}
                                                             className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                                                    ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                    : "border-slate-200 hover:shadow-md"
+                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                : "border-slate-200 hover:shadow-md"
                                                                 }`}
                                                             onClick={() => {
                                                                 if (hasPageLink) {
@@ -1115,8 +1437,8 @@ export default function TeamDashboard() {
                                                                 '--user-icon': dynamic.icon
                                                             } as React.CSSProperties}
                                                             className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                                                    ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                    : "border-slate-200 hover:shadow-md"
+                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
+                                                                : "border-slate-200 hover:shadow-md"
                                                                 }`}
                                                             onClick={() => {
                                                                 if (hasPageLink) {
@@ -1134,7 +1456,7 @@ export default function TeamDashboard() {
                                                                             <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
                                                                         </div>
                                                                     </div>
-                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Fab Academy / TRA Student</p>
+                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Student</p>
 
                                                                     {/* Badges - One Horizontal Line */}
                                                                     {u.tags && u.tags.length > 0 && (
@@ -1168,8 +1490,8 @@ export default function TeamDashboard() {
                                     </div>
                                     <h3 className="text-lg font-bold text-slate-900">No users found</h3>
                                     <p className="text-slate-500 mb-6">We couldn't find any users matching your criteria.</p>
-                                    <Button 
-                                        variant="outline" 
+                                    <Button
+                                        variant="outline"
                                         onClick={() => {
                                             setCommunitySearchQuery('');
                                             setSelectedCommunityTag('all');
@@ -1289,6 +1611,7 @@ export default function TeamDashboard() {
                                                     <th className="px-4 py-3">User</th>
                                                     <th className="px-4 py-3">Item</th>
                                                     <th className="px-4 py-3">Qty</th>
+                                                    <th className="px-4 py-3">Project</th>
                                                     <th className="px-4 py-3">Date Borrowed</th>
                                                 </tr>
                                             </thead>
@@ -1298,6 +1621,9 @@ export default function TeamDashboard() {
                                                         <td className="px-4 py-3 font-medium text-slate-900">{req.userName}</td>
                                                         <td className="px-4 py-3">{req.itemName}</td>
                                                         <td className="px-4 py-3 text-slate-500">x{req.quantity}</td>
+                                                        <td className="px-4 py-3 text-slate-500">
+                                                            {projectAssignmentByRequestId.get(req.date)?.projectName || "Not linked"}
+                                                        </td>
                                                         <td className="px-4 py-3 text-slate-400">{new Date(req.date).toLocaleDateString()}</td>
                                                     </tr>
                                                 ))}
@@ -1329,7 +1655,7 @@ export default function TeamDashboard() {
                                                     <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
                                                 </div>
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={() => handleForceTurnOff(u.email)}
                                                 className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                                 title="Force Turn Off"
@@ -1348,10 +1674,114 @@ export default function TeamDashboard() {
                             </div>
                         </div>
                     </TabsContent>
+
+
+                    {/* --- MACHINES TAB (Team Edition) --- */}
+                    <TabsContent value="machines" className="space-y-6">
+                        <div className="space-y-6">
+                            <div className="mb-6">
+                                <h2 className="text-2xl font-black font-display text-slate-900 border-b-2 border-emerald-500 pb-1 w-fit mb-2 uppercase">Machine Status</h2>
+                                <p className="text-muted-foreground text-sm max-w-2xl">
+                                    Monitor and manage lab machines. Start or end sessions for yourself or track availability.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {(convexMachines || []).map((m) => {
+                                    const machine = {
+                                        id: m.machineId,
+                                        name: m.name,
+                                        isOnline: m.status === "ENGAGED",
+                                        currentUser: m.currentUser || "",
+                                        waitingList: m.waitingList || [],
+                                        currentTurnEmail: m.currentTurnEmail,
+                                        currentTurnName: m.currentTurnName,
+                                    };
+                                    const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
+                                    const isEngaged = machine.isOnline;
+
+                                    return (
+                                        <MachineCard
+                                            key={machine.id}
+                                            machine={machine}
+                                            hideHistory={true}
+                                            actionButton={
+                                                isUserOperating ? (
+                                                    <Button 
+                                                        className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold h-10 shadow-sm"
+                                                        onClick={() => handleEndMachineClick(machine.id)}
+                                                    >
+                                                        End My Session
+                                                    </Button>
+                                                ) : (
+                                                    <Button 
+                                                        className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
+                                                        disabled={isEngaged || (!!machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? ""))}
+                                                        onClick={() => handleStartMachine(machine.id)}
+                                                    >
+                                                        {isEngaged ? 'Machine Occupied' : (machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? "") ? 'Reserved' : 'Start Session')}
+                                                    </Button>
+                                                )
+                                            }
+                                        />
+                                    );
+                                })}
+                                {convexMachines?.length === 0 && (
+                                    <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
+                                        <Zap className="w-12 h-12 text-slate-200 mx-auto mb-4 opacity-20" />
+                                        <p className="text-slate-400 font-medium">No machines registered in Convex.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </TabsContent>
                 </Tabs>
+                <MachineTurnNotification scriptUrl={SCRIPT_URL} />
             </main>
 
             {/* --- DIALOGS --- */}
+
+            {/* Machine Note Modal */}
+            <Dialog open={showMachineNoteModal} onOpenChange={setShowMachineNoteModal}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                            <Scissors className="w-5 h-5 text-emerald-500" />
+                            What did you fabricate?
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="fabrication-note" className="text-slate-700 font-medium">
+                                Please share a brief note about your work. This is mandatory to complete the session.
+                            </Label>
+                            <Textarea
+                                id="fabrication-note"
+                                placeholder="Example: Cut acrylic for robot chassis, 3D printed sensor bracket..."
+                                className="h-32 resize-none border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 transition-all rounded-xl"
+                                value={fabricationNote}
+                                onChange={(e) => setFabricationNote(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setShowMachineNoteModal(false)}
+                            className="rounded-xl border-slate-200"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            onClick={handleConfirmEndMachine}
+                            disabled={!fabricationNote.trim()}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 h-10"
+                        >
+                            Submit & End Session
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* ITEM DETAILS DIALOG (New) */}
             <Dialog open={!!viewItem} onOpenChange={(o) => !o && setViewItem(null)}>
@@ -1445,6 +1875,16 @@ export default function TeamDashboard() {
                     <Button onClick={handleCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700">Confirm Request</Button>
                 </DialogContent>
             </Dialog>
+
+            <ProjectAssignmentDialog
+                open={!!projectAssignmentTarget}
+                onOpenChange={(open) => {
+                    if (!open) setProjectAssignmentTarget(null);
+                }}
+                itemName={projectAssignmentTarget?.itemName || ''}
+                projects={activeProjectOptions}
+                onAssign={handleAddItemToProject}
+            />
 
             {/* RETURN CONFIRM DIALOG - Missing in previous code, essential for 'Return Item' action */}
             <Dialog open={!!returnItem} onOpenChange={(o) => !o && setReturnItem(null)}>

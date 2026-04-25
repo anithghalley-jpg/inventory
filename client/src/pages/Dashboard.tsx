@@ -5,14 +5,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
 import { getTagStyle } from '@/lib/tagUtils';
+import DashboardLanding from '@/components/DashboardLanding';
+import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
+import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -24,6 +29,8 @@ import { getTagStyle } from '@/lib/tagUtils';
 import { SCRIPT_URL } from '@/config';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { MachineCard, MachineData } from '@/components/MachineCard';
+import { MachineTurnNotification } from '@/components/MachineTurnNotification';
 
 const glowStyles = [
   {
@@ -209,7 +216,6 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
 
   // State
-  const [activeTab, setActiveTab] = useState('store');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [myItems, setMyItems] = useState<UsageRecord[]>([]);
   const [requests, setRequests] = useState<any[]>([]); // Store raw requests
@@ -232,10 +238,25 @@ export default function Dashboard() {
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [newItemNameRequest, setNewItemNameRequest] = useState('');
   const [newItemRemarksRequest, setNewItemRemarksRequest] = useState('');
+  const [activeTab, setActiveTab] = useState('store');
 
-  // Laptop Tracking State
   const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
   const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
+
+  // Machine Logic
+  const convexMachines = useQuery(api.machines.getAll);
+  const convexDashboardUpdates = useQuery(api.dashboardUpdates.getForAudience, {
+    audience: "user",
+    userEmail: user?.email || "",
+  });
+  const projectWorkspace = useQuery(api.projects.getMemberWorkspace, {
+    userEmail: user?.email || "",
+  });
+  const adminSettings = useQuery(api.settings.getAdmin);
+  const projectAssignments = useQuery(api.projects.getAssignmentsOverview);
+  const startMachineMutation = useMutation(api.machines.startSession);
+  const endMachineMutation = useMutation(api.machines.endSession);
+  const addItemToProjectMut = useMutation(api.projects.addItemToProject);
 
   // Sync state with user context updates
   useEffect(() => {
@@ -244,6 +265,53 @@ export default function Dashboard() {
       setTotalScreenTime(user.totalTime || 0);
     }
   }, [user]);
+
+  const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
+  const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
+  const [fabricationNote, setFabricationNote] = useState('');
+  const [projectAssignmentTarget, setProjectAssignmentTarget] = useState<UsageRecord | null>(null);
+
+  const handleStartMachine = async (id: string) => {
+    try {
+      await startMachineMutation({
+        machineId: id,
+        userEmail: user?.email || '',
+        userName: user?.name || '',
+        scriptUrl: SCRIPT_URL
+      });
+      toast.success('Session started successfully');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to start session');
+    }
+  };
+
+  const handleEndMachineClick = (id: string) => {
+    setMachineToEnd(id);
+    setFabricationNote('');
+    setShowMachineNoteModal(true);
+  };
+
+  const handleConfirmEndMachine = async () => {
+    if (!machineToEnd) return;
+    if (!fabricationNote.trim()) {
+      toast.error('Please share what you have fabricated');
+      return;
+    }
+
+    try {
+      await endMachineMutation({
+        machineId: machineToEnd,
+        note: fabricationNote.trim(),
+        scriptUrl: SCRIPT_URL
+      });
+      setShowMachineNoteModal(false);
+      setMachineToEnd(null);
+      toast.success('Session ended successfully');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to end session');
+    }
+  };
+
 
 
   // 1. Fetch Data on Mount
@@ -511,6 +579,19 @@ export default function Dashboard() {
     }
   };
 
+  const handleAddItemToProject = async (projectId: string) => {
+    if (!projectAssignmentTarget || !user?.email) return;
+
+    await addItemToProjectMut({
+      projectId,
+      userEmail: user.email,
+      requestId: projectAssignmentTarget.id,
+    });
+
+    toast.success('Item added to the project box.');
+    setProjectAssignmentTarget(null);
+  };
+
   const formatTime = (minutes: number) => {
     const hrs = Math.floor(minutes / 60);
     const mins = minutes % 60;
@@ -545,6 +626,82 @@ export default function Dashboard() {
 
   // Sort categories alphabetically
   const sortedCategories = Object.keys(groupedItems).sort();
+  const activeMachineCount = (convexMachines || []).filter((machine) => machine.status === 'ENGAGED').length;
+  const approvedCommunityCount = allUsers.filter((member) => member.status === 'APPROVED').length;
+  const memberProjects = projectWorkspace?.projects ?? [];
+  const viewerHasProjectMembership = memberProjects.some((project) => project.viewerIsMember);
+  const showProjectsTab = memberProjects.length > 0 && (!!adminSettings?.allowPublicProjectAccess || viewerHasProjectMembership);
+  const hasLandingContent = (convexDashboardUpdates?.length ?? 0) > 0;
+  const activeProjectOptions = useMemo(
+    () =>
+      memberProjects
+        .filter((project) => project.status === 'ACTIVE' && project.viewerIsMember)
+        .map((project) => ({
+          projectId: project.projectId,
+          name: project.name,
+        })),
+    [memberProjects],
+  );
+  const projectAssignmentByRequestId = useMemo(() => {
+    const assignmentMap = new Map<string, { projectId: string; projectName: string; projectStatus: string }>();
+    (projectAssignments || []).forEach((assignment) => {
+      assignmentMap.set(assignment.requestId, {
+        projectId: assignment.projectId,
+        projectName: assignment.projectName,
+        projectStatus: assignment.projectStatus,
+      });
+    });
+    return assignmentMap;
+  }, [projectAssignments]);
+  const dashboardStats = [
+    {
+      label: 'Available Items',
+      value: inventory.length,
+      hint: 'Inventory you can browse and request now.',
+    },
+    {
+      label: 'My Active Items',
+      value: myItems.filter((item) => item.returnRequestStatus !== 'RETURN_PENDING').length,
+      hint: 'Open checkouts currently assigned to you.',
+    },
+    {
+      label: 'Live Machines',
+      value: activeMachineCount,
+      hint: 'Equipment engaged in the lab right now.',
+    },
+    {
+      label: 'Community',
+      value: approvedCommunityCount,
+      hint: 'Approved makers visible in the directory.',
+    },
+  ];
+
+  useEffect(() => {
+    if (hasLandingContent) {
+      if (!activeTab) {
+        setActiveTab('landing');
+      }
+      return;
+    }
+
+    if (activeTab === 'landing') {
+      setActiveTab(showProjectsTab ? 'projects' : 'store');
+    }
+  }, [activeTab, hasLandingContent, showProjectsTab]);
+
+  useEffect(() => {
+    if (!showProjectsTab && activeTab === 'projects') {
+      setActiveTab(hasLandingContent ? 'landing' : 'store');
+    }
+  }, [activeTab, hasLandingContent, showProjectsTab]);
+
+  const dashboardTabCount =
+    (hasLandingContent ? 1 : 0) +
+    1 +
+    1 +
+    (showProjectsTab ? 1 : 0) +
+    1 +
+    1;
 
 
   return (
@@ -639,8 +796,22 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="container py-8">
-        <Tabs defaultValue="store" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-3 bg-muted">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList
+            className={`grid w-full bg-muted ${
+              dashboardTabCount === 6
+                ? 'max-w-2xl grid-cols-6'
+                : dashboardTabCount === 5
+                  ? 'max-w-xl grid-cols-5'
+                  : 'max-w-lg grid-cols-4'
+            }`}
+          >
+            {hasLandingContent && (
+              <TabsTrigger value="landing" className={`flex items-center gap-2 ${activeTab !== 'landing' ? 'shadow-[0_0_18px_rgba(16,185,129,0.28)] ring-1 ring-emerald-200 animate-pulse' : ''}`}>
+                <Sparkles className="w-4 h-4" />
+                Landing
+              </TabsTrigger>
+            )}
             <TabsTrigger value="store" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
               Store
@@ -650,11 +821,41 @@ export default function Dashboard() {
               My Items
               {myItems.length > 0 && <span className="ml-2 bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 rounded-full">{myItems.length}</span>}
             </TabsTrigger>
+            {showProjectsTab && (
+              <TabsTrigger value="projects" className="flex items-center gap-2">
+                <FolderKanban className="w-4 h-4" />
+                Projects
+              </TabsTrigger>
+            )}
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               Community
             </TabsTrigger>
+            <TabsTrigger value="machines" className="flex items-center gap-2">
+              <Zap className="w-4 h-4" />
+              Machines
+            </TabsTrigger>
           </TabsList>
+
+          {hasLandingContent && (
+            <TabsContent value="landing" className="space-y-6">
+              <DashboardLanding
+                audience="user"
+                userName={user?.name}
+                title="Welcome back"
+                description="Start here for featured announcements, media-rich updates, and a calmer overview before you jump into inventory, community, or machine workflows."
+                stats={dashboardStats}
+                updates={convexDashboardUpdates || []}
+                machines={convexMachines || []}
+              />
+            </TabsContent>
+          )}
+
+          {showProjectsTab && (
+            <TabsContent value="projects" className="space-y-6">
+              <ProjectsWorkspace workspace={projectWorkspace} userEmail={user?.email} />
+            </TabsContent>
+          )}
 
           {/* TAB 1: STORE */}
           <TabsContent value="store" className="space-y-6">
@@ -834,6 +1035,11 @@ export default function Dashboard() {
                                 Pending Approval
                               </span>
                             )}
+                            {projectAssignmentByRequestId.get(record.id) && (
+                              <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                                Project: {projectAssignmentByRequestId.get(record.id)?.projectName}
+                              </span>
+                            )}
                           </div>
 
                           {record.action === 'APPROVED' && (
@@ -856,14 +1062,26 @@ export default function Dashboard() {
                           Waiting for Approval
                         </div>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs w-full sm:w-auto hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                          onClick={() => setReturnItem(record)}
-                        >
-                          Return Item
-                        </Button>
+                        <div className="flex w-full flex-col gap-2 sm:w-auto">
+                          {!projectAssignmentByRequestId.get(record.id) && activeProjectOptions.length > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs w-full sm:w-auto border-slate-200 hover:bg-slate-50"
+                              onClick={() => setProjectAssignmentTarget(record)}
+                            >
+                              Add To Project
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs w-full sm:w-auto hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                            onClick={() => setReturnItem(record)}
+                          >
+                            Return Item
+                          </Button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -1085,6 +1303,106 @@ export default function Dashboard() {
             </Card>
           </TabsContent>
 
+          {/* TAB 4: MACHINES */}
+          <TabsContent value="machines" className="space-y-6">
+            <div className="mb-6">
+              <h2 className="text-2xl font-black font-display text-slate-900 border-b-2 border-emerald-500 pb-1 w-fit mb-2">MACHINE STATUS</h2>
+              <p className="text-muted-foreground text-sm max-w-2xl">
+                Monitor machine availability and start your session manually. Please ensure you have been trained to use the machines safely.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {(convexMachines || []).map((m) => {
+                const machine = {
+                  id: m.machineId,
+                  name: m.name,
+                  isOnline: m.status === "ENGAGED",
+                  currentUser: m.currentUser || "",
+                  waitingList: m.waitingList || [],
+                  currentTurnEmail: m.currentTurnEmail,
+                  currentTurnName: m.currentTurnName,
+                };
+                const isUserOperating = machine.isOnline && machine.currentUser === user?.name;
+                const isEngaged = machine.isOnline;
+
+                return (
+                  <MachineCard
+                    key={machine.id}
+                    machine={machine}
+                    hideHistory={true}
+                    actionButton={
+                      isUserOperating ? (
+                        <Button 
+                          className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold h-10 shadow-sm"
+                          onClick={() => handleEndMachineClick(machine.id)}
+                        >
+                          End My Session
+                        </Button>
+                      ) : (
+                        <Button 
+                          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 shadow-sm"
+                          disabled={isEngaged || (!!machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? ""))}
+                          onClick={() => handleStartMachine(machine.id)}
+                        >
+                          {isEngaged ? 'Machine Occupied' : (machine.currentTurnEmail && machine.currentTurnEmail !== (user?.email ?? "") ? 'Reserved' : 'Start Session')}
+                        </Button>
+                      )
+                    }
+                  />
+                );
+              })}
+              {convexMachines?.length === 0 && (
+                <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
+                  <Zap className="w-12 h-12 text-slate-200 mx-auto mb-4 opacity-20" />
+                  <p className="text-slate-400 font-medium">No machines are currently registered</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Machine Note Modal */}
+          <Dialog open={showMachineNoteModal} onOpenChange={setShowMachineNoteModal}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                  <Scissors className="w-5 h-5 text-emerald-500" />
+                  What did you fabricate?
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fabrication-note" className="text-slate-700 font-medium">
+                    Please share a brief note about your work. This is mandatory to complete the session.
+                  </Label>
+                  <Textarea
+                    id="fabrication-note"
+                    placeholder="Example: Cut acrylic for robot chassis, 3D printed sensor bracket..."
+                    className="h-32 resize-none border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 transition-all rounded-xl"
+                    value={fabricationNote}
+                    onChange={(e) => setFabricationNote(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowMachineNoteModal(false)}
+                  className="rounded-xl border-slate-200"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleConfirmEndMachine}
+                  disabled={!fabricationNote.trim()}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200 h-10"
+                >
+                  Submit & End Session
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Return Item Modal */}
           <Dialog open={!!returnItem} onOpenChange={(open) => !open && setReturnItem(null)}>
             <DialogContent>
@@ -1237,6 +1555,17 @@ export default function Dashboard() {
             </DialogContent>
           </Dialog>
 
+          <ProjectAssignmentDialog
+            open={!!projectAssignmentTarget}
+            onOpenChange={(open) => {
+              if (!open) setProjectAssignmentTarget(null);
+            }}
+            itemName={projectAssignmentTarget?.itemName || ''}
+            projects={activeProjectOptions}
+            onAssign={handleAddItemToProject}
+          />
+
+          <MachineTurnNotification scriptUrl={SCRIPT_URL} />
         </Tabs>
       </main >
     </div >
