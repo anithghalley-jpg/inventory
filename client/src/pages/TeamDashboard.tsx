@@ -16,6 +16,7 @@ import { MachineCard } from '@/components/MachineCard';
 import { MachineTurnNotification } from '@/components/MachineTurnNotification';
 import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
 import ProjectsWorkspace from '@/components/ProjectsWorkspace';
+import MyPlansTab from '@/components/MyPlansTab';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
@@ -952,6 +953,9 @@ export default function TeamDashboard() {
                             <TabsTrigger value="monitor" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <Monitor className="w-4 h-4 mr-2" /> Monitor
                             </TabsTrigger>
+                            <TabsTrigger value="plans" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
+                                <BookOpen className="w-4 h-4 mr-2" /> My plans
+                            </TabsTrigger>
                             <TabsTrigger value="machines" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <Zap className="w-4 h-4 mr-2" /> Machines
                             </TabsTrigger>
@@ -1673,6 +1677,11 @@ export default function TeamDashboard() {
                                 )}
                             </div>
                         </div>
+                    </TabsContent>
+
+                    {/* --- MY PLANS TAB --- */}
+                    <TabsContent value="plans" className="focus-visible:outline-none focus-visible:ring-0">
+                        <MyPlansTab teamMembers={filteredTeam} />
                     </TabsContent>
 
 

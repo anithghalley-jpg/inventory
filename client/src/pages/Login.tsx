@@ -143,7 +143,11 @@ export default function Login() {
                     .then((user) => {
                       toast.success(`Welcome ${user.name}`);
                       setTimeout(() => {
-                        if (user.role === 'ADMIN') {
+                        const returnTo = sessionStorage.getItem('returnTo');
+                        if (returnTo) {
+                          sessionStorage.removeItem('returnTo');
+                          navigate(returnTo);
+                        } else if (user.role === 'ADMIN') {
                           navigate('/admin');
                         } else if (user.role === 'TEAM') {
                           navigate('/team');

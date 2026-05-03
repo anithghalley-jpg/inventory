@@ -15,6 +15,7 @@ import type * as fabInterns from "../fabInterns.js";
 import type * as home from "../home.js";
 import type * as http from "../http.js";
 import type * as inventory from "../inventory.js";
+import type * as learningPlans from "../learningPlans.js";
 import type * as machines from "../machines.js";
 import type * as projects from "../projects.js";
 import type * as requests from "../requests.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   home: typeof home;
   http: typeof http;
   inventory: typeof inventory;
+  learningPlans: typeof learningPlans;
   machines: typeof machines;
   projects: typeof projects;
   requests: typeof requests;

@@ -384,4 +384,30 @@ export default defineSchema({
   })
     .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
     .index("by_entityType_and_entityKey", ["entityType", "entityKey"]),
+
+  learningPlans: defineTable({
+    planId: v.string(),
+    title: v.string(),
+    description: v.string(),
+    date: v.optional(v.string()),
+    time: v.optional(v.string()),
+    location: v.optional(v.string()),
+    tags: v.array(v.string()),
+    imageUrls: v.array(v.string()),
+    videoUrls: v.array(v.string()),
+    documentationUrl: v.optional(v.string()),
+    authorEmail: v.string(),
+    authorName: v.string(),
+    collaboratorEmails: v.array(v.string()),
+    registeredUsers: v.optional(v.array(v.object({
+      name: v.string(),
+      email: v.string()
+    }))),
+    status: v.union(v.literal("DRAFT"), v.literal("PUBLISHED")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_planId", ["planId"])
+    .index("by_status", ["status"])
+    .index("by_authorEmail", ["authorEmail"]),
 });

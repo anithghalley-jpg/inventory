@@ -50,8 +50,8 @@ function ImageSlideshow({ images }: { images: string[] }) {
   return (
     <div className="absolute inset-0 w-full h-full flex items-center justify-center p-4">
       {/* Blurred background for a more polished aesthetic */}
-      <div
-        className="absolute inset-0 bg-cover bg-center blur-xl opacity-40 scale-110"
+      <div 
+        className="absolute inset-0 bg-cover bg-center blur-xl opacity-40 scale-110" 
         style={{ backgroundImage: `url(${validImages[currentIndex]})`, transition: 'background-image 1s ease-in-out' }}
       />
       <AnimatePresence mode="popLayout">
@@ -195,10 +195,11 @@ export default function Home() {
               type="button"
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
               onClick={() => setMobileMenuOpen((o) => !o)}
-              className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors md:hidden ${isSpaceHovered
+              className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors md:hidden ${
+                isSpaceHovered
                   ? "border-white/30 bg-white/10 text-white backdrop-blur active:bg-white/20"
                   : "border-slate-200 bg-white/80 text-slate-700 active:bg-slate-100"
-                }`}
+              }`}
             >
               {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
@@ -277,101 +278,101 @@ export default function Home() {
             style={{ transform: "scale(0.92) translateY(-20px)", perspective: "1200px" }}
           >
             {/* Central Burning Sun */}
-            <div className="absolute z-20 flex flex-col items-center justify-center text-center pointer-events-auto relative">
-              <motion.div
-                onHoverStart={() => setIsSpaceHovered(true)}
-                onHoverEnd={() => setIsSpaceHovered(false)}
-                animate={{
-                  boxShadow: isSpaceHovered
-                    ? ["0 0 80px 30px rgba(251,146,60,0.6)", "0 0 120px 50px rgba(234,88,12,0.8)", "0 0 80px 30px rgba(251,146,60,0.6)"]
-                    : ["0 0 30px 10px rgba(251,146,60,0.3)", "0 0 50px 15px rgba(251,146,60,0.5)", "0 0 30px 10px rgba(251,146,60,0.3)"]
-                }}
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                className="w-32 h-32 md:w-48 md:h-48 rounded-full flex items-center justify-center cursor-pointer pointer-events-auto relative z-20"
-                style={{ background: "radial-gradient(circle at 30% 30%, #fef08a, #f97316, #ea580c, #9a3412)" }}
-              >
-                <div className="w-full h-full rounded-full bg-white/30 blur-md absolute inset-0" />
-              </motion.div>
-
-              <motion.p
-                animate={{ opacity: isSpaceHovered ? 0 : 1, y: isSpaceHovered ? 20 : 0 }}
-                className="mt-8 text-muted-foreground font-medium text-sm md:text-lg max-w-[320px] text-center z-20 bg-white/80 px-4 py-1 rounded-full border border-border backdrop-blur-md pointer-events-none transition-all"
-              >
-                .Hover the sun to reveal deep space.
-              </motion.p>
-            </div>
-
-            {/* 3D Isometric Orbit System */}
-            <div
-              className="absolute w-full h-full flex items-center justify-center pointer-events-none z-10"
-              style={{ transform: "rotateX(70deg)", transformStyle: "preserve-3d" }}
+          <div className="absolute z-20 flex flex-col items-center justify-center text-center pointer-events-auto relative">
+            <motion.div
+              onHoverStart={() => setIsSpaceHovered(true)}
+              onHoverEnd={() => setIsSpaceHovered(false)}
+              animate={{
+                boxShadow: isSpaceHovered
+                  ? ["0 0 80px 30px rgba(251,146,60,0.6)", "0 0 120px 50px rgba(234,88,12,0.8)", "0 0 80px 30px rgba(251,146,60,0.6)"]
+                  : ["0 0 30px 10px rgba(251,146,60,0.3)", "0 0 50px 15px rgba(251,146,60,0.5)", "0 0 30px 10px rgba(251,146,60,0.3)"]
+              }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              className="w-32 h-32 md:w-48 md:h-48 rounded-full flex items-center justify-center cursor-pointer pointer-events-auto relative z-20"
+              style={{ background: "radial-gradient(circle at 30% 30%, #fef08a, #f97316, #ea580c, #9a3412)" }}
             >
-              <div className="relative flex items-center justify-center w-full h-full" style={{ transformStyle: "preserve-3d" }}>
-                {/* Orbit Rings (Tilted) */}
-                <div className={`absolute w-[400px] h-[400px] md:w-[800px] md:h-[800px] border-2 border-dashed rounded-full transition-colors duration-1000 ${isSpaceHovered ? 'border-white/20' : 'border-border opacity-40'}`} />
-                <div className={`absolute w-[600px] h-[600px] md:w-[1200px] md:h-[1200px] border rounded-full transition-colors duration-1000 ${isSpaceHovered ? 'border-white/10' : 'border-border opacity-20'}`} />
+              <div className="w-full h-full rounded-full bg-white/30 blur-md absolute inset-0" />
+            </motion.div>
 
-                {/* Text Bodies */}
-                <div className="absolute w-full h-full flex items-center justify-center" style={{ transformStyle: "preserve-3d" }}>
-                  {PLANETS.map((planet, index) => {
-                    const isInner = index % 2 === 0;
-                    const radius = isInner
-                      ? (typeof window !== 'undefined' && window.innerWidth < 768 ? 200 : 400)
-                      : (typeof window !== 'undefined' && window.innerWidth < 768 ? 300 : 600);
-                    const orbitDuration = isInner ? 60 : 100;
-                    const startAngle = (index / PLANETS.length) * 360;
+            <motion.p
+              animate={{ opacity: isSpaceHovered ? 0 : 1, y: isSpaceHovered ? 20 : 0 }}
+              className="mt-8 text-muted-foreground font-medium text-sm md:text-lg max-w-[320px] text-center z-20 bg-white/80 px-4 py-1 rounded-full border border-border backdrop-blur-md pointer-events-none transition-all"
+            >
+              .Hover the sun to reveal deep space.
+            </motion.p>
+          </div>
 
-                    return (
-                      <motion.div
-                        key={planet.name}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none"
-                        initial={{ rotateZ: startAngle }}
-                        animate={{ rotateZ: startAngle + 360 }}
-                        transition={{ duration: orbitDuration, repeat: Infinity, ease: "linear" }}
-                        style={{ width: `${radius * 2}px`, height: `${radius * 2}px`, transformStyle: "preserve-3d" }}
+          {/* 3D Isometric Orbit System */}
+          <div
+            className="absolute w-full h-full flex items-center justify-center pointer-events-none z-10"
+            style={{ transform: "rotateX(70deg)", transformStyle: "preserve-3d" }}
+          >
+            <div className="relative flex items-center justify-center w-full h-full" style={{ transformStyle: "preserve-3d" }}>
+              {/* Orbit Rings (Tilted) */}
+              <div className={`absolute w-[400px] h-[400px] md:w-[800px] md:h-[800px] border-2 border-dashed rounded-full transition-colors duration-1000 ${isSpaceHovered ? 'border-white/20' : 'border-border opacity-40'}`} />
+              <div className={`absolute w-[600px] h-[600px] md:w-[1200px] md:h-[1200px] border rounded-full transition-colors duration-1000 ${isSpaceHovered ? 'border-white/10' : 'border-border opacity-20'}`} />
+
+              {/* Text Bodies */}
+              <div className="absolute w-full h-full flex items-center justify-center" style={{ transformStyle: "preserve-3d" }}>
+                {PLANETS.map((planet, index) => {
+                  const isInner = index % 2 === 0;
+                  const radius = isInner
+                    ? (typeof window !== 'undefined' && window.innerWidth < 768 ? 200 : 400)
+                    : (typeof window !== 'undefined' && window.innerWidth < 768 ? 300 : 600);
+                  const orbitDuration = isInner ? 60 : 100;
+                  const startAngle = (index / PLANETS.length) * 360;
+
+                  return (
+                    <motion.div
+                      key={planet.name}
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none"
+                      initial={{ rotateZ: startAngle }}
+                      animate={{ rotateZ: startAngle + 360 }}
+                      transition={{ duration: orbitDuration, repeat: Infinity, ease: "linear" }}
+                      style={{ width: `${radius * 2}px`, height: `${radius * 2}px`, transformStyle: "preserve-3d" }}
+                    >
+                      <div
+                        className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+                        style={{ transformOrigin: "center center", transformStyle: "preserve-3d" }}
                       >
-                        <div
-                          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-                          style={{ transformOrigin: "center center", transformStyle: "preserve-3d" }}
+                        {/* 1. Un-twist rotation so gimbal stays pointing consistently outwards */}
+                        <motion.div
+                          initial={{ rotateZ: -startAngle }}
+                          animate={{ rotateZ: -(startAngle + 360) }}
+                          transition={{ duration: orbitDuration, repeat: Infinity, ease: "linear" }}
+                          style={{ transformStyle: "preserve-3d" }}
                         >
-                          {/* 1. Un-twist rotation so gimbal stays pointing consistently outwards */}
-                          <motion.div
-                            initial={{ rotateZ: -startAngle }}
-                            animate={{ rotateZ: -(startAngle + 360) }}
-                            transition={{ duration: orbitDuration, repeat: Infinity, ease: "linear" }}
-                            style={{ transformStyle: "preserve-3d" }}
+                          {/* 2. Un-tilt the 70deg board rotation so the text stands perfectly upright facing the camera */}
+                          <div
+                            onClick={() => handleGlobeClick(planet.name)}
+                            className="flex flex-col items-center justify-center group cursor-pointer relative z-30 transition-all duration-500"
+                            style={{ transform: "rotateX(-70deg)", transformStyle: "preserve-3d" }}
                           >
-                            {/* 2. Un-tilt the 70deg board rotation so the text stands perfectly upright facing the camera */}
+                            {/* Floating Text Element (2D in 3D Space) */}
                             <div
-                              onClick={() => handleGlobeClick(planet.name)}
-                              className="flex flex-col items-center justify-center group cursor-pointer relative z-30 transition-all duration-500"
-                              style={{ transform: "rotateX(-70deg)", transformStyle: "preserve-3d" }}
+                              className="px-4 py-2 rounded-full bg-slate-900/40 border border-slate-700/50 backdrop-blur-md whitespace-nowrap transition-transform duration-300 group-hover:scale-150 group-hover:bg-slate-900/80 group-hover:border-slate-500 shadow-lg relative flex flex-col items-center justify-center"
                             >
-                              {/* Floating Text Element (2D in 3D Space) */}
-                              <div
-                                className="px-4 py-2 rounded-full bg-slate-900/40 border border-slate-700/50 backdrop-blur-md whitespace-nowrap transition-transform duration-300 group-hover:scale-150 group-hover:bg-slate-900/80 group-hover:border-slate-500 shadow-lg relative flex flex-col items-center justify-center"
-                              >
-                                <p className="text-white font-display font-bold text-sm md:text-base tracking-wide flex items-center gap-2">
-                                  <planet.icon className="w-4 h-4 text-emerald-400 opacity-70 group-hover:opacity-100 transition-opacity" />
-                                  {planet.name}
-                                </p>
+                              <p className="text-white font-display font-bold text-sm md:text-base tracking-wide flex items-center gap-2">
+                                <planet.icon className="w-4 h-4 text-emerald-400 opacity-70 group-hover:opacity-100 transition-opacity" />
+                                {planet.name}
+                              </p>
 
-                                {/* Hover Subtitle */}
-                                <div className="absolute top-[110%] w-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-                                  <span className="text-emerald-300/80 text-[10px] uppercase tracking-widest whitespace-nowrap bg-black/50 px-2 py-0.5 rounded-full">
-                                    {aspects?.find((a: any) => a.aspect === planet.name)?.shortNote || planet.aspect}
-                                  </span>
-                                </div>
+                              {/* Hover Subtitle */}
+                              <div className="absolute top-[110%] w-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                                <span className="text-emerald-300/80 text-[10px] uppercase tracking-widest whitespace-nowrap bg-black/50 px-2 py-0.5 rounded-full">
+                                  {aspects?.find((a: any) => a.aspect === planet.name)?.shortNote || planet.aspect}
+                                </span>
                               </div>
                             </div>
-                          </motion.div>
-                        </div>
-                      </motion.div>
-                    )
-                  })}
-                </div>
+                          </div>
+                        </motion.div>
+                      </div>
+                    </motion.div>
+                  )
+                })}
               </div>
             </div>
+          </div>
           </div>
         </motion.div>
       </section>
@@ -393,263 +394,263 @@ export default function Home() {
             <div className="w-full bg-white/70 backdrop-blur-xl rounded-[2.5rem] p-6 md:p-12 shadow-2xl border border-white/60 relative z-10">
               {/* Aspect Detail View */}
 
-              {/* Sub Navigation */}
-              <div className="flex items-center gap-3 overflow-x-auto pb-4 mb-10 border-b border-border/50 scrollbar-hide no-scrollbar">
+            {/* Sub Navigation */}
+            <div className="flex items-center gap-3 overflow-x-auto pb-4 mb-10 border-b border-border/50 scrollbar-hide no-scrollbar">
+              <button
+                onClick={() => setSelectedAspect(null)}
+                className="shrink-0 flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 border border-border rounded-full px-4 py-2 mr-2 hover:bg-slate-50 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back to Grid
+              </button>
+
+              {PLANETS.map(p => (
                 <button
-                  onClick={() => setSelectedAspect(null)}
-                  className="shrink-0 flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 border border-border rounded-full px-4 py-2 mr-2 hover:bg-slate-50 transition-colors"
+                  key={p.name}
+                  onClick={() => setSelectedAspect(p.name)}
+                  className={`shrink-0 flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-full transition-all duration-300 ${selectedAspect === p.name ? 'bg-emerald-100 text-emerald-800 shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
                 >
-                  <ArrowLeft className="w-4 h-4" /> Back to Grid
+                  <p.icon className={`w-4 h-4 ${selectedAspect === p.name ? 'text-emerald-600' : ''}`} /> {p.name}
                 </button>
+              ))}
+            </div>
 
-                {PLANETS.map(p => (
-                  <button
-                    key={p.name}
-                    onClick={() => setSelectedAspect(p.name)}
-                    className={`shrink-0 flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-full transition-all duration-300 ${selectedAspect === p.name ? 'bg-emerald-100 text-emerald-800 shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
-                  >
-                    <p.icon className={`w-4 h-4 ${selectedAspect === p.name ? 'text-emerald-600' : ''}`} /> {p.name}
-                  </button>
-                ))}
-              </div>
+            {/* Content Area */}
+            {(() => {
+              const aspectData = PLANETS.find(p => p.name === selectedAspect);
+              if (!aspectData) return null;
+              
+              const convexAspectData = aspects.find((a: any) => a.aspect === selectedAspect);
 
-              {/* Content Area */}
-              {(() => {
-                const aspectData = PLANETS.find(p => p.name === selectedAspect);
-                if (!aspectData) return null;
-
-                const convexAspectData = aspects.find((a: any) => a.aspect === selectedAspect);
-
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    key={aspectData.name}
-                    className="flex flex-col md:flex-row gap-12 lg:gap-16"
-                  >
-                    <div className="flex-1 space-y-8">
-                      <div className="flex items-center gap-5">
-                        <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
-                          <aspectData.icon className="w-10 h-10 text-emerald-600" />
-                        </div>
-                        <div>
-                          <h2 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tight">{aspectData.name}</h2>
-                          {convexAspectData?.shortNote ? (
-                            <p className="text-emerald-600 font-semibold text-sm mt-2">{convexAspectData.shortNote}</p>
-                          ) : (
-                            <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
-                          )}
-                        </div>
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  key={aspectData.name}
+                  className="flex flex-col md:flex-row gap-12 lg:gap-16"
+                >
+                  <div className="flex-1 space-y-8">
+                    <div className="flex items-center gap-5">
+                      <div className="w-20 h-20 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
+                        <aspectData.icon className="w-10 h-10 text-emerald-600" />
                       </div>
-
-                      <div className="prose prose-slate max-w-none text-muted-foreground text-lg leading-relaxed">
-                        {convexAspectData?.writeUp ? (
-                          <p className="whitespace-pre-wrap">{convexAspectData.writeUp}</p>
+                      <div>
+                        <h2 className="text-4xl md:text-5xl font-display font-bold text-slate-900 tracking-tight">{aspectData.name}</h2>
+                        {convexAspectData?.shortNote ? (
+                           <p className="text-emerald-600 font-semibold text-sm mt-2">{convexAspectData.shortNote}</p>
                         ) : (
-                          <>
-                            <p>
-                              Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}.
-                              This cluster provides members with specialized tools, immersive environments, and the collaborative
-                              energy needed to explore and refine their craft.
-                            </p>
-                            <p>
-                              Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers
-                              resources designed to inspire and elevate your practice. Connect with like-minded individuals,
-                              participate in hands-on workshops, and unlock new dimensions of creativity and understanding
-                              in the aesthetic centre.
-                            </p>
-                          </>
+                           <p className="text-emerald-600 font-semibold uppercase tracking-widest text-sm mt-2">{aspectData.aspect}</p>
                         )}
-                      </div>
-
-                      <div className="pt-6 border-t border-border/50">
-                        <button className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-medium transition-colors shadow-sm inline-flex items-center gap-2">
-                          Join {aspectData.name} Sessions <ArrowRight className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
 
-                    {/* Visual representation */}
-                    <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group bg-slate-900 border border-slate-800">
-                      {convexAspectData?.images && convexAspectData.images.filter((i: string) => i.trim().length > 5).length > 0 ? (
-                        <>
-                          <ImageSlideshow images={convexAspectData.images} />
-                        </>
+                    <div className="prose prose-slate max-w-none text-muted-foreground text-lg leading-relaxed">
+                      {convexAspectData?.writeUp ? (
+                        <p className="whitespace-pre-wrap">{convexAspectData.writeUp}</p>
                       ) : (
                         <>
-                          <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
-                          <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                          <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+                          <p>
+                            Dive deeper into <strong>{aspectData.name}</strong>, our dedicated space for {aspectData.aspect.toLowerCase()}.
+                            This cluster provides members with specialized tools, immersive environments, and the collaborative
+                            energy needed to explore and refine their craft.
+                          </p>
+                          <p>
+                            Whether you are a seasoned expert or a curious beginner, the {aspectData.name} area offers
+                            resources designed to inspire and elevate your practice. Connect with like-minded individuals,
+                            participate in hands-on workshops, and unlock new dimensions of creativity and understanding
+                            in the aesthetic centre.
+                          </p>
                         </>
                       )}
                     </div>
-                  </motion.div>
-                );
-              })()}
-            </div>
-          ) : (
-            <div className="relative w-full z-10">
-              <motion.div style={{ opacity: exploreOpacity }} className="flex justify-center mb-8">
-                <div className="text-center bg-white/60 backdrop-blur-xl px-8 py-5 rounded-[2rem] border border-white/60 shadow-2xl">
-                  <h2 className="text-2xl md:text-4xl font-display font-bold text-slate-900 tracking-tight">Explore Our Aspects</h2>
-                  <p className="text-slate-800 font-medium mt-2 max-w-xl mx-auto text-base lg:text-lg">Discover the different clusters of our aesthetic center.</p>
+
+                    <div className="pt-6 border-t border-border/50">
+                      <button className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-full font-medium transition-colors shadow-sm inline-flex items-center gap-2">
+                        Join {aspectData.name} Sessions <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visual representation */}
+                  <div className="w-full md:w-[400px] lg:w-[500px] aspect-square rounded-[2rem] relative overflow-hidden flex items-center justify-center shadow-xl group bg-slate-900 border border-slate-800">
+                    {convexAspectData?.images && convexAspectData.images.filter((i: string) => i.trim().length > 5).length > 0 ? (
+                      <>
+                        <ImageSlideshow images={convexAspectData.images} />
+                      </>
+                    ) : (
+                      <>
+                        <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105" style={{ background: aspectData.planetBg }} />
+                        <div className="absolute inset-0 bg-black/20 mix-blend-multiply" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                        <aspectData.icon className="w-40 h-40 text-white/90 drop-shadow-2xl z-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6" />
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="relative w-full z-10">
+            <motion.div style={{ opacity: exploreOpacity }} className="flex justify-center mb-8">
+              <div className="text-center bg-white/60 backdrop-blur-xl px-8 py-5 rounded-[2rem] border border-white/60 shadow-2xl">
+                <h2 className="text-2xl md:text-4xl font-display font-bold text-slate-900 tracking-tight">Explore Our Aspects</h2>
+                <p className="text-slate-800 font-medium mt-2 max-w-xl mx-auto text-base lg:text-lg">Discover the different clusters of our aesthetic center.</p>
+              </div>
+            </motion.div>
+
+            {/* Masonry / Bento Box Grid */}
+            <motion.div style={{ opacity: exploreOpacity }} className="grid grid-cols-1 md:grid-cols-4 auto-rows-[160px] gap-4 md:gap-6 relative z-10">
+              {/* Card 1: Large Wide */}
+              <motion.div
+                onClick={() => setSelectedAspect('FabLab')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-2 md:row-span-2 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className={`w-14 h-14 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4`}>
+                  <Cpu className={`w-7 h-7 text-blue-500`} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold mb-2">FabLab</h3>
+                  <p className="text-muted-foreground line-clamp-3">
+                    Our digital fabrication laboratory, equipped with 3D printers, laser cutters, and electronics workstations. A space to rapid-prototype and bring your designs to physical reality.
+                  </p>
+                  <div className="mt-6 flex items-center text-blue-600 font-medium group-hover:gap-2 transition-all">
+                    Learn More <ArrowRight className="w-4 h-4 ml-1" />
+                  </div>
                 </div>
               </motion.div>
 
-              {/* Masonry / Bento Box Grid */}
-              <motion.div style={{ opacity: exploreOpacity }} className="grid grid-cols-1 md:grid-cols-4 auto-rows-[160px] gap-4 md:gap-6 relative z-10">
-                {/* Card 1: Large Wide */}
-                <motion.div
-                  onClick={() => setSelectedAspect('FabLab')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-2 md:row-span-2 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className={`w-14 h-14 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-4`}>
-                    <Cpu className={`w-7 h-7 text-blue-500`} />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold mb-2">FabLab</h3>
-                    <p className="text-muted-foreground line-clamp-3">
-                      Our digital fabrication laboratory, equipped with 3D printers, laser cutters, and electronics workstations. A space to rapid-prototype and bring your designs to physical reality.
-                    </p>
-                    <div className="mt-6 flex items-center text-blue-600 font-medium group-hover:gap-2 transition-all">
-                      Learn More <ArrowRight className="w-4 h-4 ml-1" />
-                    </div>
-                  </div>
-                </motion.div>
+              {/* Card 2: Tall */}
+              <motion.div
+                onClick={() => setSelectedAspect('Astronomy')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-2 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-md overflow-hidden p-6 flex flex-col group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className={`w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-6`}>
+                  <Telescope className={`w-6 h-6 text-indigo-500`} />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Astronomy</h3>
+                <p className="text-sm text-muted-foreground flex-grow">
+                  Explore the cosmos with our telescopes and observational equipment.
+                </p>
+                <div className="mt-4 flex items-center text-indigo-600 text-sm font-medium group-hover:gap-2 transition-all">
+                  Details <ArrowRight className="w-4 h-4 ml-1" />
+                </div>
+              </motion.div>
 
-                {/* Card 2: Tall */}
-                <motion.div
-                  onClick={() => setSelectedAspect('Astronomy')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-1 md:row-span-2 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-md overflow-hidden p-6 flex flex-col group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className={`w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-6`}>
-                    <Telescope className={`w-6 h-6 text-indigo-500`} />
+              {/* Card 3: Standard */}
+              <motion.div
+                onClick={() => setSelectedAspect('Painting')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center flex-shrink-0`}>
+                    <Palette className={`w-6 h-6 text-pink-500`} />
                   </div>
-                  <h3 className="text-xl font-bold mb-2">Astronomy</h3>
-                  <p className="text-sm text-muted-foreground flex-grow">
-                    Explore the cosmos with our telescopes and observational equipment.
+                  <h3 className="text-lg font-bold">Painting</h3>
+                </div>
+              </motion.div>
+
+              {/* Card 4: Standard */}
+              <motion.div
+                onClick={() => handleGlobeClick('Sculpting')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0`}>
+                    <Hammer className={`w-6 h-6 text-orange-500`} />
+                  </div>
+                  <h3 className="text-lg font-bold">Sculpting</h3>
+                </div>
+              </motion.div>
+
+              {/* Card 5: Standard */}
+              <motion.div
+                onClick={() => handleGlobeClick('Weaving')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center flex-shrink-0`}>
+                    <Scissors className={`w-6 h-6 text-teal-500`} />
+                  </div>
+                  <h3 className="text-lg font-bold">Weaving</h3>
+                </div>
+              </motion.div>
+
+              {/* Card 6: Wide */}
+              <motion.div
+                onClick={() => handleGlobeClick('Music')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-2 md:row-span-1 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-md overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div>
+                  <h3 className="text-xl font-bold mb-1">Music & Dance</h3>
+                  <p className="text-sm text-muted-foreground">Soundscapes and movement studios.</p>
+                </div>
+                <div className="flex -space-x-4">
+                  <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center shadow-sm">
+                    <Music className="w-5 h-5 text-purple-500" />
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-sm">
+                    <Activity className="w-5 h-5 text-rose-500" />
+                  </div>
+                </div>
+              </motion.div>
+              {/* Card 8: Computer Science — fills bottom-right gap (row-span-2) */}
+              <motion.div
+                onClick={() => handleGlobeClick('Computer Science')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-1 md:row-span-2 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="w-12 h-12 rounded-full bg-cyan-50 border border-cyan-100 flex items-center justify-center mb-4">
+                  <Code2 className="w-6 h-6 text-cyan-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold mb-2">Computer Science</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Algorithms, logic, and computational thinking to build, automate, and innovate.
                   </p>
-                  <div className="mt-4 flex items-center text-indigo-600 text-sm font-medium group-hover:gap-2 transition-all">
+                  <div className="mt-4 flex items-center text-cyan-600 text-sm font-medium group-hover:gap-2 transition-all">
                     Details <ArrowRight className="w-4 h-4 ml-1" />
                   </div>
-                </motion.div>
-
-                {/* Card 3: Standard */}
-                <motion.div
-                  onClick={() => setSelectedAspect('Painting')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center flex-shrink-0`}>
-                      <Palette className={`w-6 h-6 text-pink-500`} />
-                    </div>
-                    <h3 className="text-lg font-bold">Painting</h3>
-                  </div>
-                </motion.div>
-
-                {/* Card 4: Standard */}
-                <motion.div
-                  onClick={() => handleGlobeClick('Sculpting')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0`}>
-                      <Hammer className={`w-6 h-6 text-orange-500`} />
-                    </div>
-                    <h3 className="text-lg font-bold">Sculpting</h3>
-                  </div>
-                </motion.div>
-
-                {/* Card 5: Standard */}
-                <motion.div
-                  onClick={() => handleGlobeClick('Weaving')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-1 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-center group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center flex-shrink-0`}>
-                      <Scissors className={`w-6 h-6 text-teal-500`} />
-                    </div>
-                    <h3 className="text-lg font-bold">Weaving</h3>
-                  </div>
-                </motion.div>
-
-                {/* Card 6: Wide */}
-                <motion.div
-                  onClick={() => handleGlobeClick('Music')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-2 md:row-span-1 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-md overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div>
-                    <h3 className="text-xl font-bold mb-1">Music & Dance</h3>
-                    <p className="text-sm text-muted-foreground">Soundscapes and movement studios.</p>
-                  </div>
-                  <div className="flex -space-x-4">
-                    <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center shadow-sm">
-                      <Music className="w-5 h-5 text-purple-500" />
-                    </div>
-                    <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shadow-sm">
-                      <Activity className="w-5 h-5 text-rose-500" />
-                    </div>
-                  </div>
-                </motion.div>
-                {/* Card 8: Computer Science — fills bottom-right gap (row-span-2) */}
-                <motion.div
-                  onClick={() => handleGlobeClick('Computer Science')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-1 md:row-span-2 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex flex-col justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className="w-12 h-12 rounded-full bg-cyan-50 border border-cyan-100 flex items-center justify-center mb-4">
-                    <Code2 className="w-6 h-6 text-cyan-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold mb-2">Computer Science</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Algorithms, logic, and computational thinking to build, automate, and innovate.
-                    </p>
-                    <div className="mt-4 flex items-center text-cyan-600 text-sm font-medium group-hover:gap-2 transition-all">
-                      Details <ArrowRight className="w-4 h-4 ml-1" />
-                    </div>
-                  </div>
-                </motion.div>
-
-                {/* Card 7: Wide */}
-                <motion.div
-                  onClick={() => handleGlobeClick('Truth')}
-                  whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
-                  className="md:col-span-3 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
-                >
-                  <div className="flex -space-x-4">
-                    <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center shadow-sm z-20">
-                      <Scale className="w-5 h-5 text-slate-700" />
-                    </div>
-                    <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shadow-sm z-10">
-                      <Sparkles className="w-5 h-5 text-amber-500" />
-                    </div>
-                    <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shadow-sm z-0">
-                      <Gem className="w-5 h-5 text-emerald-500" />
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <h3 className="text-xl font-bold mb-1">Truth, Beauty & Value</h3>
-                    <p className="text-sm text-muted-foreground">The philosophical cores.</p>
-                  </div>
-                </motion.div>
+                </div>
               </motion.div>
-            </div>
-          )}
+
+              {/* Card 7: Wide */}
+              <motion.div
+                onClick={() => handleGlobeClick('Truth')}
+                whileHover={{ y: -5, boxShadow: "0 10px 30px -10px rgba(0,0,0,0.1)" }}
+                className="md:col-span-3 md:row-span-1 rounded-2xl border border-white/60 bg-white/70 backdrop-blur-md overflow-hidden p-6 flex items-center justify-between group cursor-pointer transition-all duration-300 shadow-sm"
+              >
+                <div className="flex -space-x-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center shadow-sm z-20">
+                    <Scale className="w-5 h-5 text-slate-700" />
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shadow-sm z-10">
+                    <Sparkles className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shadow-sm z-0">
+                    <Gem className="w-5 h-5 text-emerald-500" />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-xl font-bold mb-1">Truth, Beauty & Value</h3>
+                  <p className="text-sm text-muted-foreground">The philosophical cores.</p>
+                </div>
+              </motion.div>
+            </motion.div>
+          </div>
+        )}
         </div>
       </section>
 
       {/* Footer */}
       <footer className="border-t border-border bg-white py-12 mt-auto">
         <div className="max-w-7xl mx-auto px-4 md:px-8 text-center text-muted-foreground text-sm">
-          <p>© {new Date().getFullYear()} thetic Centre. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Aesthetic Centre. All rights reserved.</p>
         </div>
       </footer>
     </div>
