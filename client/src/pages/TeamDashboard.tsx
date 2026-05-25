@@ -262,6 +262,7 @@ export default function TeamDashboard() {
 
     const [communitySearchQuery, setCommunitySearchQuery] = useState('');
     const [selectedCommunityTag, setSelectedCommunityTag] = useState('all');
+    const [monitorSearchQuery, setMonitorSearchQuery] = useState('');
 
     // Laptop State
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
@@ -305,6 +306,16 @@ export default function TeamDashboard() {
     const filteredStudents = useMemo(() =>
         filteredCommunityUsers.filter(u => u.role === 'USER'),
         [filteredCommunityUsers]);
+
+    const filteredOnlineUsers = useMemo(() => {
+        return allUsers.filter(u => {
+            if (u.laptopStatus !== 'Online') return false;
+            const matchesSearch = !monitorSearchQuery ||
+                (u.name || "").toLowerCase().includes(monitorSearchQuery.toLowerCase()) ||
+                (u.email || "").toLowerCase().includes(monitorSearchQuery.toLowerCase());
+            return matchesSearch;
+        });
+    }, [allUsers, monitorSearchQuery]);
 
     // Initial Side Effects
     useEffect(() => {
@@ -1642,9 +1653,23 @@ export default function TeamDashboard() {
                     {/* --- MONITOR TAB --- */}
                     <TabsContent value="monitor" className="focus-visible:outline-none focus-visible:ring-0">
                         <div className="space-y-6">
-                            <h2 className="text-2xl font-bold tracking-tight">Live Monitor</h2>
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div>
+                                    <h2 className="text-2xl font-bold tracking-tight">Live Monitor</h2>
+                                    <p className="text-sm text-slate-500">Track online team members and active lab sessions.</p>
+                                </div>
+                                <div className="relative w-full sm:w-72">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Search active members..."
+                                        className="pl-9 bg-white border-slate-200 focus:border-emerald-400 focus:ring-emerald-400 rounded-xl"
+                                        value={monitorSearchQuery}
+                                        onChange={(e) => setMonitorSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {allUsers.filter(u => u.laptopStatus === 'Online').map(u => (
+                                {filteredOnlineUsers.map(u => (
                                     <Card key={u.id} className="group p-5 border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-all">
                                         <div className="flex items-center justify-between w-full">
                                             <div className="flex items-center gap-4">
@@ -1669,10 +1694,14 @@ export default function TeamDashboard() {
                                         </div>
                                     </Card>
                                 ))}
-                                {allUsers.filter(u => u.laptopStatus === 'Online').length === 0 && (
+                                {filteredOnlineUsers.length === 0 && (
                                     <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500">
                                         <Monitor className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                                        <p>No team members are currently online.</p>
+                                        {monitorSearchQuery ? (
+                                            <p>No active members matching "{monitorSearchQuery}" found.</p>
+                                        ) : (
+                                            <p>No team members are currently online.</p>
+                                        )}
                                     </div>
                                 )}
                             </div>
