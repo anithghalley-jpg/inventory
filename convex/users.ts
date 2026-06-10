@@ -299,3 +299,43 @@ export const updateProjectProfile = mutation({
     };
   },
 });
+
+export const resetScreenTime = mutation({
+  args: {
+    email: v.string(),
+    scriptUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const updatedUser = {
+      ...user,
+      totalTime: 0,
+      sessionStart: user.laptopStatus === "Online" ? user.sessionStart : "",
+      sessionEnd: "",
+    };
+
+    await ctx.db.patch(user._id, {
+      totalTime: 0,
+      sessionStart: updatedUser.sessionStart,
+      sessionEnd: updatedUser.sessionEnd,
+    });
+
+    await enqueueSheetsSyncJob(ctx, {
+      scriptUrl: args.scriptUrl,
+      entityType: "users",
+      entityKey: updatedUser.email,
+      operation: "upsert",
+      payload: formatUserForSheets(updatedUser),
+    });
+
+    return { success: true };
+  },
+});
+

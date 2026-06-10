@@ -43,7 +43,8 @@ const SHEET_NAMES = {
   CATEGORIES: 'Categories',
   ITEM_REQUESTS: 'ItemRequests',
   REQUESTS: 'Requests',
-  MACHINE_LIST: 'MachineList'
+  MACHINE_LIST: 'MachineList',
+  RFID: 'rfid'
 };
 
 // Initialize spreadsheet
@@ -335,6 +336,9 @@ function doPost(e) {
         break;
       case 'deleteSettingsRow':
         response = handleDeleteSettingsRow(data);
+        break;
+      case 'logRfidScan':
+        response = handleLogRfidScan(data);
         break;
       default:
         response = { success: false, message: 'Unknown action' };
@@ -2994,4 +2998,141 @@ function installTriggers() {
   syncFabAcademyToConvex(true);
 
   console.log('✅ Initial sync complete! Convex is now up to date.');
+}
+
+// ===== RFID SCANNING =====
+
+function handleLogRfidScan(data) {
+  const { tagUid, deviceId } = data;
+  if (!tagUid) {
+    return { success: false, message: 'Missing tagUid' };
+  }
+
+  const sheet = getOrCreateSheet(SHEET_NAMES.RFID);
+  
+  // Set up headers if new sheet
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Timestamp', 
+      'Tag UID', 
+      'Student Name', 
+      'Student Email', 
+      'Device ID', 
+      'Status', 
+      'Exit Time', 
+      'Duration (min)'
+    ]);
+  }
+  
+  // Look up student in Users sheet
+  let studentName = 'Unknown User';
+  let studentEmail = 'Unknown';
+  let studentRole = 'None';
+  let isAllowed = false;
+  
+  try {
+    const usersSheet = getSheet(SHEET_NAMES.USERS);
+    if (usersSheet) {
+      const usersData = usersSheet.getDataRange().getValues();
+      // Users schema: Col A = Email, Col B = Name, Col C = Role, Col J (Index 9) = RFID
+      for (let i = 1; i < usersData.length; i++) {
+        const userRfid = String(usersData[i][9] || '').trim().toLowerCase();
+        const searchRfid = String(tagUid).trim().toLowerCase();
+        if (userRfid === searchRfid) {
+          studentEmail = usersData[i][0];
+          studentName = usersData[i][1];
+          studentRole = String(usersData[i][2] || 'USER').trim();
+          const roleLower = studentRole.toLowerCase();
+          if (roleLower === 'admin' || roleLower === 'team') {
+            isAllowed = true;
+          }
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error looking up user by RFID: ' + e.toString());
+  }
+
+  const now = new Date();
+  const timestamp = now.toISOString();
+  let status = 'Access Denied';
+  let exitTime = '';
+  let duration = '';
+
+  if (isAllowed) {
+    // Look up the last status of this tag in the rfid sheet to toggle status
+    let lastStatus = 'Good Bye'; // Default state is checked-out
+    let lastScanTimeVal = null;
+    let lastRowIndex = -1;
+    
+    const rfidData = sheet.getDataRange().getValues();
+    // Loop backwards from bottom to find previous scan of this tagUid
+    for (let i = rfidData.length - 1; i >= 1; i--) {
+      const rowUid = String(rfidData[i][1]).trim().toLowerCase();
+      const searchUid = String(tagUid).trim().toLowerCase();
+      const rowStatus = String(rfidData[i][5] || '');
+      if (rowUid === searchUid && (rowStatus === 'Welcome in' || rowStatus === 'Good Bye')) {
+        lastStatus = rowStatus;
+        lastScanTimeVal = rfidData[i][0]; // Col A is index 0
+        lastRowIndex = i + 1; // 1-indexed row number in the sheet
+        break;
+      }
+    }
+
+    status = 'Welcome in';
+    if (lastStatus === 'Welcome in' && lastRowIndex !== -1) {
+      status = 'Good Bye';
+      exitTime = timestamp;
+      if (lastScanTimeVal) {
+        const start = new Date(lastScanTimeVal).getTime();
+        const end = now.getTime();
+        const diffMs = end - start;
+        const diffMins = Math.round((diffMs / 60000) * 10) / 10; // Round to 1 decimal place
+        duration = String(diffMins);
+      }
+      
+      // Update existing row (Status in Col F, Exit Time in Col G, Duration in Col H)
+      sheet.getRange(lastRowIndex, 6, 1, 3).setValues([[status, exitTime, duration]]);
+    } else {
+      // Append new scan row (Welcome in)
+      sheet.appendRow([
+        timestamp,
+        tagUid,
+        studentName,
+        studentEmail,
+        deviceId || 'ESP32_RFID',
+        status,
+        '', // Exit Time initially empty
+        ''  // Duration initially empty
+      ]);
+    }
+  } else {
+    // For unauthorized scans: log as Access Denied, do not toggle check-in/out status
+    status = 'Access Denied';
+    sheet.appendRow([
+      timestamp,
+      tagUid,
+      studentName,
+      studentEmail,
+      deviceId || 'ESP32_RFID',
+      status,
+      '', // Exit Time
+      ''  // Duration
+    ]);
+  }
+  
+  return {
+    success: true,
+    allowed: isAllowed,
+    role: studentRole,
+    message: isAllowed ? 'Scan logged successfully' : 'Access denied: insufficient privileges',
+    name: studentName,
+    email: studentEmail,
+    tagUid: tagUid,
+    timestamp: timestamp,
+    status: status,
+    exitTime: exitTime,
+    duration: duration
+  };
 }

@@ -83,6 +83,7 @@ Your app is now live at: `https://inventory-management-xxxxx.web.app`
    - **UsageHistory**
    - **Categories**
    - **ItemRequests**
+   - **rfid** (New for RFID scanners)
 
 ### Step 2: Set Up Sheet Headers
 
@@ -129,6 +130,18 @@ B: userEmail
 C: itemName
 D: remarks
 E: timestamp
+```
+
+#### rfid Sheet
+```
+A: Timestamp     (Exact date/time of entry or exit scan)
+B: Tag UID       (Scanned card physical RFID code)
+C: Student Name  (Looks up student's name from Users sheet)
+D: Student Email (Looks up student's email from Users sheet)
+E: Device ID     (Identifies which scanner scanned the card)
+F: Status        ("Welcome in" or "Good Bye" toggle)
+G: Exit Time     (Timestamp of exit scan, blank for entry)
+H: Duration (min) (Calculated duration inside the room, blank for entry)
 ```
 
 ### Step 3: Create Google Apps Script Project

@@ -117,6 +117,7 @@ export default function AdminPanel() {
   const toggleLaptopMut = useMutation(api.users.toggleLaptop);
   const updateUserStatusMut = useMutation(api.users.updateStatus);
   const updateUserProfileMut = useMutation(api.users.updateProfile);
+  const resetScreenTimeMut = useMutation(api.users.resetScreenTime);
   const addInventoryItemMut = useMutation(api.inventory.addItem);
   const updateInventoryItemMut = useMutation(api.inventory.updateItem);
   const deleteInventoryItemMut = useMutation(api.inventory.deleteItem);
@@ -180,6 +181,7 @@ export default function AdminPanel() {
   const [currentTagInput, setCurrentTagInput] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [monitorSearchQuery, setMonitorSearchQuery] = useState('');
   const [activeLoans, setActiveLoans] = useState<any[]>([]); // New State for Loans
   const [activeRequests, setActiveRequests] = useState<any[]>([]); // All active holdings
   const [pendingReturns, setPendingReturns] = useState<any[]>([]); // Returns waiting for approval
@@ -482,6 +484,24 @@ export default function AdminPanel() {
           ));
           return `Failed: ${err.message}`;
         }
+      }
+    );
+  };
+
+  const handleResetScreenTime = async (email: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to reset screen time to zero for ${name}? This will update both Convex and Google Sheets.`)) {
+      return;
+    }
+    
+    toast.promise(
+      resetScreenTimeMut({
+        email,
+        scriptUrl: SCRIPT_URL,
+      }),
+      {
+        loading: 'Resetting screen time...',
+        success: 'Screen time reset to zero.',
+        error: (err: any) => `Failed to reset screen time: ${err.message}`,
       }
     );
   };
@@ -2541,10 +2561,21 @@ export default function AdminPanel() {
 
                 {/* Section 2: Top 10 Leaderboard */}
                 <div>
-                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <BarChart2 className="w-5 h-5" />
-                    Top 10 Usage Leaderboard
-                  </h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                      <BarChart2 className="w-5 h-5" />
+                      {monitorSearchQuery ? "Student Usage" : "Top 10 Usage Leaderboard"}
+                    </h3>
+                    <div className="relative w-full sm:w-72">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search student..."
+                        className="pl-9 bg-white border-slate-200 focus:border-indigo-400 focus:ring-indigo-400 rounded-xl"
+                        value={monitorSearchQuery}
+                        onChange={(e) => setMonitorSearchQuery(e.target.value)}
+                      />
+                    </div>
+                  </div>
                   <Card className="overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -2554,25 +2585,68 @@ export default function AdminPanel() {
                             <th className="px-6 py-3 text-left">Student</th>
                             <th className="px-6 py-3 text-left">Total Hours</th>
                             <th className="px-6 py-3 text-left">Status</th>
+                            <th className="px-6 py-3 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                          {allUsers
-                            .filter((u: any) => (u.totalTime || 0) > 0)
-                            .sort((a: any, b: any) => (b.totalTime || 0) - (a.totalTime || 0))
-                            .slice(0, 10)
-                            .map((user: any, index) => {
+                          {(() => {
+                            // Sort all users by time descending to establish a stable rank map
+                            const rankedUsers = allUsers
+                              .slice()
+                              .map((u: any) => ({ ...u, score: u.totalTime || 0 }))
+                              .sort((a, b) => b.score - a.score);
+
+                            const rankMap = new Map();
+                            rankedUsers.forEach((u, i) => {
+                              if (u.score > 0) {
+                                rankMap.set(u.email, i + 1);
+                              }
+                            });
+
+                            // Filter users based on query
+                            const matchesQuery = (u: any) => {
+                              if (!monitorSearchQuery) return (u.totalTime || 0) > 0;
+                              return (
+                                (u.name || "").toLowerCase().includes(monitorSearchQuery.toLowerCase()) ||
+                                (u.email || "").toLowerCase().includes(monitorSearchQuery.toLowerCase())
+                              );
+                            };
+
+                            const filtered = allUsers.filter(matchesQuery);
+
+                            // Sort the results and limit if no query is active
+                            const displayUsers = monitorSearchQuery
+                              ? filtered.sort((a: any, b: any) => (b.totalTime || 0) - (a.totalTime || 0))
+                              : filtered.sort((a: any, b: any) => (b.totalTime || 0) - (a.totalTime || 0)).slice(0, 10);
+
+                            if (displayUsers.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">
+                                    {monitorSearchQuery ? "No matching students found" : "No usage data recorded yet"}
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return displayUsers.map((user: any) => {
+                              const rank = rankMap.get(user.email);
                               const hrs = Math.floor((user.totalTime || 0) / 60);
                               const mins = (user.totalTime || 0) % 60;
                               return (
                                 <tr key={user.id} className="hover:bg-muted/50">
                                   <td className="px-6 py-4">
-                                    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                                      index === 1 ? 'bg-gray-100 text-gray-700' :
-                                        index === 2 ? 'bg-orange-100 text-orange-700' : 'text-muted-foreground'
+                                    {typeof rank === 'number' ? (
+                                      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                                        rank === 1 ? 'bg-yellow-100 text-yellow-700' :
+                                        rank === 2 ? 'bg-gray-100 text-gray-700' :
+                                        rank === 3 ? 'bg-orange-100 text-orange-700' : 'text-muted-foreground'
                                       }`}>
-                                      {index + 1}
-                                    </span>
+                                        {rank}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">-</span>
+                                    )}
                                   </td>
                                   <td className="px-6 py-4">
                                     <p className="font-medium text-sm">{user.name}</p>
@@ -2589,16 +2663,20 @@ export default function AdminPanel() {
                                       {user.laptopStatus || 'Offline'}
                                     </span>
                                   </td>
+                                  <td className="px-6 py-4 text-center">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2 rounded-lg"
+                                      onClick={() => handleResetScreenTime(user.email, user.name)}
+                                    >
+                                      Reset
+                                    </Button>
+                                  </td>
                                 </tr>
                               );
-                            })}
-                          {allUsers.filter((u: any) => (u.totalTime || 0) > 0).length === 0 && (
-                            <tr>
-                              <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
-                                No usage data recorded yet
-                              </td>
-                            </tr>
-                          )}
+                            });
+                          })()}
                         </tbody>
                       </table>
                     </div>
