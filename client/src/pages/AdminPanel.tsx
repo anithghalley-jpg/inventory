@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
@@ -24,6 +24,8 @@ import AdminProjectsTab from '@/components/AdminProjectsTab';
 import { SCRIPT_URL, DRIVE_FOLDER_ID } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
 import { getOptimizedImageUrl } from '@/lib/utils';
+import { normalizeInventoryImage, prepareInventoryImage, type InventoryImageAsset } from '@/lib/backgroundRemoval';
+import { useIsMobile } from '@/hooks/useMobile';
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
@@ -114,6 +116,7 @@ interface DashboardUpdateItem {
 export default function AdminPanel() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
+  const isMobile = useIsMobile();
   const toggleLaptopMut = useMutation(api.users.toggleLaptop);
   const updateUserStatusMut = useMutation(api.users.updateStatus);
   const updateUserProfileMut = useMutation(api.users.updateProfile);
@@ -161,10 +164,21 @@ export default function AdminPanel() {
       status: 'PENDING',
     },
   ]);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
+  const [originalImage, setOriginalImage] = useState<InventoryImageAsset | null>(null);
+  const [processedImage, setProcessedImage] = useState<InventoryImageAsset | null>(null);
+  const [isRemovingBackground, setIsRemovingBackground] = useState(false);
+  const [backgroundRemovalStatus, setBackgroundRemovalStatus] = useState<string | null>(null);
+  const [backgroundRemovalError, setBackgroundRemovalError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const captureInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const imageProcessingRequestRef = React.useRef(0);
+  const latestOriginalImageRef = React.useRef<InventoryImageAsset | null>(null);
+  const latestProcessedImageRef = React.useRef<InventoryImageAsset | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [syncQueue, setSyncQueue] = useState<any[]>([]);
   const [totalToUpload, setTotalToUpload] = useState(0);
@@ -1135,7 +1149,7 @@ export default function AdminPanel() {
       quantity: parseInt(newItemQuantity),
       category: newItemCategory,
       company: newItemCompany,
-      imageUrl: capturedImage || '',
+      imageUrl: processedImage?.dataUrl || originalImage?.dataUrl || '',
       remarks: '',
       links: '',
       tags: newItemTags.join(','), // Store as comma-separated for local pending state
@@ -1156,7 +1170,8 @@ export default function AdminPanel() {
     setNewItemCompany('');
     setNewItemTags([]);
     setCurrentTagInput('');
-    setCapturedImage(null);
+    setNewItemCategory('');
+    resetImageCaptureState();
 
     processSyncQueue(); // Trigger the background worker [11]
 
@@ -1276,54 +1291,171 @@ export default function AdminPanel() {
     }
   };
 
-  const streamRef = React.useRef<MediaStream | null>(null);
+  const revokeImageAsset = (asset: InventoryImageAsset | null) => {
+    if (asset?.objectUrl) {
+      URL.revokeObjectURL(asset.objectUrl);
+    }
+  };
 
-  React.useEffect(() => {
-    // Cleanup video tracks when component unmounts
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
+  const replaceOriginalImage = React.useCallback((next: InventoryImageAsset | null) => {
+    setOriginalImage(previous => {
+      revokeImageAsset(previous);
+      latestOriginalImageRef.current = next;
+      return next;
+    });
   }, []);
 
+  const replaceProcessedImage = React.useCallback((next: InventoryImageAsset | null) => {
+    setProcessedImage(previous => {
+      revokeImageAsset(previous);
+      latestProcessedImageRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const stopCameraStream = React.useCallback(() => {
+    const activeStream =
+      streamRef.current ?? (videoRef.current?.srcObject as MediaStream | null);
+    if (activeStream) {
+      activeStream.getTracks().forEach(track => track.stop());
+    }
+
+    streamRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setIsCameraActive(false);
+  }, []);
+
+  const resetImageCaptureState = React.useCallback(() => {
+    imageProcessingRequestRef.current += 1;
+    setIsRemovingBackground(false);
+    setBackgroundRemovalStatus(null);
+    setBackgroundRemovalError(null);
+    replaceProcessedImage(null);
+    replaceOriginalImage(null);
+    stopCameraStream();
+  }, [replaceOriginalImage, replaceProcessedImage, stopCameraStream]);
+
+  React.useEffect(() => {
+    return () => {
+      imageProcessingRequestRef.current += 1;
+      stopCameraStream();
+      revokeImageAsset(latestOriginalImageRef.current);
+      revokeImageAsset(latestProcessedImageRef.current);
+    };
+  }, [stopCameraStream]);
+
   const startCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Camera access is not available in this browser. Use Upload Photo instead.");
+      return;
+    }
+
+    stopCameraStream();
     setIsCameraActive(true);
+
     try {
-      // Request environment (rear) camera on mobile
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+        },
       });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => undefined);
       }
     } catch (err) {
-      toast.error("Camera access denied");
-      setIsCameraActive(false);
+      stopCameraStream();
+      toast.error("Unable to access the camera. Try Upload Photo instead.");
     }
   };
 
-  const capturePhoto = () => {
+  const processSelectedImage = React.useCallback(async (source: Blob) => {
+    const requestId = ++imageProcessingRequestRef.current;
+
+    setBackgroundRemovalError(null);
+    setBackgroundRemovalStatus("Preparing image...");
+    setIsRemovingBackground(true);
+
+    let normalizedAsset: InventoryImageAsset | null = null;
+
+    try {
+      normalizedAsset = await normalizeInventoryImage(source);
+      if (imageProcessingRequestRef.current !== requestId) {
+        revokeImageAsset(normalizedAsset);
+        return;
+      }
+
+      replaceOriginalImage(normalizedAsset);
+      replaceProcessedImage(null);
+
+      const preparedImage = await prepareInventoryImage(normalizedAsset, progress => {
+        if (imageProcessingRequestRef.current !== requestId) return;
+        setBackgroundRemovalStatus(progress.message);
+      });
+
+      if (imageProcessingRequestRef.current !== requestId) {
+        revokeImageAsset(preparedImage);
+        return;
+      }
+
+      replaceProcessedImage(preparedImage);
+      setBackgroundRemovalStatus(null);
+      toast.success("Background removed successfully.");
+    } catch (error) {
+      if (imageProcessingRequestRef.current !== requestId) return;
+
+      const message = error instanceof Error ? error.message : String(error);
+      setBackgroundRemovalError(message);
+      setBackgroundRemovalStatus(null);
+      replaceProcessedImage(null);
+      toast.error("Background removal failed. Using the original image instead.");
+    } finally {
+      if (imageProcessingRequestRef.current === requestId) {
+        setIsRemovingBackground(false);
+      }
+    }
+  }, [replaceOriginalImage, replaceProcessedImage]);
+
+  const handleInputFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    stopCameraStream();
+    await processSelectedImage(file);
+  };
+
+  const retryBackgroundRemoval = async () => {
+    if (!originalImage || isRemovingBackground) return;
+
+    setBackgroundRemovalError(null);
+    await processSelectedImage(originalImage.blob);
+  };
+
+  const capturePhoto = async () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       canvasRef.current.width = videoRef.current.videoWidth;
       canvasRef.current.height = videoRef.current.videoHeight;
       context?.drawImage(videoRef.current, 0, 0);
 
-      // Store as Base64 string (Browser storage)
-      const imageData = canvasRef.current.toDataURL('image/png');
-      setCapturedImage(imageData);
+      const capturedBlob = await new Promise<Blob | null>(resolve => {
+        canvasRef.current?.toBlob(blob => resolve(blob), 'image/png');
+      });
 
-      // Stop camera stream
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      } else {
-        const stream = videoRef.current.srcObject as MediaStream;
-        if (stream) stream.getTracks().forEach(track => track.stop());
+      stopCameraStream();
+
+      if (!capturedBlob) {
+        toast.error("Failed to capture the photo.");
+        return;
       }
-      setIsCameraActive(false);
+
+      await processSelectedImage(capturedBlob);
     }
   };
 
@@ -1788,41 +1920,145 @@ export default function AdminPanel() {
                   </select>
                 </div>
               </div>
-              <Dialog>
+              <Dialog
+                open={isAddItemDialogOpen}
+                onOpenChange={open => {
+                  setIsAddItemDialogOpen(open);
+                  if (!open) {
+                    resetImageCaptureState();
+                  }
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
                     <Plus className="w-4 h-4 mr-2" />
                     Add Item
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add New Inventory Item</DialogTitle>
-                  </DialogHeader>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add New Inventory Item</DialogTitle>
+                    </DialogHeader>
                   {/* Inside the "Add New Inventory Item" Dialog */}
                   <div className="space-y-4 py-4">
                     {/* Existing inputs: Name, Company, etc. */}
 
                     <div className="flex flex-col items-center gap-4">
+                      <input
+                        ref={captureInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleInputFileChange}
+                      />
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleInputFileChange}
+                      />
                       {isCameraActive ? (
-                        <>
-                          <video ref={videoRef} autoPlay className="w-full rounded-lg bg-black h-48" />
-                          <Button onClick={capturePhoto} className="w-full bg-blue-600">Snap Photo</Button>
-                        </>
-                      ) : capturedImage ? (
-                        <div className="relative w-full">
-                          <img src={capturedImage} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="absolute top-2 right-2"
-                            onClick={() => setCapturedImage(null)}
-                          >Change</Button>
+                        <div className="w-full space-y-3">
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full rounded-lg bg-black h-56 object-cover"
+                          />
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <Button onClick={capturePhoto} className="w-full bg-blue-600">
+                              <Camera className="mr-2 h-4 w-4" />
+                              Capture Photo
+                            </Button>
+                            <Button variant="outline" onClick={stopCameraStream} className="w-full">
+                              Cancel Camera
+                            </Button>
+                          </div>
+                        </div>
+                      ) : processedImage || originalImage ? (
+                        <div className="w-full space-y-3">
+                          <div
+                            className="relative overflow-hidden rounded-lg border border-border"
+                            style={{
+                              backgroundImage:
+                                "linear-gradient(45deg, rgba(15,23,42,0.06) 25%, transparent 25%, transparent 75%, rgba(15,23,42,0.06) 75%, rgba(15,23,42,0.06)), linear-gradient(45deg, rgba(15,23,42,0.06) 25%, transparent 25%, transparent 75%, rgba(15,23,42,0.06) 75%, rgba(15,23,42,0.06))",
+                              backgroundPosition: "0 0, 10px 10px",
+                              backgroundSize: "20px 20px",
+                            }}
+                          >
+                            <img
+                              src={(processedImage ?? originalImage)?.objectUrl}
+                              alt="Preview"
+                              className="relative z-10 h-56 w-full bg-transparent p-2 object-contain"
+                            />
+                          </div>
+
+                          {isRemovingBackground && (
+                            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>{backgroundRemovalStatus || "Removing background..."}</span>
+                            </div>
+                          )}
+
+                          {!isRemovingBackground && backgroundRemovalError && (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                              Background removal failed, so the original image will be used for upload.
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {isMobile ? (
+                              <Button variant="outline" onClick={() => captureInputRef.current?.click()} className="w-full">
+                                <Camera className="mr-2 h-4 w-4" />
+                                Take Another Photo
+                              </Button>
+                            ) : (
+                              <Button variant="outline" onClick={startCamera} className="w-full">
+                                <Camera className="mr-2 h-4 w-4" />
+                                Retake With Camera
+                              </Button>
+                            )}
+                            <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full">
+                              <Upload className="mr-2 h-4 w-4" />
+                              Upload Different Photo
+                            </Button>
+                          </div>
+
+                          {!isRemovingBackground && backgroundRemovalError && (
+                            <Button onClick={retryBackgroundRemoval} className="w-full bg-blue-600">
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Retry Background Removal
+                            </Button>
+                          )}
                         </div>
                       ) : (
-                        <Button variant="outline" onClick={startCamera} className="w-full">
-                          <Camera className="mr-2 h-4 w-4" /> Open Camera
-                        </Button>
+                        <div className="w-full space-y-2">
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {isMobile ? (
+                              <Button variant="outline" onClick={() => captureInputRef.current?.click()} className="w-full">
+                                <Camera className="mr-2 h-4 w-4" />
+                                Take Photo
+                              </Button>
+                            ) : (
+                              <Button variant="outline" onClick={startCamera} className="w-full">
+                                <Camera className="mr-2 h-4 w-4" />
+                                Open Camera
+                              </Button>
+                            )}
+                            <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full">
+                              <Upload className="mr-2 h-4 w-4" />
+                              Upload Photo
+                            </Button>
+                          </div>
+                          <p className="text-center text-xs text-muted-foreground">
+                            {isMobile
+                              ? "Take a photo with the rear camera or upload one from your gallery."
+                              : "Capture a photo with your camera or upload an existing image."}
+                          </p>
+                        </div>
                       )}
                     </div>
 

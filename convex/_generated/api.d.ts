@@ -19,6 +19,7 @@ import type * as learningPlans from "../learningPlans.js";
 import type * as machines from "../machines.js";
 import type * as projects from "../projects.js";
 import type * as requests from "../requests.js";
+import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 import type * as sheetsSync from "../sheetsSync.js";
 import type * as sync from "../sync.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   machines: typeof machines;
   projects: typeof projects;
   requests: typeof requests;
+  seed: typeof seed;
   settings: typeof settings;
   sheetsSync: typeof sheetsSync;
   sync: typeof sync;
