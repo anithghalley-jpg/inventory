@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { motion } from "framer-motion";
-import { Menu, X, LayoutGrid, List, ArrowRight } from "lucide-react";
+import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -212,39 +212,48 @@ export default function Learning() {
               const hasImage = validImages.length > 0;
               const hasVideo = validVideos.length > 0;
 
+              const isRegistered = Boolean(
+                user?.email &&
+                plan.registeredUsers?.some((u: { email: string }) => u.email.toLowerCase() === user.email?.toLowerCase())
+              );
+
               // Media rendering logic
               const MediaElement = () => {
                 const roundedClass = viewMode === 'grid' ? 'rounded-2xl' : 'rounded-[2rem]';
 
-                if (hasImage) {
-                  return (
-                    <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full flex items-center justify-center ${roundedClass}`}>
-                      <img
-                        src={getImageUrl(validImages[0])}
-                        alt={plan.title}
-                        className={`w-full group-hover:scale-105 transition-transform duration-700 ${viewMode === 'grid' ? 'aspect-video object-cover' : 'h-auto object-contain max-h-[75vh]'}`}
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  );
-                } else if (hasVideo) {
-                  return (
-                    <div className={`bg-slate-900 overflow-hidden shadow-xl border border-slate-200 relative group w-full aspect-video ${roundedClass}`}>
-                      <iframe
-                        src={getEmbedUrl(validVideos[0])}
-                        className="absolute inset-0 w-full h-full"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      ></iframe>
-                    </div>
-                  );
-                } else {
-                  return (
-                    <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full aspect-video flex items-center justify-center text-slate-500 ${roundedClass}`}>
-                      No media provided
-                    </div>
-                  );
-                }
+                return (
+                  <div className="relative w-full">
+                    {isRegistered && (
+                      <div className="absolute top-3 right-3 z-20 bg-emerald-600/90 text-white font-bold text-xs px-3.5 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 backdrop-blur-md ring-1 ring-white/30 animate-in fade-in zoom-in duration-300">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                        <span>Registered</span>
+                      </div>
+                    )}
+                    {hasImage ? (
+                      <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full flex items-center justify-center ${roundedClass}`}>
+                        <img
+                          src={getImageUrl(validImages[0])}
+                          alt={plan.title}
+                          className={`w-full group-hover:scale-105 transition-transform duration-700 ${viewMode === 'grid' ? 'aspect-video object-cover' : 'h-auto object-contain max-h-[75vh]'}`}
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    ) : hasVideo ? (
+                      <div className={`bg-slate-900 overflow-hidden shadow-xl border border-slate-200 relative group w-full aspect-video ${roundedClass}`}>
+                        <iframe
+                          src={getEmbedUrl(validVideos[0])}
+                          className="absolute inset-0 w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        ></iframe>
+                      </div>
+                    ) : (
+                      <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full aspect-video flex items-center justify-center text-slate-500 ${roundedClass}`}>
+                        No media provided
+                      </div>
+                    )}
+                  </div>
+                );
               };
 
               if (viewMode === "alternating") {
@@ -261,6 +270,12 @@ export default function Learning() {
                             {tag}
                           </span>
                         ))}
+                        {isRegistered && (
+                          <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            Registered
+                          </span>
+                        )}
                       </div>
                       <h2 className="text-3xl md:text-4xl font-display font-bold text-slate-900 leading-tight">
                         {plan.title}
@@ -284,9 +299,16 @@ export default function Learning() {
                             </Button>
                           </a>
                         )}
-                        <Button onClick={() => handleJoin(plan._id)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8 py-6 h-auto text-lg w-full sm:w-auto shadow-md transition-all hover:scale-105">
-                          Join <ArrowRight className="ml-2 w-5 h-5" />
-                        </Button>
+                        {isRegistered ? (
+                          <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold rounded-full px-8 py-4 text-base flex items-center justify-center gap-2 shadow-sm w-full sm:w-auto">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                            <span>Joined & Registered</span>
+                          </div>
+                        ) : (
+                          <Button onClick={() => handleJoin(plan._id)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8 py-6 h-auto text-lg w-full sm:w-auto shadow-md transition-all hover:scale-105">
+                            Join <ArrowRight className="ml-2 w-5 h-5" />
+                          </Button>
+                        )}
                         <div className="text-sm text-slate-500 font-medium sm:ml-auto">
                           Curated by <span className="text-slate-900 font-bold">{plan.authorName}</span>
                         </div>
@@ -329,9 +351,16 @@ export default function Learning() {
                               Docs
                             </a>
                           )}
-                          <button onClick={(e) => { e.preventDefault(); handleJoin(plan._id); }} className="text-emerald-600 font-semibold text-sm flex items-center hover:underline bg-emerald-50 px-3 py-1.5 rounded-full">
-                            Join <ArrowRight className="w-3 h-3 ml-1" />
-                          </button>
+                          {isRegistered ? (
+                            <span className="text-emerald-800 font-bold text-xs flex items-center bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full shadow-sm">
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                              Registered
+                            </span>
+                          ) : (
+                            <button onClick={(e) => { e.preventDefault(); handleJoin(plan._id); }} className="text-emerald-600 font-semibold text-sm flex items-center hover:underline bg-emerald-50 px-3 py-1.5 rounded-full">
+                              Join <ArrowRight className="w-3 h-3 ml-1" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
