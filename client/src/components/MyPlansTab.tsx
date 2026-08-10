@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Edit, Trash, Plus, FileText, Image as ImageIcon, Video, Link as LinkIcon, Users, X } from "lucide-react";
+import { getOptimizedImageUrl } from "@/lib/utils";
 
 interface MyPlansTabProps {
   teamMembers: any[];
@@ -169,9 +170,9 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
         ) : (
           myPlans?.map((plan: any) => (
             <Card key={plan._id} onClick={() => setViewPlan(plan)} className="overflow-hidden flex flex-col hover:shadow-md transition-all border-slate-200 cursor-pointer">
-              {plan.imageUrls && plan.imageUrls.length > 0 && (
+              {plan.imageUrls && plan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
                 <div className="h-32 bg-slate-100 overflow-hidden">
-                  <img src={plan.imageUrls[0]} alt="" className="w-full h-full object-cover" />
+                  <img src={getOptimizedImageUrl(plan.imageUrls.find((u: string) => typeof u === "string" && u.trim().length > 5))} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 </div>
               )}
               <div className="p-4 flex flex-col flex-1">
@@ -371,6 +372,16 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
           </DialogHeader>
           {viewPlan && (
             <div className="space-y-6 py-4">
+              {viewPlan.imageUrls && viewPlan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
+                <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center max-h-64">
+                  <img
+                    src={getOptimizedImageUrl(viewPlan.imageUrls.find((u: string) => typeof u === "string" && u.trim().length > 5))}
+                    alt={viewPlan.title}
+                    className="w-full h-auto max-h-64 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              )}
               <div className="text-sm text-slate-600 bg-slate-50 p-4 rounded-lg space-y-2">
                 <p><strong>Status:</strong> <span className={`font-semibold ${viewPlan.status === 'PUBLISHED' ? 'text-emerald-600' : 'text-amber-600'}`}>{viewPlan.status}</span></p>
                 {viewPlan.date && <p><strong>Date:</strong> {viewPlan.date}</p>}

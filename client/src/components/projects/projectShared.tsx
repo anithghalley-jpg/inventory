@@ -262,6 +262,85 @@ export function createEmptyCheckpointField() {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// History & Report types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProjectHistoryEntry {
+  historyId: string;
+  projectId: string;
+  action: string;
+  actorEmail: string;
+  actorName: string;
+  details?: string;
+  createdAt: string;
+}
+
+export interface ProjectReportData {
+  project: ProjectDetailRecord;
+  history: ProjectHistoryEntry[];
+}
+
+/** Human-readable labels for history actions */
+export const HISTORY_ACTION_LABELS: Record<string, { label: string; icon: string; color: string }> = {
+  PROJECT_CREATED: { label: "Project Created", icon: "🚀", color: "emerald" },
+  SETUP_SUBMITTED: { label: "Team Setup Submitted", icon: "📋", color: "blue" },
+  SETUP_APPROVED: { label: "Team Setup Approved", icon: "✅", color: "emerald" },
+  SETUP_REJECTED: { label: "Team Setup Rejected", icon: "❌", color: "rose" },
+  BOX_SUBMITTED: { label: "Project Box Submitted", icon: "📦", color: "blue" },
+  BOX_APPROVED: { label: "Project Box Approved", icon: "✅", color: "emerald" },
+  BOX_REJECTED: { label: "Project Box Rejected", icon: "❌", color: "rose" },
+  PLAN_SUBMITTED: { label: "Plan Submitted", icon: "📝", color: "blue" },
+  PLAN_APPROVED: { label: "Plan Approved", icon: "✅", color: "emerald" },
+  PLAN_REJECTED: { label: "Plan Rejected", icon: "❌", color: "rose" },
+  MARKED_ACTIVE: { label: "Project Activated", icon: "⚡", color: "emerald" },
+  MARKED_COMPLETED: { label: "Project Completed", icon: "🎉", color: "emerald" },
+  MARKED_ARCHIVED: { label: "Project Archived", icon: "📂", color: "slate" },
+  POST_ADDED: { label: "Timeline Post Added", icon: "💬", color: "blue" },
+  CHECKPOINT_CREATED: { label: "Checkpoint Created", icon: "🏁", color: "purple" },
+  CHECKPOINT_RESPONSE: { label: "Checkpoint Response", icon: "📝", color: "blue" },
+  MEMBER_JOINED: { label: "Member Joined", icon: "👤", color: "emerald" },
+  MEMBER_REMOVED: { label: "Member Removed", icon: "👤", color: "rose" },
+  ITEM_TAGGED: { label: "Item Tagged", icon: "🏷️", color: "blue" },
+  ITEM_UNTAGGED: { label: "Item Untagged", icon: "🏷️", color: "slate" },
+  PROJECT_LIKED: { label: "Project Liked", icon: "⭐", color: "amber" },
+};
+
+/**
+ * Calculates the progress of a project through its 4 stages.
+ * Returns a value between 0 and 1.
+ */
+export function getProjectProgress(status: ProjectStatus): { step: number; total: number; percent: number } {
+  const stages: Record<ProjectStatus, number> = {
+    DRAFT: 0,
+    SETUP_PENDING: 0.5,
+    SETUP_APPROVED: 1,
+    BOX_PENDING: 1.5,
+    BOX_APPROVED: 2,
+    PLAN_PENDING: 2.5,
+    ACTIVE: 3,
+    COMPLETED: 4,
+    ARCHIVED: 4,
+  };
+  const step = stages[status] ?? 0;
+  return { step, total: 4, percent: step / 4 };
+}
+
+/** Returns the Kanban column for a project status */
+export function getKanbanColumn(status: ProjectStatus): "setup" | "active" | "completed" | "archived" {
+  if (status === "COMPLETED") return "completed";
+  if (status === "ARCHIVED") return "archived";
+  if (status === "ACTIVE") return "active";
+  return "setup";
+}
+
+export const KANBAN_COLUMNS = [
+  { key: "setup" as const, label: "In Progress", color: "bg-amber-50 border-amber-200", textColor: "text-amber-700", dotColor: "bg-amber-400" },
+  { key: "active" as const, label: "Active", color: "bg-emerald-50 border-emerald-200", textColor: "text-emerald-700", dotColor: "bg-emerald-400" },
+  { key: "completed" as const, label: "Completed", color: "bg-blue-50 border-blue-200", textColor: "text-blue-700", dotColor: "bg-blue-400" },
+  { key: "archived" as const, label: "Archived", color: "bg-slate-50 border-slate-200", textColor: "text-slate-500", dotColor: "bg-slate-400" },
+];
+
 export function ProjectAvatar({
   imageUrl,
   label,

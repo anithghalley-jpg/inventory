@@ -47,6 +47,9 @@ import {
   type TimelinePostKind,
 } from "@/components/projects/projectShared";
 import ProjectStepFlow from "@/components/projects/ProjectStepFlow";
+import ProjectOverviewPanel from "./projects/ProjectOverviewPanel";
+import ProjectHistoryPanel from "./projects/ProjectHistoryPanel";
+import ProjectReportGenerator from "./projects/ProjectReportGenerator";
 
 interface ProjectsWorkspaceProps {
   workspace?: { projects: ProjectCardRecord[] };
@@ -220,6 +223,7 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   const projects = workspace?.projects ?? [];
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"overview" | "history" | "report" | "manage">("overview");
   const [previewMode, setPreviewMode] = useState<Record<string, "team" | "box">>({});
   const [leftRailCollapsed, setLeftRailCollapsed] = useState(true);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
@@ -264,6 +268,25 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
       return project.name.toLowerCase().includes(needle) || memberMatch;
     });
   }, [projects, searchQuery]);
+
+  const groupedProjects = useMemo(() => {
+    const groups = {
+      TEAM_SETUP: [] as ProjectCardRecord[],
+      BOX: [] as ProjectCardRecord[],
+      PLAN: [] as ProjectCardRecord[],
+      ACTIVE: [] as ProjectCardRecord[],
+      COMPLETED: [] as ProjectCardRecord[],
+    };
+    
+    filteredProjects.forEach((p) => {
+      if (p.status === "DRAFT" || p.status.includes("SETUP")) groups.TEAM_SETUP.push(p);
+      else if (p.status.includes("BOX")) groups.BOX.push(p);
+      else if (p.status.includes("PLAN")) groups.PLAN.push(p);
+      else if (p.status === "COMPLETED") groups.COMPLETED.push(p);
+      else groups.ACTIVE.push(p);
+    });
+    return groups;
+  }, [filteredProjects]);
 
   useEffect(() => {
     if (selectedProjectId && !projects.some((project) => project.projectId === selectedProjectId)) {
@@ -741,10 +764,9 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Projects</p>
-              <h2 className="text-4xl font-black tracking-tight text-slate-900">Project Cards</h2>
+              <h2 className="text-4xl font-black tracking-tight text-slate-900">Project Board</h2>
               <p className="text-sm leading-6 text-slate-500 max-w-lg">
-                Individual project workspaces for team collaboration. Click any card to expand the 
-                project timeline and view the full workspace.
+                Manage all project stages visually. Click any card to expand the project timeline and details.
               </p>
             </div>
 
@@ -758,150 +780,114 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
             </div>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-            {filteredProjects.map((project) => (
-              <ProjectCardTile
-                key={project.projectId}
-                project={project}
-                previewMode={previewMode[project.projectId] ?? "team"}
-                onPreviewChange={(mode) => setPreviewMode((prev) => ({ ...prev, [project.projectId]: mode }))}
-                onOpen={() => openProject(project.projectId)}
-                onStar={() => handleToggleLike(project.projectId)}
-                onComment={() => openComposer(project.projectId, "post")}
-              />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 overflow-x-auto pb-4 items-start">
+            {Object.entries(groupedProjects).map(([stage, stageProjects]) => (
+              <div key={stage} className="project-kanban-column flex flex-col gap-3 min-w-[240px] bg-slate-50/50">
+                <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200">
+                  <h3 className="font-display font-semibold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
+                    {stage.replace("_", " ")}
+                  </h3>
+                  <Badge variant="secondary" className="bg-white text-slate-600 shadow-sm border border-slate-200">
+                    {stageProjects.length}
+                  </Badge>
+                </div>
+                
+                {stageProjects.length === 0 ? (
+                  <div className="flex-1 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center p-6 text-center text-slate-400 text-sm bg-white/50">
+                    No projects
+                  </div>
+                ) : (
+                  stageProjects.map((project) => (
+                    <div className="project-kanban-card group" key={project.projectId} onClick={() => openProject(project.projectId)}>
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <h4 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-emerald-600 transition-colors line-clamp-2">
+                          {project.name}
+                        </h4>
+                      </div>
+                      <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-100">
+                        <div className="flex -space-x-2">
+                          {project.members.slice(0, 3).map((member) => (
+                            <ProjectAvatar
+                              key={member.userEmail}
+                              imageUrl={member.profileImageUrl}
+                              label={member.userName}
+                              className="h-6 w-6 border-2 border-white text-[10px]"
+                            />
+                          ))}
+                          {project.members.length > 3 && (
+                            <div className="h-6 w-6 rounded-full border-2 border-white bg-slate-100 text-slate-600 text-[10px] flex items-center justify-center font-medium">
+                              +{project.members.length - 3}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-400">
+                          {project.likeCount > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] font-medium text-amber-500">
+                              <Star className="h-3 w-3 fill-current" /> {project.likeCount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             ))}
           </div>
         </div>
       ) : (
-        <div className={`grid gap-6 ${leftRailCollapsed ? "xl:grid-cols-1" : "xl:grid-cols-[0.88fr_1.12fr]"}`}>
-          {!leftRailCollapsed ? (
-            <Card className="rounded-[1.75rem] border-slate-200 bg-white p-5 shadow-sm">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Project Cards</p>
-                    <h3 className="text-2xl font-black tracking-tight text-slate-900">Browse Projects</h3>
-                  </div>
-                  <Button variant="outline" className="border-slate-200" onClick={() => setSelectedProjectId("")}>
-                    <LayoutGrid className="mr-2 h-4 w-4" />
-                    Grid
-                  </Button>
-                </div>
-
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search project name or member"
-                  className="border-slate-200 bg-slate-50"
-                />
-
-                <div className="space-y-4">
-                  {filteredProjects.map((project) => (
-                    <ProjectCardTile
-                      key={project.projectId}
-                      project={project}
-                      previewMode={previewMode[project.projectId] ?? "team"}
-                      onPreviewChange={(mode) => setPreviewMode((prev) => ({ ...prev, [project.projectId]: mode }))}
-                      onOpen={() => openProject(project.projectId)}
-                      onStar={() => handleToggleLike(project.projectId)}
-                      onComment={() => openComposer(project.projectId, "post")}
-                      selected={selectedProjectId === project.projectId}
-                    />
-                  ))}
-                </div>
-              </div>
-            </Card>
-          ) : null}
-
-          <Card className="overflow-hidden rounded-[1.75rem] border-slate-200 bg-white shadow-sm">
-            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-4">
-                  <ProjectAvatar imageUrl={projectDetail.teamImageUrl} label={projectDetail.name} className="h-16 w-16" />
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Project Timeline</p>
-                    <h2 className="text-3xl font-black tracking-tight text-slate-900">{projectDetail.name}</h2>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Badge className={getStatusBadgeClass(projectDetail.status)}>{projectDetail.status}</Badge>
-                      <span className="text-xs text-slate-500">
-                        Active since {formatDateOnly(projectDetail.createdAt)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex -space-x-2">
-                    {projectDetail.members.map((member) => (
-                      <ProjectAvatar
-                        key={member.userEmail}
-                        imageUrl={member.profileImageUrl}
-                        label={member.userName}
-                        className="h-10 w-10 border-2 border-white"
-                      />
-                    ))}
-                  </div>
-                  <Button variant="outline" className="border-slate-200" onClick={() => handleToggleLike(projectDetail.projectId)}>
-                    <Star className={`mr-2 h-4 w-4 ${projectDetail.viewerHasLiked ? "fill-current text-amber-500" : ""}`} />
-                    {projectDetail.likeCount}
-                  </Button>
-                  {projectDetail.permissions.canComment || projectDetail.permissions.canCreateCheckpoint ? (
-                    <Button className="bg-slate-900 hover:bg-slate-800" onClick={() => openComposer(projectDetail.projectId, "post")}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add
-                    </Button>
-                  ) : null}
-                  {projectDetail.permissions.canUpdateOwnProfile ? (
-                    <Button variant="outline" className="border-slate-200" onClick={() => setProfileDialogOpen(true)}>
-                      <UserRound className="mr-2 h-4 w-4" />
-                      My Profile
-                    </Button>
-                  ) : null}
-                  {(projectDetail.permissions.canRenameProject || projectDetail.permissions.canUpdateTeamImage) ? (
-                    <Button variant="outline" className="border-slate-200" onClick={() => setIdentityDialogOpen(true)}>
-                      Edit Project
-                    </Button>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    className="border-slate-200"
-                    onClick={() => setLeftRailCollapsed((prev) => !prev)}
-                  >
-                    {leftRailCollapsed ? (
-                      <>
-                        <PanelLeftOpen className="mr-2 h-4 w-4" />
-                        Show Cards
-                      </>
-                    ) : (
-                      <>
-                        <PanelLeftClose className="mr-2 h-4 w-4" />
-                        Collapse Cards
-                      </>
-                    )}
-                  </Button>
-                  <Button variant="outline" className="border-slate-200" onClick={() => setSelectedProjectId("")}>
-                    <ChevronLeft className="mr-2 h-4 w-4" />
+        <div className="space-y-6">
+          <Card className="rounded-[1.75rem] border-slate-200 bg-white shadow-sm overflow-hidden">
+             {/* Header with back button */}
+             <div className="border-b border-slate-200 bg-slate-50/80 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+               <div className="flex items-center gap-4">
+                  <Button variant="outline" size="sm" onClick={() => setSelectedProjectId("")} className="bg-white hover:bg-slate-50 rounded-xl shrink-0">
+                    <ChevronLeft className="mr-1 h-4 w-4" />
                     Back
                   </Button>
-                </div>
-              </div>
-            </div>
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-slate-900 truncate">{projectDetail.name}</h2>
+                    <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">Status: {projectDetail.status.replace("_", " ")}</p>
+                  </div>
+               </div>
+               <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar shrink-0">
+                  <div className="project-detail-tabs w-full sm:w-auto">
+                    <button className={`project-detail-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
+                    <button className={`project-detail-tab ${activeTab === 'manage' ? 'active' : ''}`} onClick={() => setActiveTab('manage')}>Timeline / Manage</button>
+                    <button className={`project-detail-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>History</button>
+                    <button className={`project-detail-tab ${activeTab === 'report' ? 'active' : ''}`} onClick={() => setActiveTab('report')}>Report</button>
+                  </div>
+               </div>
+             </div>
 
-            <ProjectStepFlow
-              projectDetail={projectDetail}
-              userEmail={userEmail ?? ""}
-              onSaveIdentity={async (name, teamImageUrl) => {
-                await updateProjectIdentityMut({
-                  projectId: projectDetail.projectId,
-                  userEmail: userEmail ?? "",
-                  name,
-                  teamImageUrl,
-                });
-                toast.success("Project identity updated.");
-              }}
-              renderTimelineItem={renderTimelineCard}
-              onOpenComposer={() => openComposer(projectDetail.projectId, "post")}
-            />
+             <div className="p-6 md:p-8 bg-slate-50/30">
+                {activeTab === 'overview' && (
+                  <ProjectOverviewPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
+                )}
+                {activeTab === 'history' && (
+                  <ProjectHistoryPanel projectId={projectDetail.projectId} userEmail={userEmail ?? ""} projectDetail={projectDetail} />
+                )}
+                {activeTab === 'report' && (
+                  <ProjectReportGenerator projectId={projectDetail.projectId} userEmail={userEmail ?? ""} projectDetail={projectDetail} />
+                )}
+                {activeTab === 'manage' && (
+                  <ProjectStepFlow
+                    projectDetail={projectDetail}
+                    userEmail={userEmail ?? ""}
+                    onSaveIdentity={async (name, teamImageUrl) => {
+                      await updateProjectIdentityMut({
+                        projectId: projectDetail.projectId,
+                        userEmail: userEmail ?? "",
+                        name,
+                        teamImageUrl,
+                      });
+                      toast.success("Project identity updated.");
+                    }}
+                    renderTimelineItem={renderTimelineCard}
+                    onOpenComposer={() => openComposer(projectDetail.projectId, "post")}
+                  />
+                )}
+             </div>
           </Card>
         </div>
       )}

@@ -249,6 +249,27 @@ async function touchProject(ctx: MutationCtx, projectId: string, timestamp?: str
   });
 }
 
+const MAX_HISTORY_ENTRIES = 500;
+
+async function logProjectHistory(
+  ctx: MutationCtx,
+  projectId: string,
+  action: string,
+  actorEmail: string,
+  actorName: string,
+  details?: string,
+) {
+  await ctx.db.insert("projectHistory", {
+    historyId: crypto.randomUUID(),
+    projectId,
+    action,
+    actorEmail,
+    actorName,
+    details,
+    createdAt: new Date().toISOString(),
+  });
+}
+
 async function buildProjectCard(
   ctx: QueryCtx,
   project: NonNullable<Awaited<ReturnType<typeof getProjectByProjectId>>>,
@@ -670,6 +691,7 @@ export const upsertProject = mutation({
         planningResponses: [],
         questionConfig: DEFAULT_QUESTION_CONFIG,
       });
+      await logProjectHistory(ctx, projectId, "PROJECT_CREATED", args.actorEmail, "Admin", JSON.stringify({ name: trimmedName }));
     }
 
     const existingMembers = await ctx.db
@@ -714,6 +736,7 @@ export const upsertProject = mutation({
           joinedAt: now,
           order: index,
         });
+        await logProjectHistory(ctx, projectId, "MEMBER_JOINED", member.email, member.name);
       }
     }
 
@@ -836,6 +859,9 @@ export const submitBox = mutation({
       lastActivityAt: now,
     });
 
+    const user = await getUserByEmail(ctx, args.userEmail);
+    await logProjectHistory(ctx, args.projectId, "BOX_SUBMITTED", args.userEmail, user?.name ?? "Team Member");
+
     return { success: true };
   },
 });
@@ -875,6 +901,9 @@ export const reviewBox = mutation({
             lastActivityAt: now,
           },
     );
+
+    const actor = await getUserByEmail(ctx, args.actorEmail);
+    await logProjectHistory(ctx, args.projectId, args.approve ? "BOX_APPROVED" : "BOX_REJECTED", args.actorEmail, actor?.name ?? "Admin", args.approve ? undefined : args.rejectionNote);
 
     return { success: true };
   },
@@ -946,6 +975,9 @@ export const submitPlan = mutation({
 
     await ctx.db.patch(project._id, patch);
 
+    const user = await getUserByEmail(ctx, args.userEmail);
+    await logProjectHistory(ctx, args.projectId, "PLAN_SUBMITTED", args.userEmail, user?.name ?? "Team Member");
+
     return { success: true };
   },
 });
@@ -985,6 +1017,9 @@ export const reviewPlan = mutation({
             lastActivityAt: now,
           },
     );
+
+    const actor = await getUserByEmail(ctx, args.actorEmail);
+    await logProjectHistory(ctx, args.projectId, args.approve ? "PLAN_APPROVED" : "PLAN_REJECTED", args.actorEmail, actor?.name ?? "Admin", args.approve ? undefined : args.rejectionNote);
 
     return { success: true };
   },
@@ -1059,6 +1094,9 @@ export const submitTeamSetup = mutation({
       lastActivityAt: now,
     });
 
+    const user = await getUserByEmail(ctx, args.userEmail);
+    await logProjectHistory(ctx, args.projectId, "SETUP_SUBMITTED", args.userEmail, user?.name ?? "Team Member");
+
     return { success: true };
   },
 });
@@ -1100,6 +1138,9 @@ export const reviewTeamSetup = mutation({
             lastActivityAt: now,
           },
     );
+
+    const actor = await getUserByEmail(ctx, args.actorEmail);
+    await logProjectHistory(ctx, args.projectId, args.approve ? "SETUP_APPROVED" : "SETUP_REJECTED", args.actorEmail, actor?.name ?? "Admin", args.approve ? undefined : args.rejectionNote);
 
     return { success: true };
   },
@@ -1201,6 +1242,7 @@ export const createCheckpointForm = mutation({
     }
 
     await touchProject(ctx, args.projectId, now);
+    await logProjectHistory(ctx, args.projectId, "CHECKPOINT_CREATED", user.email, user.name, JSON.stringify({ title }));
     return { success: true, checkpointId };
   },
 });
@@ -1304,6 +1346,7 @@ export const submitCheckpointResponse = mutation({
       updatedAt: now,
     });
     await touchProject(ctx, args.projectId, now);
+    await logProjectHistory(ctx, args.projectId, "CHECKPOINT_RESPONSE", user.email, user.name, JSON.stringify({ checkpointId: args.checkpointId }));
 
     return { success: true };
   },
@@ -1361,6 +1404,7 @@ export const addTimelinePost = mutation({
     });
 
     await touchProject(ctx, args.projectId, now);
+    await logProjectHistory(ctx, args.projectId, "POST_ADDED", user.email, user.name, JSON.stringify({ kind: args.kind }));
     return { success: true };
   },
 });
@@ -1471,6 +1515,9 @@ export const setLifecycleStatus = mutation({
       updatedAt: now,
       lastActivityAt: now,
     });
+
+    const actor = await getUserByEmail(ctx, args.actorEmail);
+    await logProjectHistory(ctx, args.projectId, args.status === "COMPLETED" ? "MARKED_COMPLETED" : "MARKED_ARCHIVED", args.actorEmail, actor?.name ?? "Admin");
 
     return { success: true };
   },
@@ -1638,5 +1685,53 @@ export const removeItemFromProject = mutation({
     await touchProject(ctx, args.projectId);
 
     return { success: true };
+  },
+});
+
+export const getProjectHistory = query({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await assertApprovedViewer(ctx, args.userEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const entries = await ctx.db
+      .query("projectHistory")
+      .withIndex("by_projectId_and_createdAt", (q) => q.eq("projectId", args.projectId))
+      .order("desc")
+      .take(MAX_HISTORY_ENTRIES);
+
+    return entries;
+  },
+});
+
+export const getProjectReportData = query({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await assertApprovedViewer(ctx, args.userEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const detail = await buildProjectDetail(ctx, project, viewer);
+    const history = await ctx.db
+      .query("projectHistory")
+      .withIndex("by_projectId_and_createdAt", (q) => q.eq("projectId", args.projectId))
+      .order("asc")
+      .take(MAX_HISTORY_ENTRIES);
+
+    return {
+      project: detail,
+      history,
+    };
   },
 });

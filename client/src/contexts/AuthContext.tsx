@@ -15,6 +15,8 @@ export interface User {
   totalTime?: number;
   tags?: string[];
   profileImageUrl?: string;
+  customTheme?: string;
+  myPageLink?: string;
 }
 
 interface AuthContextType {
@@ -53,6 +55,8 @@ function normalizeUser(data: any): User {
     totalTime: data.totalTime || 0,
     tags: Array.isArray(data.tags) ? data.tags : (data.tags ? String(data.tags).split(',').map((tag: string) => tag.trim()).filter(Boolean) : []),
     profileImageUrl: data.profileImageUrl || '',
+    customTheme: data.customTheme || '',
+    myPageLink: data.myPageLink || '',
   };
 }
 

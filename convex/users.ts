@@ -17,6 +17,7 @@ function formatUserForSheets(user: {
   profileImageUrl?: string;
   tags: string[];
   note?: string;
+  customTheme?: string;
 }) {
   return {
     email: user.email,
@@ -33,6 +34,7 @@ function formatUserForSheets(user: {
     profileImageUrl: user.profileImageUrl ?? "",
     tags: user.tags,
     note: user.note ?? "",
+    customTheme: user.customTheme ?? "",
   };
 }
 
@@ -197,6 +199,7 @@ export const updateProfile = mutation({
     myPageLink: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
+    customTheme: v.optional(v.string()),
     scriptUrl: v.string(),
   },
   handler: async (ctx, args) => {
@@ -212,6 +215,7 @@ export const updateProfile = mutation({
     if (args.myPageLink !== undefined) patch.myPageLink = args.myPageLink;
     if (args.profileImageUrl !== undefined) patch.profileImageUrl = args.profileImageUrl;
     if (args.tags !== undefined) patch.tags = args.tags;
+    if (args.customTheme !== undefined) patch.customTheme = args.customTheme;
 
     await ctx.db.patch(user._id, patch);
     const updatedUser = { ...user, ...patch };
@@ -244,6 +248,7 @@ export const upsertFromSheetSnapshot = mutation({
     profileImageUrl: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     note: v.optional(v.string()),
+    customTheme: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.query("users").withIndex("by_email", q => q.eq("email", args.email)).first();
@@ -262,6 +267,7 @@ export const upsertFromSheetSnapshot = mutation({
       profileImageUrl: args.profileImageUrl ?? existing?.profileImageUrl ?? "",
       tags: args.tags ?? [],
       note: args.note ?? "",
+      customTheme: args.customTheme ?? existing?.customTheme ?? "",
     };
 
     if (existing) {

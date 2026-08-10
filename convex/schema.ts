@@ -12,7 +12,10 @@ export default defineSchema({
     remarks: v.string(),
     links: v.string(),
     tags: v.array(v.string()),
-  }).index("by_itemId", ["itemId"]),
+  })
+    .index("by_itemId", ["itemId"])
+    .index("by_category", ["category"])
+    .searchIndex("search_name", { searchField: "name" }),
   
   users: defineTable({
     email: v.string(),
@@ -29,6 +32,7 @@ export default defineSchema({
     profileImageUrl: v.optional(v.string()),
     tags: v.array(v.string()),
     note: v.optional(v.string()),
+    customTheme: v.optional(v.string()),
   }).index("by_email", ["email"]),
   
   requests: defineTable({
@@ -410,4 +414,16 @@ export default defineSchema({
     .index("by_planId", ["planId"])
     .index("by_status", ["status"])
     .index("by_authorEmail", ["authorEmail"]),
+
+  projectHistory: defineTable({
+    historyId: v.string(),
+    projectId: v.string(),
+    action: v.string(),
+    actorEmail: v.string(),
+    actorName: v.string(),
+    details: v.optional(v.string()),
+    createdAt: v.string(),
+  })
+    .index("by_projectId_and_createdAt", ["projectId", "createdAt"])
+    .index("by_historyId", ["historyId"]),
 });

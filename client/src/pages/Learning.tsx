@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+import { getOptimizedImageUrl } from "@/lib/utils";
+
 function getEmbedUrl(url: string) {
   if (!url) return '';
   let embedUrl = url;
@@ -28,12 +30,7 @@ function getEmbedUrl(url: string) {
 }
 
 function getImageUrl(url: string) {
-  if (!url) return '';
-  if (url.includes("drive.google.com/file/d/")) {
-    const fileId = url.split("/d/")[1].split("/")[0];
-    return `https://drive.google.com/uc?export=view&id=${fileId}`;
-  }
-  return url;
+  return getOptimizedImageUrl(url);
 }
 
 export default function Learning() {
@@ -209,32 +206,36 @@ export default function Learning() {
         ) : (
           <div className={viewMode === "alternating" ? "space-y-24" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"}>
             {publishedPlans.map((plan: any, index: number) => {
-              const hasVideo = plan.videoUrls && plan.videoUrls.length > 0;
-              const hasImage = plan.imageUrls && plan.imageUrls.length > 0;
+              const validImages = (plan.imageUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
+              const validVideos = (plan.videoUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
+
+              const hasImage = validImages.length > 0;
+              const hasVideo = validVideos.length > 0;
 
               // Media rendering logic
               const MediaElement = () => {
                 const roundedClass = viewMode === 'grid' ? 'rounded-2xl' : 'rounded-[2rem]';
 
-                if (hasVideo) {
+                if (hasImage) {
+                  return (
+                    <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full flex items-center justify-center ${roundedClass}`}>
+                      <img
+                        src={getImageUrl(validImages[0])}
+                        alt={plan.title}
+                        className={`w-full group-hover:scale-105 transition-transform duration-700 ${viewMode === 'grid' ? 'aspect-video object-cover' : 'h-auto object-contain max-h-[75vh]'}`}
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  );
+                } else if (hasVideo) {
                   return (
                     <div className={`bg-slate-900 overflow-hidden shadow-xl border border-slate-200 relative group w-full aspect-video ${roundedClass}`}>
                       <iframe
-                        src={getEmbedUrl(plan.videoUrls[0])}
+                        src={getEmbedUrl(validVideos[0])}
                         className="absolute inset-0 w-full h-full"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                       ></iframe>
-                    </div>
-                  );
-                } else if (hasImage) {
-                  return (
-                    <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full flex items-center justify-center ${roundedClass}`}>
-                      <img
-                        src={getImageUrl(plan.imageUrls[0])}
-                        alt={plan.title}
-                        className={`w-full group-hover:scale-105 transition-transform duration-700 ${viewMode === 'grid' ? 'aspect-video object-cover' : 'h-auto object-contain max-h-[75vh]'}`}
-                      />
                     </div>
                   );
                 } else {

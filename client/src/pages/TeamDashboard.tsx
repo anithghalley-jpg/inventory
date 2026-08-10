@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import { SCRIPT_URL } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
 import { getOptimizedImageUrl } from '@/lib/utils';
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
 const glowStyles = [
@@ -119,7 +119,20 @@ const getGlowStyleIndex = (str: string) => {
 };
 
 // Helper: Generate Unique HSL Colors for a User
-const getDynamicGlow = (str: string) => {
+const getDynamicGlow = (str: string, customTheme?: string) => {
+    if (customTheme && customTheme.trim() !== '') {
+        const ct = customTheme.trim();
+        return {
+            hue: 0,
+            glow: ct,
+            hoverGlow: ct,
+            border: ct,
+            beforeBorder: ct,
+            bg: 'rgba(255, 255, 255, 0.5)', 
+            text: ct,
+            icon: ct
+        };
+    }
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
@@ -201,6 +214,8 @@ interface User {
     totalTime?: number;
     tags?: string[];
     myPageLink?: string;
+    profileImageUrl?: string;
+    customTheme?: string;
 }
 
 interface UsageRecord {
@@ -248,6 +263,12 @@ export default function TeamDashboard() {
     // const PAGE_SIZE = 50;
 
     // Actions State
+    const [editProfileOpen, setEditProfileOpen] = useState(false);
+    const [editProfileImage, setEditProfileImage] = useState("");
+    const [editProfileTheme, setEditProfileTheme] = useState("");
+    const [editProfileLink, setEditProfileLink] = useState("");
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
+    const updateProfileMutation = useMutation(api.users.updateProfile);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -327,8 +348,20 @@ export default function TeamDashboard() {
 
     // Track if we're using the fallback (Sheets) or Convex
     const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
-
-    const convexInventory = useQuery(api.inventory.getAll);
+    
+    // Server-side pagination and search/category filtering
+    const {
+        results: paginatedInventory,
+        status: paginatedStatus,
+        loadMore: loadMoreInventory
+    } = usePaginatedQuery(
+        api.inventory.getPaginated,
+        {
+            searchTerm: searchQuery,
+            category: selectedCategory
+        },
+        { initialNumItems: 30 }
+    );
 
     // Helper: load inventory from Google Sheets (Golden Rule fallback)
     const fetchInventoryFromSheets = React.useCallback(async () => {
@@ -363,24 +396,27 @@ export default function TeamDashboard() {
 
     // Inventory: Convex is primary. Sheets is the error-only fallback.
     useEffect(() => {
-        if (convexInventory !== undefined) {
-            const items: InventoryItem[] = convexInventory.map(doc => ({
+        if (paginatedInventory !== undefined) {
+            const items: InventoryItem[] = paginatedInventory.map(doc => ({
                 id: doc.itemId || doc._id,
-                name: doc.name,
-                quantity: doc.quantity,
-                category: doc.category,
-                company: doc.company,
-                imageUrl: doc.imageUrl,
-                remarks: doc.remarks,
-                links: doc.links,
-                tags: Array.isArray(doc.tags) ? doc.tags.join(',') : (doc.tags || '')
-            }));
+                name: doc.name || '',
+                quantity: doc.quantity || 0,
+                category: doc.category || 'Uncategorized',
+                company: doc.company || '',
+                imageUrl: doc.imageUrl || '',
+                remarks: doc.remarks || '',
+                links: doc.links || '',
+                tags: doc.tags || [],
+                scriptUrl: SCRIPT_URL
+            })) as unknown as InventoryItem[];
             setInventory(items);
-            const uniqueCats = Array.from(new Set(items.map((i) => i.category)));
-            setCategories(['all', ...uniqueCats as string[]]);
-            setInventorySource('convex');
+            if (paginatedStatus === 'LoadingMore') {
+               setInventorySource('loading');
+            } else {
+               setInventorySource('convex');
+            }
         }
-    }, [convexInventory]);
+    }, [paginatedInventory, paginatedStatus]);
 
     useEffect(() => {
         if (isAuthenticated && (user?.role === 'TEAM' || user?.role === 'ADMIN')) {
@@ -766,16 +802,17 @@ export default function TeamDashboard() {
     }
 
     /* --- FILTER LOGIC (Inlined) --- */
-    const filteredItems = inventory.filter(item =>
-        (selectedCategory === 'all' || item.category === selectedCategory) &&
-        (item.name.toLowerCase().includes(searchQuery.toLowerCase()) || (item.tags || '').includes(searchQuery))
-    );
+    // We do NOT filter locally anymore for store display since we use paginated query,
+    // except for myItems and other local references where we might need a full list.
+    // For the store itself, we just group the currently fetched inventory.
+    const storeItemsToGroup = inventory;
 
-    const groupedItems = filteredItems.reduce((acc, item) => {
+    const groupedItems = storeItemsToGroup.reduce((acc, item) => {
         if (!acc[item.category]) acc[item.category] = [];
         acc[item.category].push(item);
         return acc;
     }, {} as Record<string, InventoryItem[]>);
+
     const activeMachineCount = (convexMachines || []).filter((machine) => machine.status === 'ENGAGED').length;
     const memberProjects = projectWorkspace?.projects ?? [];
     const viewerHasProjectMembership = memberProjects.some((project) => project.viewerIsMember);
@@ -924,6 +961,20 @@ export default function TeamDashboard() {
                             </div>
                             <Switch checked={laptopStatus === 'Online'} onCheckedChange={handleLaptopToggle} className="data-[state=checked]:bg-emerald-500" />
                         </div>
+                        
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="hidden sm:flex border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            onClick={() => {
+                                setEditProfileImage(user?.profileImageUrl || "");
+                                setEditProfileTheme(user?.customTheme || "");
+                                setEditProfileLink(user?.myPageLink || "");
+                                setEditProfileOpen(true);
+                            }}
+                        >
+                            <UsersIcon className="w-4 h-4 mr-2" /> Profile
+                        </Button>
 
                         <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => logout()}>
                             <LogOut className="w-5 h-5 text-red-400 hover:text-red-600" />
@@ -1127,8 +1178,20 @@ export default function TeamDashboard() {
                                     </div>
                                 ))}
 
-                                {/* Load More Button */}
-                                {/* Load More Button - Removed for Firestore Realtime */}
+                                {paginatedStatus === 'CanLoadMore' && (
+                                    <div className="flex justify-center mt-8 pb-4">
+                                        <Button 
+                                            variant="outline" 
+                                            onClick={() => loadMoreInventory(50)}
+                                            className="px-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                        >
+                                            Load More Inventory
+                                        </Button>
+                                    </div>
+                                )}
+                                {paginatedStatus === 'LoadingMore' && (
+                                    <div className="text-center py-4 text-emerald-600 animate-pulse">Loading more...</div>
+                                )}
 
                             </div>
                         </div>
@@ -1279,7 +1342,7 @@ export default function TeamDashboard() {
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
                                             {filteredCommunityUsers.filter(isFabUser).map((u) => {
                                                 const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                                const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+                                                const dynamic = getDynamicGlow(u.email || u._id || u.email || "", u.customTheme);
 
                                                 return (
                                                     <Card
@@ -1304,8 +1367,12 @@ export default function TeamDashboard() {
                                                         }}
                                                     >
                                                         <div className="flex items-start gap-3 relative z-10">
-                                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                                                                <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
+                                                                {u.profileImageUrl ? (
+                                                                    <img src={u.profileImageUrl} alt={u.name} className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink || u.customTheme ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                )}
                                                             </div>
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex justify-between items-start">
@@ -1364,7 +1431,7 @@ export default function TeamDashboard() {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
                                                 {filteredTeam.filter(u => !isFabUser(u)).map((u) => {
                                                     const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "", u.customTheme);
 
                                                     return (
                                                         <Card
@@ -1389,8 +1456,12 @@ export default function TeamDashboard() {
                                                             }}
                                                         >
                                                             <div className="flex items-start gap-3 relative z-10">
-                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                                                                    <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
+                                                                    {u.profileImageUrl ? (
+                                                                        <img src={u.profileImageUrl} alt={u.name} className="h-full w-full object-cover" />
+                                                                    ) : (
+                                                                        <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink || u.customTheme ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                    )}
                                                                 </div>
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className="flex justify-between items-start">
@@ -1437,7 +1508,7 @@ export default function TeamDashboard() {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
                                                 {filteredStudents.filter(u => !isFabUser(u)).map((u) => {
                                                     const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
+                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "", u.customTheme);
 
                                                     return (
                                                         <Card
@@ -1462,8 +1533,12 @@ export default function TeamDashboard() {
                                                             }}
                                                         >
                                                             <div className="flex items-start gap-3 relative z-10">
-                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                                                                    <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
+                                                                    {u.profileImageUrl ? (
+                                                                        <img src={u.profileImageUrl} alt={u.name} className="h-full w-full object-cover" />
+                                                                    ) : (
+                                                                        <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink || u.customTheme ? 'var(--user-icon)' : '#94a3b8' }} />
+                                                                    )}
                                                                 </div>
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className="flex justify-between items-start">
@@ -1925,6 +2000,70 @@ export default function TeamDashboard() {
             />
 
             {/* RETURN CONFIRM DIALOG - Missing in previous code, essential for 'Return Item' action */}
+            <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Profile</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Profile Image URL</Label>
+                            <Input 
+                                placeholder="https://example.com/image.jpg"
+                                value={editProfileImage}
+                                onChange={(e) => setEditProfileImage(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Custom Theme (CSS Class, Hex Color, etc.)</Label>
+                            <Input 
+                                placeholder="e.g. emerald, blue, #10b981"
+                                value={editProfileTheme}
+                                onChange={(e) => setEditProfileTheme(e.target.value)}
+                            />
+                            <p className="text-xs text-muted-foreground">This customizes the glow and border color of your community card.</p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Personal Page / Portfolio Link</Label>
+                            <Input 
+                                placeholder="https://yourwebsite.com"
+                                value={editProfileLink}
+                                onChange={(e) => setEditProfileLink(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditProfileOpen(false)}>Cancel</Button>
+                        <Button 
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            disabled={isSavingProfile}
+                            onClick={async () => {
+                                if (!user?.email) return;
+                                setIsSavingProfile(true);
+                                try {
+                                    await updateProfileMutation({
+                                        email: user.email,
+                                        profileImageUrl: editProfileImage,
+                                        customTheme: editProfileTheme,
+                                        myPageLink: editProfileLink,
+                                        scriptUrl: SCRIPT_URL
+                                    });
+                                    toast.success("Profile updated successfully!");
+                                    setEditProfileOpen(false);
+                                } catch (e) {
+                                    toast.error("Failed to update profile");
+                                    console.error(e);
+                                } finally {
+                                    setIsSavingProfile(false);
+                                }
+                            }}
+                        >
+                            {isSavingProfile ? "Saving..." : "Save Changes"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <Dialog open={!!returnItem} onOpenChange={(o) => !o && setReturnItem(null)}>
                 <DialogContent>
                     <DialogHeader><DialogTitle>Return {returnItem?.itemName}</DialogTitle></DialogHeader>

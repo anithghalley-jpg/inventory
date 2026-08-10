@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { enqueueSheetsSyncJob } from "./sheetsSync";
 
 function formatInventoryForSheets(item: {
@@ -30,6 +31,33 @@ export const getAll = query({
   args: {},
   handler: async (ctx) => {
     return await ctx.db.query("inventory").collect();
+  },
+});
+
+export const getPaginated = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    searchTerm: v.optional(v.string()),
+    category: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let q = ctx.db.query("inventory");
+    
+    if (args.searchTerm && args.searchTerm.trim() !== "") {
+      return await q
+        .withSearchIndex("search_name", (q) =>
+          q.search("name", args.searchTerm as string)
+        )
+        .paginate(args.paginationOpts);
+    }
+    
+    if (args.category && args.category !== "all") {
+      return await q
+        .withIndex("by_category", (q) => q.eq("category", args.category as string))
+        .paginate(args.paginationOpts);
+    }
+    
+    return await q.paginate(args.paginationOpts);
   },
 });
 

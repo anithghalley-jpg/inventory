@@ -11,9 +11,18 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function getOptimizedImageUrl(url: string | undefined): string {
   if (!url) return '';
-  const match = url.match(/^https:\/\/drive\.google\.com\/uc\?export=view&id=(.+)$/);
-  if (match && match[1]) {
-    return `https://lh3.googleusercontent.com/d/${match[1]}=w1000`;
+  const trimmed = url.trim();
+  if (trimmed.includes("drive.google.com/file/d/")) {
+    const match = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return `https://lh3.googleusercontent.com/d/${match[1]}=w1200`;
+    }
   }
-  return url;
+  if (trimmed.includes("drive.google.com/open?id=") || trimmed.includes("drive.google.com/uc?")) {
+    const match = trimmed.match(/id=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return `https://lh3.googleusercontent.com/d/${match[1]}=w1200`;
+    }
+  }
+  return trimmed;
 }
