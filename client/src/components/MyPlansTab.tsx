@@ -9,8 +9,9 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Edit, Trash, Plus, FileText, Image as ImageIcon, Video, Link as LinkIcon, Users, X } from "lucide-react";
+import { Edit, Trash, Plus, FileText, Image as ImageIcon, Video, Link as LinkIcon, Users, X, CheckCircle2, UserX, Square, CheckCircle, Award, ThumbsUp, ThumbsDown, ExternalLink, Star, Clock } from "lucide-react";
 import { getOptimizedImageUrl } from "@/lib/utils";
+import { SCRIPT_URL } from "@/config";
 
 interface MyPlansTabProps {
   teamMembers: any[];
@@ -22,9 +23,16 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const createPlan = useMutation(api.learningPlans.createPlan);
   const updatePlan = useMutation(api.learningPlans.updatePlan);
   const deletePlan = useMutation(api.learningPlans.deletePlan);
+  const removeParticipant = useMutation(api.learningPlans.removeParticipant);
+  const toggleAttendance = useMutation(api.learningPlans.toggleAttendance);
+  const setPlanStatus = useMutation(api.learningPlans.setPlanStatus);
+  const reviewLearningSubmission = useMutation(api.learningPlans.reviewLearningSubmission);
+  const completeSessionWithTags = useMutation(api.learningPlans.completeSessionWithTags);
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<any>(null);
+  const [showAwardTagModal, setShowAwardTagModal] = useState(false);
+  const [awardTagInput, setAwardTagInput] = useState("");
 
   // Form State
   const [title, setTitle] = useState("");
@@ -168,42 +176,60 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
             <p>You haven't created any plans yet.</p>
           </div>
         ) : (
-          myPlans?.map((plan: any) => (
-            <Card key={plan._id} onClick={() => setViewPlan(plan)} className="overflow-hidden flex flex-col hover:shadow-md transition-all border-slate-200 cursor-pointer">
-              {plan.imageUrls && plan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
-                <div className="h-32 bg-slate-100 overflow-hidden">
-                  <img src={getOptimizedImageUrl(plan.imageUrls.find((u: string) => typeof u === "string" && u.trim().length > 5))} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                </div>
-              )}
-              <div className="p-4 flex flex-col flex-1">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-bold text-lg text-slate-900 line-clamp-1">{plan.title}</h3>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${plan.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {plan.status}
-                  </span>
-                </div>
-                {(plan.date || plan.time || plan.location) && (
-                  <div className="text-xs text-slate-500 mb-2 font-medium flex flex-wrap gap-x-3 gap-y-1">
-                    {plan.date && <span>📅 {plan.date}</span>}
-                    {plan.time && <span>⏰ {plan.time}</span>}
-                    {plan.location && <span>📍 {plan.location}</span>}
+          myPlans?.map((plan: any) => {
+            const approvedCount = plan.registeredUsers?.filter((u: any) => u.submissionStatus === "APPROVED").length || 0;
+
+            return (
+              <Card key={plan._id} onClick={() => setViewPlan(plan)} className="overflow-hidden flex flex-col hover:shadow-md transition-all border-slate-200 cursor-pointer">
+                {plan.imageUrls && plan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
+                  <div className="h-32 bg-slate-100 overflow-hidden relative">
+                    <img src={getOptimizedImageUrl(plan.imageUrls.find((u: string) => typeof u === "string" && u.trim().length > 5))} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    {approvedCount > 0 && (
+                      <div className="absolute top-2 left-2 bg-amber-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shadow flex items-center gap-1 border border-amber-300">
+                        <Star className="w-3 h-3 fill-slate-950 text-slate-950" />
+                        {approvedCount} Starred
+                      </div>
+                    )}
                   </div>
                 )}
-                <p className="text-sm text-slate-500 line-clamp-2 mb-4">{plan.description}</p>
-                <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs text-slate-400">By {plan.authorName}</span>
-                  <div className="flex gap-2">
-                    <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleEdit(plan); }} className="h-8 w-8 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50">
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleDelete(plan._id); }} className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50">
-                      <Trash className="w-4 h-4" />
-                    </Button>
+                <div className="p-4 flex flex-col flex-1">
+                  <div className="flex items-start justify-between mb-2 gap-2">
+                    <h3 className="font-bold text-lg text-slate-900 line-clamp-1">{plan.title}</h3>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {approvedCount > 0 && !plan.imageUrls?.some((u: string) => typeof u === "string" && u.trim().length > 5) && (
+                        <span className="flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                          <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                          {approvedCount}
+                        </span>
+                      )}
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${plan.status === 'COMPLETED' ? 'bg-purple-100 text-purple-700 border border-purple-200' : plan.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {plan.status}
+                      </span>
+                    </div>
+                  </div>
+                  {(plan.date || plan.time || plan.location) && (
+                    <div className="text-xs text-slate-500 mb-2 font-medium flex flex-wrap gap-x-3 gap-y-1">
+                      {plan.date && <span>📅 {plan.date}</span>}
+                      {plan.time && <span>⏰ {plan.time}</span>}
+                      {plan.location && <span>📍 {plan.location}</span>}
+                    </div>
+                  )}
+                  <p className="text-sm text-slate-500 line-clamp-2 mb-4">{plan.description}</p>
+                  <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-xs text-slate-400">By {plan.authorName}</span>
+                    <div className="flex gap-2">
+                      <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleEdit(plan); }} className="h-8 w-8 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50">
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleDelete(plan._id); }} className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50">
+                        <Trash className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
 
@@ -366,12 +392,12 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
       </Dialog>
 
       <Dialog open={!!viewPlan} onOpenChange={(open) => !open && setViewPlan(null)}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{viewPlan?.title}</DialogTitle>
+        <DialogContent className="max-w-4xl lg:max-w-5xl max-h-[92vh] overflow-y-auto p-6 md:p-8">
+          <DialogHeader className="flex flex-row items-center justify-between pr-4">
+            <DialogTitle className="text-2xl font-extrabold text-slate-900">{viewPlan?.title}</DialogTitle>
           </DialogHeader>
           {viewPlan && (
-            <div className="space-y-6 py-4">
+            <div className="space-y-6 py-2">
               {viewPlan.imageUrls && viewPlan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
                 <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center max-h-64">
                   <img
@@ -382,33 +408,400 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                   />
                 </div>
               )}
-              <div className="text-sm text-slate-600 bg-slate-50 p-4 rounded-lg space-y-2">
-                <p><strong>Status:</strong> <span className={`font-semibold ${viewPlan.status === 'PUBLISHED' ? 'text-emerald-600' : 'text-amber-600'}`}>{viewPlan.status}</span></p>
-                {viewPlan.date && <p><strong>Date:</strong> {viewPlan.date}</p>}
-                {viewPlan.time && <p><strong>Time:</strong> {viewPlan.time}</p>}
-                {viewPlan.location && <p><strong>Location:</strong> {viewPlan.location}</p>}
+              
+              <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-500">Status:</span>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${viewPlan.status === 'COMPLETED' ? 'bg-purple-100 text-purple-700 border border-purple-200' : viewPlan.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {viewPlan.status}
+                    </span>
+                  </div>
+                  {(viewPlan.date || viewPlan.time || viewPlan.location) && (
+                    <div className="text-xs text-slate-500 font-medium flex flex-wrap gap-x-3 gap-y-1 pt-1">
+                      {viewPlan.date && <span>📅 {viewPlan.date}</span>}
+                      {viewPlan.time && <span>⏰ {viewPlan.time}</span>}
+                      {viewPlan.location && <span>📍 {viewPlan.location}</span>}
+                    </div>
+                  )}
+                </div>
+
+                {viewPlan.status === "COMPLETED" ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-purple-900 bg-purple-100 border border-purple-300 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+                      <Award className="w-3.5 h-3.5 text-purple-600" />
+                      Completed • Tag: {viewPlan.awardedTag || viewPlan.tags?.[0] || 'Mastery'} 🎉
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          const res = await setPlanStatus({ planId: viewPlan._id, status: "PUBLISHED" });
+                          toast.success(res.message);
+                          setViewPlan((p: any) => ({ ...p, status: "PUBLISHED" }));
+                        } catch (e: any) {
+                          toast.error(e.message || "Failed to update status");
+                        }
+                      }}
+                      className="text-amber-700 border-amber-300 hover:bg-amber-50 font-semibold text-xs rounded-full"
+                    >
+                      Re-open Session
+                    </Button>
+                  </div>
+                ) : (
+                  (() => {
+                    const attendedUsers = viewPlan.registeredUsers?.filter((u: any) => u.attended) || [];
+                    const approvedUsers = attendedUsers.filter((u: any) => u.submissionStatus === "APPROVED");
+                    const allApproved = (viewPlan.registeredUsers?.length || 0) === 0 || (attendedUsers.length > 0 && approvedUsers.length === attendedUsers.length);
+
+                    if (allApproved) {
+                      return (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setAwardTagInput(viewPlan.tags?.[0] || "3D");
+                            setShowAwardTagModal(true);
+                          }}
+                          className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-full shadow-md px-4 py-2 flex items-center gap-1.5"
+                        >
+                          <Award className="w-4 h-4" />
+                          Complete & Award Mastery Tag 🎉
+                        </Button>
+                      );
+                    }
+
+                    return (
+                      <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs text-amber-900 font-semibold">
+                        <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+                        <span>Awaiting Proof Approvals ({approvedUsers.length}/{attendedUsers.length} Approved)</span>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
+
               <div>
-                <h4 className="font-semibold text-slate-900 mb-2">Description</h4>
-                <p className="text-sm text-slate-600 whitespace-pre-wrap">{viewPlan.description}</p>
+                <h4 className="font-semibold text-slate-900 mb-2 text-sm">Description</h4>
+                <p className="text-sm text-slate-600 whitespace-pre-wrap bg-white p-3 rounded-lg border border-slate-100">{viewPlan.description}</p>
               </div>
+
               <div>
-                <h4 className="font-semibold text-slate-900 mb-2 border-b border-slate-200 pb-2">Registered Students ({viewPlan.registeredUsers?.length || 0})</h4>
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+                  <h4 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+                    <Users className="w-4 h-4 text-emerald-600" />
+                    Registered Participants ({viewPlan.registeredUsers?.length || 0})
+                  </h4>
+                  {viewPlan.registeredUsers?.length > 0 && (
+                    <span className="text-xs text-slate-500 font-medium">
+                      {viewPlan.registeredUsers.filter((u: any) => u.attended).length} / {viewPlan.registeredUsers.length} Attended
+                    </span>
+                  )}
+                </div>
+
                 {viewPlan.registeredUsers?.length > 0 ? (
-                  <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-48 overflow-y-auto mt-2">
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-72 overflow-y-auto bg-white shadow-sm">
                     {viewPlan.registeredUsers.map((u: any, i: number) => (
-                      <div key={i} className="p-3 flex items-center justify-between">
-                        <span className="font-medium text-sm text-slate-900">{u.name}</span>
-                        <span className="text-xs text-slate-500">{u.email}</span>
+                      <div key={i} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {u.submissionStatus === "APPROVED" && (
+                              <Star className="w-4 h-4 fill-amber-400 text-amber-500 shrink-0" />
+                            )}
+                            <p className="font-semibold text-sm text-slate-900">{u.name}</p>
+                            {u.submissionStatus === "APPROVED" && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                                <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                                Starred Experience ⭐
+                              </span>
+                            )}
+                            {u.submissionStatus === "REJECTED" && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                                Needs Follow-up ❌
+                              </span>
+                            )}
+                            {u.submissionStatus === "PENDING" && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                                Pending Review ⏳
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500">{u.email}</p>
+                          
+                          {u.submissionUrl && (
+                            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/80 px-2.5 py-1 rounded-md max-w-md border border-slate-200">
+                              <LinkIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="font-medium shrink-0">Submitted Link:</span>
+                              <a
+                                href={u.submissionUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-emerald-600 hover:text-emerald-700 underline font-semibold truncate max-w-[200px]"
+                              >
+                                {u.submissionUrl}
+                              </a>
+                              <a href={u.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-slate-600">
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          )}
+
+                          {u.feedbackNote && (
+                            <p className="text-[11px] text-rose-600 italic mt-1 font-medium">
+                              Note sent: "{u.feedbackNote}"
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {u.submissionUrl && (
+                            <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Approve Completion (Thumbs Up)"
+                                onClick={async () => {
+                                  try {
+                                    const res = await reviewLearningSubmission({
+                                      planId: viewPlan._id,
+                                      userEmail: u.email,
+                                      status: "APPROVED"
+                                    });
+                                    toast.success(res.message);
+                                    setViewPlan((p: any) => ({
+                                      ...p,
+                                      registeredUsers: p.registeredUsers.map((usr: any) =>
+                                        usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "APPROVED" } : usr
+                                      )
+                                    }));
+                                  } catch (e: any) {
+                                    toast.error(e.message || "Failed to approve submission");
+                                  }
+                                }}
+                                className={`h-8 px-2.5 rounded-md font-semibold text-xs transition-all gap-1 ${
+                                  u.submissionStatus === "APPROVED"
+                                    ? "bg-emerald-600 text-white shadow-sm"
+                                    : "text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800"
+                                }`}
+                              >
+                                <ThumbsUp className="w-3.5 h-3.5" />
+                                <span>Approve</span>
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Red Mark / Request Revision (Thumbs Down)"
+                                onClick={async () => {
+                                  const feedbackNote = window.prompt(`Enter follow-up note / instructions for ${u.name}:`) || "";
+                                  try {
+                                    const res = await reviewLearningSubmission({
+                                      planId: viewPlan._id,
+                                      userEmail: u.email,
+                                      status: "REJECTED",
+                                      feedbackNote
+                                    });
+                                    toast.success(res.message);
+                                    setViewPlan((p: any) => ({
+                                      ...p,
+                                      registeredUsers: p.registeredUsers.map((usr: any) =>
+                                        usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "REJECTED", feedbackNote } : usr
+                                      )
+                                    }));
+                                  } catch (e: any) {
+                                    toast.error(e.message || "Failed to request follow-up");
+                                  }
+                                }}
+                                className={`h-8 px-2.5 rounded-md font-semibold text-xs transition-all gap-1 ${
+                                  u.submissionStatus === "REJECTED"
+                                    ? "bg-rose-600 text-white shadow-sm"
+                                    : "text-rose-600 hover:bg-rose-100 hover:text-rose-800"
+                                }`}
+                              >
+                                <ThumbsDown className="w-3.5 h-3.5" />
+                                <span>Red Mark</span>
+                              </Button>
+                            </div>
+                          )}
+
+                          {viewPlan.status === "COMPLETED" ? (
+                            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                              {u.attended ? "Attended ✓" : "Absence Noted"}
+                            </span>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant={u.attended ? "default" : "outline"}
+                                onClick={async () => {
+                                  try {
+                                    const newAttended = !u.attended;
+                                    const res = await toggleAttendance({ planId: viewPlan._id, userEmail: u.email, attended: newAttended });
+                                    toast.success(res.message);
+                                    setViewPlan((p: any) => ({
+                                      ...p,
+                                      registeredUsers: p.registeredUsers.map((usr: any) =>
+                                        usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, attended: newAttended } : usr
+                                      )
+                                    }));
+                                  } catch (e: any) {
+                                    toast.error(e.message || "Failed to update attendance");
+                                  }
+                                }}
+                                className={`text-xs h-8 px-3 rounded-full font-medium transition-all ${
+                                  u.attended
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                                    : 'text-slate-600 border-slate-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'
+                                }`}
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                {u.attended ? "Attended" : "Mark Present"}
+                              </Button>
+
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                title="Remove participant"
+                                onClick={async () => {
+                                  if (window.confirm(`Are you sure you want to remove ${u.name} from this session?`)) {
+                                    try {
+                                      const res = await removeParticipant({ planId: viewPlan._id, userEmail: u.email });
+                                      toast.success(res.message);
+                                      setViewPlan((p: any) => ({
+                                        ...p,
+                                        registeredUsers: p.registeredUsers.filter((usr: any) => usr.email.toLowerCase() !== u.email.toLowerCase())
+                                      }));
+                                    } catch (e: any) {
+                                      toast.error(e.message || "Failed to remove participant");
+                                    }
+                                  }
+                                }}
+                                className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full"
+                              >
+                                <UserX className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500 italic mt-2">No one has registered yet.</p>
+                  <p className="text-sm text-slate-500 italic py-4 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    No participants have registered for this session yet.
+                  </p>
+                )}
+
+                {viewPlan.registeredUsers?.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between bg-purple-50/50 p-3 rounded-xl border border-purple-100">
+                    <div>
+                      <p className="text-xs font-semibold text-purple-900">Finish Attendance</p>
+                      <p className="text-[11px] text-purple-700">Mark session complete so attended students receive their Learning Experience.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const res = await setPlanStatus({ planId: viewPlan._id, status: "COMPLETED" });
+                          toast.success("Attendance completed! Session marked as Completed.");
+                          setViewPlan((p: any) => ({ ...p, status: "COMPLETED" }));
+                        } catch (e: any) {
+                          toast.error(e.message || "Failed to complete attendance");
+                        }
+                      }}
+                      className="bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-full shadow-sm gap-1.5 shrink-0"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Complete Attendance
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
           )}
+          </DialogContent>
+      </Dialog>
+
+      {/* Award Mastery Tag Modal */}
+      <Dialog open={showAwardTagModal} onOpenChange={setShowAwardTagModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Award className="w-6 h-6 text-purple-600" />
+              Award Mastery Tag & Complete Session
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-slate-600">
+              Select or type the mastery tag to award to all approved participants and curator. This tag will appear as a 3D badge on their dashboard header (e.g., 3D, Laser, CNC, CAD)!
+            </p>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Mastery Tag Name</Label>
+              <Input
+                value={awardTagInput}
+                onChange={(e) => setAwardTagInput(e.target.value)}
+                placeholder="e.g. 3D, Laser, CNC, Electronics..."
+                className="text-sm font-semibold"
+              />
+            </div>
+
+            {viewPlan?.tags && viewPlan.tags.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-500 font-medium">Quick select from plan tags:</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {viewPlan.tags.map((t: string) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setAwardTagInput(t)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                        awardTagInput.toLowerCase() === t.toLowerCase()
+                          ? "bg-purple-600 text-white border-purple-600 shadow"
+                          : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-purple-50 hover:text-purple-700"
+                      }`}
+                    >
+                      + {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="ghost" onClick={() => setShowAwardTagModal(false)} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!awardTagInput.trim()) {
+                  toast.error("Please enter or select a tag name");
+                  return;
+                }
+                try {
+                  const res = await completeSessionWithTags({
+                    planId: viewPlan._id,
+                    awardTag: awardTagInput.trim(),
+                    scriptUrl: SCRIPT_URL,
+                  });
+                  toast.success(res.message);
+                  setShowAwardTagModal(false);
+                  setViewPlan((p: any) => ({
+                    ...p,
+                    status: "COMPLETED",
+                    awardedTag: awardTagInput.trim(),
+                  }));
+                } catch (e: any) {
+                  toast.error(e.message || "Failed to complete session with tag");
+                }
+              }}
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold flex-1"
+            >
+              Award Tag & Finalize 🎉
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

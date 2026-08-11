@@ -217,18 +217,25 @@ export default function Learning() {
                 plan.registeredUsers?.some((u: { email: string }) => u.email.toLowerCase() === user.email?.toLowerCase())
               );
 
+              const isCompleted = plan.status === "COMPLETED";
+
               // Media rendering logic
               const MediaElement = () => {
                 const roundedClass = viewMode === 'grid' ? 'rounded-2xl' : 'rounded-[2rem]';
 
                 return (
                   <div className="relative w-full">
-                    {isRegistered && (
+                    {isCompleted ? (
+                      <div className="absolute top-3 right-3 z-20 bg-purple-700/90 text-white font-bold text-xs px-3.5 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 backdrop-blur-md ring-1 ring-white/30 animate-in fade-in zoom-in duration-300">
+                        <CheckCircle2 className="w-4 h-4 text-purple-200" />
+                        <span>Completed Session</span>
+                      </div>
+                    ) : isRegistered ? (
                       <div className="absolute top-3 right-3 z-20 bg-emerald-600/90 text-white font-bold text-xs px-3.5 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 backdrop-blur-md ring-1 ring-white/30 animate-in fade-in zoom-in duration-300">
                         <CheckCircle2 className="w-4 h-4 text-emerald-200" />
                         <span>Registered</span>
                       </div>
-                    )}
+                    ) : null}
                     {hasImage ? (
                       <div className={`bg-slate-100 overflow-hidden shadow-xl border border-slate-200 relative group w-full flex items-center justify-center ${roundedClass}`}>
                         <img
@@ -270,7 +277,13 @@ export default function Learning() {
                             {tag}
                           </span>
                         ))}
-                        {isRegistered && (
+                        {isCompleted && (
+                          <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                            Completed
+                          </span>
+                        )}
+                        {!isCompleted && isRegistered && (
                           <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                             Registered
@@ -299,7 +312,12 @@ export default function Learning() {
                             </Button>
                           </a>
                         )}
-                        {isRegistered ? (
+                        {isCompleted ? (
+                          <div className="bg-purple-50 border border-purple-300 text-purple-800 font-bold rounded-full px-8 py-4 text-base flex items-center justify-center gap-2 shadow-sm w-full sm:w-auto">
+                            <CheckCircle2 className="w-5 h-5 text-purple-600" />
+                            <span>Session Completed</span>
+                          </div>
+                        ) : isRegistered ? (
                           <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold rounded-full px-8 py-4 text-base flex items-center justify-center gap-2 shadow-sm w-full sm:w-auto">
                             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                             <span>Joined & Registered</span>
@@ -351,7 +369,12 @@ export default function Learning() {
                               Docs
                             </a>
                           )}
-                          {isRegistered ? (
+                          {isCompleted ? (
+                            <span className="text-purple-800 font-bold text-xs flex items-center bg-purple-100 border border-purple-300 px-3 py-1.5 rounded-full shadow-sm">
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-purple-600" />
+                              Completed
+                            </span>
+                          ) : isRegistered ? (
                             <span className="text-emerald-800 font-bold text-xs flex items-center bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full shadow-sm">
                               <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                               Registered

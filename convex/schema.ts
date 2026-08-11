@@ -405,9 +405,15 @@ export default defineSchema({
     collaboratorEmails: v.array(v.string()),
     registeredUsers: v.optional(v.array(v.object({
       name: v.string(),
-      email: v.string()
+      email: v.string(),
+      attended: v.optional(v.boolean()),
+      submissionUrl: v.optional(v.string()),
+      submissionStatus: v.optional(v.union(v.literal("PENDING"), v.literal("APPROVED"), v.literal("REJECTED"))),
+      submittedAt: v.optional(v.number()),
+      feedbackNote: v.optional(v.string()),
     }))),
-    status: v.union(v.literal("DRAFT"), v.literal("PUBLISHED")),
+    status: v.union(v.literal("DRAFT"), v.literal("PUBLISHED"), v.literal("COMPLETED")),
+    awardedTag: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

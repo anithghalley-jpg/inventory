@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -20,7 +20,7 @@ import MyPlansTab from '@/components/MyPlansTab';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -29,6 +29,25 @@ import { getTagStyle } from '@/lib/tagUtils';
 import { getOptimizedImageUrl } from '@/lib/utils';
 import { useQuery, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+
+function getEmbedUrl(url: string) {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (trimmed.includes("youtube.com/watch?v=")) {
+    const videoId = trimmed.split("v=")[1].split("&")[0];
+    return `https://www.youtube.com/embed/${videoId}`;
+  } else if (trimmed.includes("youtu.be/")) {
+    const videoId = trimmed.split("youtu.be/")[1].split("?")[0];
+    return `https://www.youtube.com/embed/${videoId}`;
+  } else if (trimmed.includes("vimeo.com/")) {
+    const videoId = trimmed.split("vimeo.com/")[1].split("?")[0];
+    return `https://player.vimeo.com/video/${videoId}`;
+  } else if (trimmed.includes("drive.google.com/file/d/")) {
+    const fileId = trimmed.split("/d/")[1].split("/")[0];
+    return `https://drive.google.com/file/d/${fileId}/preview`;
+  }
+  return trimmed;
+}
 
 const glowStyles = [
     {
@@ -443,6 +462,12 @@ export default function TeamDashboard() {
         audience: "team",
         userEmail: user?.email || "",
     });
+    const attendedLearnings = useQuery(api.learningPlans.getMyAttendedLearnings, {
+        userEmail: user?.email || "",
+    }) || [];
+    const [selectedExperience, setSelectedExperience] = useState<any>(null);
+    const [submissionUrlInput, setSubmissionUrlInput] = useState("");
+    const submitLearningProof = useMutation(api.learningPlans.submitLearningProof);
     const projectWorkspace = useQuery(api.projects.getMemberWorkspace, {
         userEmail: user?.email || "",
     });
@@ -1020,6 +1045,15 @@ export default function TeamDashboard() {
                             </TabsTrigger>
                             <TabsTrigger value="machines" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">
                                 <Zap className="w-4 h-4 mr-2" /> Machines
+                            </TabsTrigger>
+                            <TabsTrigger value="learnings" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 flex items-center gap-1">
+                                <GraduationCap className="w-4 h-4 text-emerald-600" />
+                                <span>Learnings</span>
+                                {attendedLearnings.length > 0 && (
+                                    <span className="ml-1.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                                        {attendedLearnings.length}
+                                    </span>
+                                )}
                             </TabsTrigger>
                         </TabsList>
                     </div>
@@ -1848,6 +1882,388 @@ export default function TeamDashboard() {
                             </div>
                         </div>
                     </TabsContent>
+
+                    {/* TAB: LEARNINGS (FOR TEAM MEMBER PARTICIPANTS) */}
+                    <TabsContent value="learnings" className="space-y-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 p-6 rounded-2xl border border-emerald-500/20">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <GraduationCap className="w-6 h-6 text-emerald-600" />
+                                    <h2 className="text-2xl font-bold text-slate-900">Learning Experiences</h2>
+                                </div>
+                                <p className="text-sm text-slate-600">
+                                    Your verified record of attended workshops, activity sessions, and deep dives.
+                                </p>
+                            </div>
+                            <div className="bg-white/80 backdrop-blur px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-2 shrink-0">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                <span>{attendedLearnings.length} Verified Experience{attendedLearnings.length === 1 ? '' : 's'}</span>
+                            </div>
+                        </div>
+
+                        {attendedLearnings.length === 0 ? (
+                            <Card className="p-12 text-center border-dashed border-2 border-slate-200 bg-slate-50/50">
+                                <GraduationCap className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                                <h3 className="text-lg font-bold text-slate-800 mb-1">No Learning Experiences Yet</h3>
+                                <p className="text-sm text-slate-500 max-w-md mx-auto mb-4">
+                                    Join published plans in the Learning Hub as a participant. Once session leaders complete attendance, your verified Learning Experiences will appear here!
+                                </p>
+                                <Link href="/learning">
+                                    <Button className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full">
+                                        Browse Learning Hub
+                                    </Button>
+                                </Link>
+                            </Card>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {attendedLearnings.map((plan: any) => {
+                                    const validImages = (plan.imageUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
+                                    const validVideos = (plan.videoUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
+                                    const myRecord = plan.registeredUsers?.find(
+                                        (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                    );
+
+                                    return (
+                                        <Card
+                                            key={plan._id}
+                                            onClick={() => {
+                                                setSelectedExperience(plan);
+                                                setSubmissionUrlInput(myRecord?.submissionUrl || "");
+                                            }}
+                                            className="overflow-hidden flex flex-col hover:shadow-lg transition-all border-slate-200 cursor-pointer group bg-white"
+                                        >
+                                            {validImages.length > 0 ? (
+                                                <div className="h-44 bg-slate-100 overflow-hidden relative">
+                                                    <img
+                                                        src={getOptimizedImageUrl(validImages[0])}
+                                                        alt={plan.title}
+                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                        referrerPolicy="no-referrer"
+                                                    />
+                                                    <div className="absolute top-3 right-3 bg-emerald-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-full backdrop-blur flex items-center gap-1 shadow">
+                                                        <CheckCircle2 className="w-3 h-3 text-white" />
+                                                        Verified Attendance
+                                                    </div>
+                                                    {myRecord?.submissionStatus === "APPROVED" && (
+                                                        <div className="absolute top-3 left-3 bg-amber-400 text-slate-950 text-[10px] font-extrabold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 border border-amber-300">
+                                                            <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+                                                            Mastered Experience ⭐
+                                                        </div>
+                                                    )}
+                                                    {myRecord?.submissionStatus === "REJECTED" && (
+                                                        <div className="absolute top-3 left-3 bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
+                                                            Follow-up Needed ❌
+                                                        </div>
+                                                    )}
+                                                    {myRecord?.submissionStatus === "PENDING" && (
+                                                        <div className="absolute top-3 left-3 bg-amber-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
+                                                            Pending Review ⏳
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="h-44 bg-slate-900 overflow-hidden relative flex items-center justify-center">
+                                                    <div className="absolute top-3 right-3 z-10 bg-emerald-600/90 text-white text-[10px] font-bold px-2.5 py-1 rounded-full backdrop-blur flex items-center gap-1 shadow">
+                                                        <CheckCircle2 className="w-3 h-3 text-white" />
+                                                        Verified Attendance
+                                                    </div>
+                                                    {myRecord?.submissionStatus === "APPROVED" && (
+                                                        <div className="absolute top-3 left-3 z-10 bg-amber-400 text-slate-950 text-[10px] font-extrabold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 border border-amber-300">
+                                                            <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+                                                            Mastered Experience ⭐
+                                                        </div>
+                                                    )}
+                                                    {myRecord?.submissionStatus === "REJECTED" && (
+                                                        <div className="absolute top-3 left-3 z-10 bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
+                                                            Follow-up Needed ❌
+                                                        </div>
+                                                    )}
+                                                    {myRecord?.submissionStatus === "PENDING" && (
+                                                        <div className="absolute top-3 left-3 z-10 bg-amber-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
+                                                            Pending Review ⏳
+                                                        </div>
+                                                    )}
+                                                    {validVideos.length > 0 ? (
+                                                        <iframe
+                                                            src={getEmbedUrl(validVideos[0])}
+                                                            className="w-full h-full pointer-events-none opacity-80"
+                                                        />
+                                                    ) : (
+                                                        <GraduationCap className="w-12 h-12 text-slate-700" />
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="p-5 flex flex-col flex-1">
+                                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                                    {plan.tags?.slice(0, 3).map((tag: string) => (
+                                                        <span key={tag} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wider rounded-md">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+
+                                                <h3 className="font-bold text-lg text-slate-900 group-hover:text-emerald-600 transition-colors line-clamp-1 mb-2">
+                                                    {plan.title}
+                                                </h3>
+
+                                                {(plan.date || plan.time || plan.location) && (
+                                                    <div className="text-xs text-slate-500 mb-3 font-medium flex flex-wrap gap-x-3 gap-y-1">
+                                                        {plan.date && <span>📅 {plan.date}</span>}
+                                                        {plan.time && <span>⏰ {plan.time}</span>}
+                                                        {plan.location && <span>📍 {plan.location}</span>}
+                                                    </div>
+                                                )}
+
+                                                <p className="text-xs text-slate-600 line-clamp-2 mb-4 flex-1">
+                                                    {plan.description}
+                                                </p>
+
+                                                <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between">
+                                                    <span className="text-xs text-slate-400">Curated by {plan.authorName}</span>
+                                                    <span className="text-xs font-semibold text-emerald-600 flex items-center group-hover:translate-x-1 transition-transform">
+                                                        View Experience →
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* Learning Experience Details Modal */}
+                    <Dialog open={!!selectedExperience} onOpenChange={(open) => !open && setSelectedExperience(null)}>
+                        <DialogContent className="max-w-4xl lg:max-w-5xl max-h-[92vh] overflow-y-auto p-6 md:p-8">
+                            <DialogHeader>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                        Verified Attendance
+                                    </span>
+                                    {selectedExperience?.status === "COMPLETED" && (
+                                        <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
+                                            Completed Session
+                                        </span>
+                                    )}
+                                </div>
+                                <DialogTitle className="text-2xl font-bold text-slate-900 pt-1">{selectedExperience?.title}</DialogTitle>
+                            </DialogHeader>
+
+                            {selectedExperience && (
+                                <div className="space-y-6 py-2">
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-2">
+                                        <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-700">
+                                            {selectedExperience.date && <span>📅 <strong>Date:</strong> {selectedExperience.date}</span>}
+                                            {selectedExperience.time && <span>⏰ <strong>Time:</strong> {selectedExperience.time}</span>}
+                                            {selectedExperience.location && <span>📍 <strong>Location:</strong> {selectedExperience.location}</span>}
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                            Session Leader / Curator: <strong className="text-slate-800">{selectedExperience.authorName}</strong> ({selectedExperience.authorEmail})
+                                        </p>
+                                    </div>
+
+                                    {selectedExperience.tags && selectedExperience.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedExperience.tags.map((tag: string) => (
+                                                <span key={tag} className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold uppercase tracking-wider rounded-full">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Student Proof Submission & Review Status Box */}
+                                    {(() => {
+                                        const myRecord = selectedExperience.registeredUsers?.find(
+                                            (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                        );
+
+                                        if (!myRecord) return null;
+
+                                        const isApproved = myRecord.submissionStatus === "APPROVED";
+                                        const isRejected = myRecord.submissionStatus === "REJECTED";
+                                        const isPending = myRecord.submissionStatus === "PENDING";
+
+                                        return (
+                                            <div className="p-4 rounded-xl border space-y-3 bg-gradient-to-br from-slate-50 to-white shadow-sm border-slate-200">
+                                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                                    <h4 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+                                                        <GraduationCap className="w-4 h-4 text-emerald-600" />
+                                                        My Project / Completion Proof Submission
+                                                    </h4>
+                                                    {isApproved && (
+                                                        <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-amber-400 text-slate-950 border border-amber-300 flex items-center gap-1 shadow">
+                                                            <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+                                                            Mastered Experience ⭐
+                                                        </span>
+                                                    )}
+                                                    {isRejected && (
+                                                        <span className="text-xs font-bold px-3 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                                                            Follow-up Needed ❌
+                                                        </span>
+                                                    )}
+                                                    {isPending && (
+                                                        <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                                            Pending Review ⏳
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {isApproved && (
+                                                    <div className="text-xs space-y-1.5 bg-emerald-50/80 p-3 rounded-lg border border-emerald-200 text-emerald-900">
+                                                        <p className="font-semibold">Your completion proof has been reviewed & approved by the session leader!</p>
+                                                        {myRecord.submissionUrl && (
+                                                            <p className="flex items-center gap-1">
+                                                                <span>Submitted Link:</span>
+                                                                <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold underline truncate max-w-sm">
+                                                                    {myRecord.submissionUrl}
+                                                                </a>
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {isRejected && (
+                                                    <div className="text-xs space-y-2 bg-rose-50/80 p-3 rounded-lg border border-rose-200 text-rose-900">
+                                                        <p className="font-bold text-rose-800 flex items-center gap-1">
+                                                            ⚠️ Follow-up Requested by Publisher
+                                                        </p>
+                                                        {myRecord.feedbackNote && (
+                                                            <p className="italic bg-white/90 p-2.5 rounded-md border border-rose-200 text-rose-800 font-medium">
+                                                                Note from curator: "{myRecord.feedbackNote}"
+                                                            </p>
+                                                        )}
+                                                        <p className="text-slate-600">Please review the notes above and submit a new project link below:</p>
+                                                    </div>
+                                                )}
+
+                                                {isPending && (
+                                                    <div className="text-xs space-y-1.5 bg-amber-50/80 p-3 rounded-lg border border-amber-200 text-amber-900">
+                                                        <p className="font-semibold">Your submission is currently under review by the session publisher & collaborators.</p>
+                                                        {myRecord.submissionUrl && (
+                                                            <p className="flex items-center gap-1">
+                                                                <span>Submitted Link:</span>
+                                                                <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-amber-800 font-bold underline truncate max-w-sm">
+                                                                    {myRecord.submissionUrl}
+                                                                </a>
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {(!isApproved || isRejected) && (
+                                                    <div className="space-y-2 pt-1">
+                                                        <label className="text-xs font-medium text-slate-700 block">
+                                                            {myRecord.submissionUrl ? "Update / Resubmit Completion Link:" : "Paste link to project / proof of completion (GitHub, Drive, Docs, etc.):"}
+                                                        </label>
+                                                        <div className="flex gap-2">
+                                                            <Input
+                                                                type="url"
+                                                                placeholder="https://github.com/..."
+                                                                value={submissionUrlInput}
+                                                                onChange={(e) => setSubmissionUrlInput(e.target.value)}
+                                                                className="text-xs h-9 flex-1"
+                                                            />
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={async () => {
+                                                                    if (!submissionUrlInput.trim()) {
+                                                                        toast.error("Please enter a valid link");
+                                                                        return;
+                                                                    }
+                                                                    try {
+                                                                        const res = await submitLearningProof({
+                                                                            planId: selectedExperience._id,
+                                                                            userEmail: user?.email || "",
+                                                                            submissionUrl: submissionUrlInput
+                                                                        });
+                                                                        toast.success(res.message);
+                                                                        setSubmissionUrlInput("");
+                                                                        setSelectedExperience((prev: any) => ({
+                                                                            ...prev,
+                                                                            registeredUsers: prev.registeredUsers.map((usr: any) =>
+                                                                                usr.email.toLowerCase() === user?.email?.toLowerCase()
+                                                                                    ? { ...usr, submissionUrl: submissionUrlInput, submissionStatus: "PENDING" }
+                                                                                    : usr
+                                                                            )
+                                                                        }));
+                                                                    } catch (e: any) {
+                                                                        toast.error(e.message || "Failed to submit link");
+                                                                    }
+                                                                }}
+                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-9 rounded-lg shrink-0 px-4"
+                                                            >
+                                                                {myRecord.submissionUrl ? "Resubmit Link" : "Submit for Review"}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
+                                    <div>
+                                        <h4 className="font-semibold text-slate-900 mb-2 text-sm">Learning Summary & Shared Notes</h4>
+                                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
+                                            {selectedExperience.description}
+                                        </div>
+                                    </div>
+
+                                    {selectedExperience.imageUrls && selectedExperience.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
+                                        <div>
+                                            <h4 className="font-semibold text-slate-900 mb-2 text-sm">Session Gallery & Visuals</h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                {selectedExperience.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).map((url: string, idx: number) => (
+                                                    <div key={idx} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video flex items-center justify-center">
+                                                        <img
+                                                            src={getOptimizedImageUrl(url)}
+                                                            alt=""
+                                                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                                                            referrerPolicy="no-referrer"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {selectedExperience.videoUrls && selectedExperience.videoUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
+                                        <div>
+                                            <h4 className="font-semibold text-slate-900 mb-2 text-sm">Video Presentation / Session Recording</h4>
+                                            <div className="space-y-3">
+                                                {selectedExperience.videoUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).map((url: string, idx: number) => (
+                                                    <div key={idx} className="bg-slate-900 rounded-xl overflow-hidden aspect-video border border-slate-200 shadow-md relative">
+                                                        <iframe
+                                                            src={getEmbedUrl(url)}
+                                                            className="w-full h-full"
+                                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                            allowFullScreen
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {selectedExperience.documentationUrl && (
+                                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                                            <span className="text-xs text-slate-500 font-medium">Session Documentation & Resources</span>
+                                            <a
+                                                href={selectedExperience.documentationUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-full shadow transition-all hover:scale-105"
+                                            >
+                                                Open External Docs <ExternalLink className="w-3.5 h-3.5" />
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </DialogContent>
+                    </Dialog>
                 </Tabs>
                 <MachineTurnNotification scriptUrl={SCRIPT_URL} />
             </main>

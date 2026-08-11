@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
@@ -24,7 +24,7 @@ import AdminProjectsTab from '@/components/AdminProjectsTab';
 import { SCRIPT_URL, DRIVE_FOLDER_ID } from '@/config';
 import { getTagStyle } from '@/lib/tagUtils';
 import { getOptimizedImageUrl } from '@/lib/utils';
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, usePaginatedQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 
 interface PendingUser {
@@ -118,6 +118,7 @@ export default function AdminPanel() {
   const updateUserStatusMut = useMutation(api.users.updateStatus);
   const updateUserProfileMut = useMutation(api.users.updateProfile);
   const resetScreenTimeMut = useMutation(api.users.resetScreenTime);
+  const resetAllScreenTimeMut = useMutation(api.users.resetAllScreenTime);
   const addInventoryItemMut = useMutation(api.inventory.addItem);
   const updateInventoryItemMut = useMutation(api.inventory.updateItem);
   const deleteInventoryItemMut = useMutation(api.inventory.deleteItem);
@@ -279,22 +280,35 @@ export default function AdminPanel() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
 
+  const {
+    results: paginatedInventory,
+    status: paginatedStatus,
+    loadMore: loadMoreInventory
+  } = usePaginatedQuery(
+    api.inventory.getPaginated,
+    {
+      searchTerm: searchQuery,
+      category: selectedCategory
+    },
+    { initialNumItems: 30 }
+  );
+
   React.useEffect(() => {
-    if (convexInventory === undefined) return;
-    const normalizedInventory = convexInventory.map((item) => ({
-      id: item.itemId,
-      name: item.name,
-      quantity: item.quantity,
-      category: item.category,
-      company: item.company,
-      imageUrl: item.imageUrl,
-      remarks: item.remarks,
-      links: item.links,
-      tags: item.tags.join(','),
+    if (paginatedInventory === undefined) return;
+    const normalizedInventory = paginatedInventory.map((item: any) => ({
+      id: item.itemId || item._id,
+      name: item.name || '',
+      quantity: item.quantity || 0,
+      category: item.category || 'Uncategorized',
+      company: item.company || '',
+      imageUrl: item.imageUrl || '',
+      remarks: item.remarks || '',
+      links: item.links || '',
+      tags: Array.isArray(item.tags) ? item.tags.join(',') : (item.tags || ''),
     }));
     setInventory(normalizedInventory);
     setIsLoading(false);
-  }, [convexInventory]);
+  }, [paginatedInventory]);
 
   React.useEffect(() => {
     if (convexHome === undefined) return;
@@ -502,6 +516,23 @@ export default function AdminPanel() {
         loading: 'Resetting screen time...',
         success: 'Screen time reset to zero.',
         error: (err: any) => `Failed to reset screen time: ${err.message}`,
+      }
+    );
+  };
+
+  const handleResetAllScreenTime = async () => {
+    if (!window.confirm("⚠️ WARNING: Are you sure you want to ERASE and RESET total screen time to zero for ALL users and team members? This will update both Convex database and Google Sheets.")) {
+      return;
+    }
+
+    toast.promise(
+      resetAllScreenTimeMut({
+        scriptUrl: SCRIPT_URL,
+      }),
+      {
+        loading: 'Erasing screen time for all users & team members...',
+        success: (res: any) => `Screen time reset to zero for all ${res.count || ''} users & team members.`,
+        error: (err: any) => `Failed to reset all screen time: ${err.message}`,
       }
     );
   };
@@ -1359,14 +1390,6 @@ export default function AdminPanel() {
     return a.name.localeCompare(b.name);
   });
 
-  // Add this function after fetchInventory [4]
-  const loadMoreInventory = () => {
-    // Currently, this can be a placeholder or call fetchInventory with pagination parameters
-    console.log("Load more triggered");
-    toast.info("All items are already loaded.");
-    setHasMore(false);
-  };
-
   const projectAssignmentByRequestId = React.useMemo(() => {
     const assignmentMap = new Map<string, { projectId: string; projectName: string; projectStatus: string }>();
     (convexProjectAssignments || []).forEach((assignment) => {
@@ -1984,15 +2007,20 @@ export default function AdminPanel() {
               })}
 
               {/* Load More Button */}
-              {hasMore && !isLoading && (
+              {paginatedStatus === 'CanLoadMore' && (
                 <div className="col-span-full flex justify-center mt-6">
                   <Button
-                    onClick={loadMoreInventory}
+                    onClick={() => loadMoreInventory(20)}
                     variant="outline"
-                    className="w-full max-w-xs border-slate-300 hover:bg-slate-50"
+                    className="w-full max-w-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-semibold"
                   >
-                    Load More Items
+                    Load More Inventory
                   </Button>
+                </div>
+              )}
+              {paginatedStatus === 'LoadingMore' && (
+                <div className="col-span-full text-center py-4 text-emerald-600 animate-pulse font-semibold">
+                  Loading more inventory...
                 </div>
               )}
 
@@ -2562,10 +2590,21 @@ export default function AdminPanel() {
                 {/* Section 2: Top 10 Leaderboard */}
                 <div>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                    <h3 className="text-xl font-bold flex items-center gap-2">
-                      <BarChart2 className="w-5 h-5" />
-                      {monitorSearchQuery ? "Student Usage" : "Top 10 Usage Leaderboard"}
-                    </h3>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <BarChart2 className="w-5 h-5" />
+                        {monitorSearchQuery ? "Student Usage" : "Top 10 Usage Leaderboard"}
+                      </h3>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResetAllScreenTime}
+                        className="bg-rose-50 text-rose-700 hover:bg-rose-600 hover:text-white border-rose-200 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Reset All User Screen Time
+                      </Button>
+                    </div>
                     <div className="relative w-full sm:w-72">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -2667,9 +2706,10 @@ export default function AdminPanel() {
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2 rounded-lg"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-3 rounded-lg font-semibold text-xs border border-red-200/60 flex items-center gap-1 mx-auto"
                                       onClick={() => handleResetScreenTime(user.email, user.name)}
                                     >
+                                      <RotateCcw className="w-3 h-3" />
                                       Reset
                                     </Button>
                                   </td>

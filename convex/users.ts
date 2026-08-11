@@ -345,3 +345,37 @@ export const resetScreenTime = mutation({
   },
 });
 
+export const resetAllScreenTime = mutation({
+  args: {
+    scriptUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const allUsers = await ctx.db.query("users").collect();
+
+    for (const user of allUsers) {
+      const updatedUser = {
+        ...user,
+        totalTime: 0,
+        sessionStart: user.laptopStatus === "Online" ? user.sessionStart : "",
+        sessionEnd: "",
+      };
+
+      await ctx.db.patch(user._id, {
+        totalTime: 0,
+        sessionStart: updatedUser.sessionStart,
+        sessionEnd: updatedUser.sessionEnd,
+      });
+
+      await enqueueSheetsSyncJob(ctx, {
+        scriptUrl: args.scriptUrl,
+        entityType: "users",
+        entityKey: updatedUser.email,
+        operation: "upsert",
+        payload: formatUserForSheets(updatedUser),
+      });
+    }
+
+    return { success: true, count: allUsers.length };
+  },
+});
+
