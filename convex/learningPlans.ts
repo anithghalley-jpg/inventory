@@ -3,6 +3,50 @@ import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { enqueueSheetsSyncJob } from "./sheetsSync";
 
+export function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
+  if (!dateStr || !dateStr.trim()) return false;
+  
+  const trimmedDate = dateStr.trim();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  if (trimmedDate < todayStr) return true;
+  if (trimmedDate > todayStr) return false;
+
+  // If date is today, check time if provided
+  if (!timeStr || !timeStr.trim()) return false;
+
+  const trimmedTime = timeStr.trim();
+  const nowHours = today.getHours();
+  const nowMinutes = today.getMinutes();
+
+  // Try parsing 24-hr time like "14:30"
+  const match24 = trimmedTime.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const targetHours = parseInt(match24[1], 10);
+    const targetMinutes = parseInt(match24[2], 10);
+    if (nowHours > targetHours) return true;
+    if (nowHours === targetHours && nowMinutes >= targetMinutes) return true;
+    return false;
+  }
+
+  // Try parsing 12-hr time like "02:30 PM"
+  const match12 = trimmedTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match12) {
+    let targetHours = parseInt(match12[1], 10);
+    const targetMinutes = parseInt(match12[2], 10);
+    const ampm = match12[3].toUpperCase();
+    if (ampm === "PM" && targetHours < 12) targetHours += 12;
+    if (ampm === "AM" && targetHours === 12) targetHours = 0;
+
+    if (nowHours > targetHours) return true;
+    if (nowHours === targetHours && nowMinutes >= targetMinutes) return true;
+    return false;
+  }
+
+  return false;
+}
+
 export const createPlan = mutation({
   args: {
     planId: v.string(),
@@ -11,6 +55,7 @@ export const createPlan = mutation({
     date: v.optional(v.string()),
     time: v.optional(v.string()),
     location: v.optional(v.string()),
+    maxParticipants: v.optional(v.number()),
     tags: v.array(v.string()),
     imageUrls: v.array(v.string()),
     videoUrls: v.array(v.string()),
@@ -22,9 +67,25 @@ export const createPlan = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const isExpired = isDateTimeExpired(args.date, args.time);
+    let finalStatus = args.status;
+    let completedEditionsCount = 0;
+
+    if (args.status === "PUBLISHED" && isExpired) {
+      finalStatus = "COMPLETED";
+      completedEditionsCount = 1;
+    } else if (args.status === "COMPLETED") {
+      completedEditionsCount = 1;
+    }
+
     return await ctx.db.insert("learningPlans", {
       ...args,
+      maxParticipants: args.maxParticipants || 20,
+      edition: 1,
+      completedEditionsCount,
       registeredUsers: [],
+      pastEditions: [],
+      status: finalStatus,
       createdAt: now,
       updatedAt: now,
     });
@@ -39,20 +100,65 @@ export const updatePlan = mutation({
     date: v.optional(v.string()),
     time: v.optional(v.string()),
     location: v.optional(v.string()),
+    maxParticipants: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     imageUrls: v.optional(v.array(v.string())),
     videoUrls: v.optional(v.array(v.string())),
     documentationUrl: v.optional(v.string()),
     collaboratorEmails: v.optional(v.array(v.string())),
-    status: v.optional(v.union(v.literal("DRAFT"), v.literal("PUBLISHED"), v.literal("COMPLETED"))),
+    status: v.union(v.literal("DRAFT"), v.literal("PUBLISHED"), v.literal("COMPLETED")),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;
     const now = Date.now();
-    await ctx.db.patch(id, {
+    const existing = await ctx.db.get(id);
+    if (!existing) throw new Error("Plan not found");
+
+    const effectiveDate = updates.date ?? existing.date;
+    const effectiveTime = updates.time ?? existing.time;
+    const isExpired = isDateTimeExpired(effectiveDate, effectiveTime);
+
+    let patchObj: any = {
       ...updates,
       updatedAt: now,
-    });
+    };
+
+    if (updates.maxParticipants !== undefined) {
+      patchObj.maxParticipants = updates.maxParticipants;
+    }
+
+    // Check if plan was completed or expired and is now updated with a NEW upcoming (non-expired) date
+    const wasCompleted = existing.status === "COMPLETED" || (existing.status === "PUBLISHED" && isDateTimeExpired(existing.date, existing.time));
+    const isNewDateUpcoming = !isExpired && updates.date && updates.date !== existing.date;
+
+    if (wasCompleted && isNewDateUpcoming) {
+      // Create new Edition (e.g., Edition 2)
+      const currentEdition = existing.edition || 1;
+      const pastEditions = existing.pastEditions || [];
+
+      // Archive current registeredUsers into pastEditions
+      const archivedEdition = {
+        editionNumber: currentEdition,
+        date: existing.date,
+        time: existing.time,
+        location: existing.location,
+        registeredUsers: existing.registeredUsers || [],
+        completedAt: now,
+      };
+
+      patchObj.edition = currentEdition + 1;
+      patchObj.completedEditionsCount = Math.max(existing.completedEditionsCount || 0, currentEdition);
+      patchObj.pastEditions = [...pastEditions, archivedEdition];
+      patchObj.registeredUsers = []; // Fresh registration list for new edition
+      patchObj.status = "PUBLISHED";
+    } else if (updates.status === "PUBLISHED" && isExpired) {
+      patchObj.status = "COMPLETED";
+      patchObj.completedEditionsCount = Math.max(existing.completedEditionsCount || 0, existing.edition || 1);
+    } else if (updates.status === "COMPLETED") {
+      patchObj.completedEditionsCount = Math.max(existing.completedEditionsCount || 0, existing.edition || 1);
+    }
+
+    await ctx.db.patch(id, patchObj);
   },
 });
 
@@ -74,7 +180,7 @@ export const getMyPlans = query({
     const myPlans = allPlans.filter(
       (plan) =>
         plan.authorEmail === args.userEmail ||
-        plan.collaboratorEmails.includes(args.userEmail)
+        (plan.collaboratorEmails && plan.collaboratorEmails.includes(args.userEmail))
     );
     
     // Sort by updatedAt descending
@@ -110,6 +216,11 @@ export const registerForPlan = mutation({
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
 
+    const isExpired = isDateTimeExpired(plan.date, plan.time);
+    if (plan.status === "COMPLETED" || isExpired) {
+      return { success: false, message: "Registration is closed for completed sessions" };
+    }
+
     const currentUsers = plan.registeredUsers || [];
     
     // Check if user is already registered
@@ -117,13 +228,82 @@ export const registerForPlan = mutation({
       return { success: false, message: "Already registered" };
     }
 
-    const updatedUsers = [...currentUsers, { name: args.name, email: args.email, attended: false }];
+    const newUser = {
+      name: args.name,
+      email: args.email,
+      registeredAt: Date.now(),
+      attended: false,
+    };
+    const updatedUsers = [...currentUsers, newUser];
     await ctx.db.patch(args.planId, {
       registeredUsers: updatedUsers,
       updatedAt: Date.now(),
     });
 
-    return { success: true, message: "Successfully registered" };
+    const maxCap = plan.maxParticipants || 20;
+    const position = updatedUsers.length;
+    const isStandby = position > maxCap;
+
+    return {
+      success: true,
+      message: isStandby
+        ? `Registered for Standby List (Spot #${position}, Capacity: ${maxCap})`
+        : `Successfully registered! (Spot #${position} of ${maxCap} Confirmed)`,
+    };
+  },
+});
+
+export const postponeRegistration = mutation({
+  args: {
+    planId: v.id("learningPlans"),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get(args.planId);
+    if (!plan) throw new Error("Plan not found");
+
+    const currentUsers = plan.registeredUsers || [];
+    const userIndex = currentUsers.findIndex(u => u.email.toLowerCase() === args.userEmail.toLowerCase());
+    
+    if (userIndex === -1) {
+      return { success: false, message: "User is not registered for this session" };
+    }
+
+    const targetUser = currentUsers[userIndex];
+    // Remove from current position and append to the end of registeredUsers list
+    const remainingUsers = currentUsers.filter((_, idx) => idx !== userIndex);
+    const updatedUsers = [
+      ...remainingUsers,
+      { ...targetUser, registeredAt: Date.now() },
+    ];
+
+    await ctx.db.patch(args.planId, {
+      registeredUsers: updatedUsers,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true, message: "Session registration postponed. You have been moved to the end of the list." };
+  },
+});
+
+export const withdrawRegistration = mutation({
+  args: {
+    planId: v.id("learningPlans"),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get(args.planId);
+    if (!plan) throw new Error("Plan not found");
+
+    const currentUsers = plan.registeredUsers || [];
+    const updatedUsers = currentUsers.filter(u => u.email.toLowerCase() !== args.userEmail.toLowerCase());
+
+    await ctx.db.patch(args.planId, {
+      registeredUsers: updatedUsers,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true, message: "Withdrawn from session successfully" };
   },
 });
 
@@ -184,8 +364,14 @@ export const setPlanStatus = mutation({
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
 
+    const isCompleted = args.status === "COMPLETED";
+    const completedEditionsCount = isCompleted
+      ? Math.max(plan.completedEditionsCount || 0, plan.edition || 1)
+      : (plan.completedEditionsCount || 0);
+
     await ctx.db.patch(args.planId, {
       status: args.status,
+      completedEditionsCount,
       updatedAt: Date.now(),
     });
 
@@ -210,6 +396,26 @@ export const getMyAttendedLearnings = query({
     });
 
     return myAttended.sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+});
+
+export const getMyRegisteredLearnings = query({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (!args.userEmail) return [];
+    const allPlans = await ctx.db.query("learningPlans").collect();
+
+    // Return plans where user is currently registered (or attended)
+    const myRegistered = allPlans.filter((plan) => {
+      const registeredUsers = plan.registeredUsers || [];
+      return registeredUsers.some(
+        (u) => u.email.toLowerCase() === args.userEmail.toLowerCase()
+      );
+    });
+
+    return myRegistered.sort((a, b) => b.updatedAt - a.updatedAt);
   },
 });
 
@@ -353,8 +559,12 @@ export const completeSessionWithTags = mutation({
       }
     }
 
+    const currentEdition = plan.edition || 1;
+    const completedEditionsCount = Math.max(plan.completedEditionsCount || 0, currentEdition);
+
     await ctx.db.patch(args.planId, {
       status: "COMPLETED",
+      completedEditionsCount,
       awardedTag: tagToAward,
       updatedAt: Date.now(),
     });
@@ -366,4 +576,5 @@ export const completeSessionWithTags = mutation({
     };
   },
 });
+
 

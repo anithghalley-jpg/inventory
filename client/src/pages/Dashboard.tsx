@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star } from 'lucide-react';
+import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, UserX, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
 import { getTagStyle } from '@/lib/tagUtils';
@@ -276,7 +276,13 @@ export default function Dashboard() {
   const attendedLearnings = useQuery(api.learningPlans.getMyAttendedLearnings, {
     userEmail: user?.email || "",
   }) || [];
+  const registeredLearnings = useQuery(api.learningPlans.getMyRegisteredLearnings, {
+    userEmail: user?.email || "",
+  }) || [];
+  const postponeRegistration = useMutation(api.learningPlans.postponeRegistration);
+  const withdrawRegistration = useMutation(api.learningPlans.withdrawRegistration);
   const [selectedExperience, setSelectedExperience] = useState<any>(null);
+  const [withdrawTargetPlan, setWithdrawTargetPlan] = useState<any>(null);
   const [submissionUrlInput, setSubmissionUrlInput] = useState("");
   const submitLearningProof = useMutation(api.learningPlans.submitLearningProof);
   const startMachineMutation = useMutation(api.machines.startSession);
@@ -935,7 +941,7 @@ export default function Dashboard() {
                   <h2 className="text-2xl font-bold text-slate-900">Learning Experiences</h2>
                 </div>
                 <p className="text-sm text-slate-600">
-                  Your verified record of attended workshops, activity sessions, and deep dives.
+                  Your registered upcoming sessions and verified record of attended workshops and deep dives.
                 </p>
               </div>
               <div className="bg-white/80 backdrop-blur px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-2 shrink-0">
@@ -943,6 +949,108 @@ export default function Dashboard() {
                 <span>{attendedLearnings.length} Verified Experience{attendedLearnings.length === 1 ? '' : 's'}</span>
               </div>
             </div>
+
+            {/* Upcoming Confirmed Sessions Section */}
+            {(() => {
+              const upcomingConfirmed = registeredLearnings.filter((plan: any) => {
+                const registered = plan.registeredUsers || [];
+                const userIndex = registered.findIndex((u: any) => u.email.toLowerCase() === user?.email?.toLowerCase());
+                if (userIndex === -1) return false;
+                
+                const isCompleted = plan.status === "COMPLETED";
+                const maxCap = plan.maxParticipants || 20;
+                const isConfirmedSpot = userIndex < maxCap;
+
+                return !isCompleted && isConfirmedSpot;
+              });
+
+              if (upcomingConfirmed.length === 0) return null;
+
+              return (
+                <div className="space-y-3 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <GraduationCap className="w-5 h-5 text-emerald-600" />
+                    Upcoming Confirmed Sessions ({upcomingConfirmed.length})
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">
+                    You hold a confirmed spot for these sessions. You can postpone or withdraw before attendance is completed.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {upcomingConfirmed.map((plan: any) => {
+                      const validImages = (plan.imageUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
+                      const registered = plan.registeredUsers || [];
+                      const userIndex = registered.findIndex((u: any) => u.email.toLowerCase() === user?.email?.toLowerCase());
+                      const rank = userIndex + 1;
+                      const maxCap = plan.maxParticipants || 20;
+
+                      return (
+                        <Card key={plan._id} className="overflow-hidden flex flex-col border-emerald-200 shadow-xs bg-white hover:shadow-md transition-all">
+                          {validImages.length > 0 ? (
+                            <div className="h-40 bg-slate-100 overflow-hidden relative">
+                              <img src={getOptimizedImageUrl(validImages[0])} alt={plan.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              <div className="absolute top-2.5 right-2.5 bg-emerald-600 text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
+                                Spot #{rank} of {maxCap}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="h-28 bg-gradient-to-br from-emerald-600 to-teal-700 p-4 text-white flex flex-col justify-between relative">
+                              <div className="absolute top-2.5 right-2.5 bg-white/20 backdrop-blur text-white text-[10px] font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1">
+                                Spot #{rank} of {maxCap}
+                              </div>
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-200">Upcoming Session</span>
+                              <h4 className="font-bold text-base line-clamp-1">{plan.title}</h4>
+                            </div>
+                          )}
+
+                          <div className="p-4 flex flex-col flex-1">
+                            <h4 className="font-bold text-base text-slate-900 mb-1 line-clamp-1">{plan.title}</h4>
+                            {(plan.date || plan.time || plan.location) && (
+                              <div className="text-xs font-medium text-slate-500 mb-3 flex flex-wrap gap-x-3 gap-y-1">
+                                {plan.date && <span>📅 {plan.date}</span>}
+                                {plan.time && <span>⏰ {plan.time}</span>}
+                                {plan.location && <span>📍 {plan.location}</span>}
+                              </div>
+                            )}
+
+                            <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await postponeRegistration({ planId: plan._id, userEmail: user?.email || "" });
+                                    if (res.success) toast.success(res.message);
+                                    else toast.error(res.message);
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Failed to postpone");
+                                  }
+                                }}
+                                className="text-xs font-bold border-amber-300 text-amber-800 hover:bg-amber-50 h-8 flex-1 cursor-pointer"
+                              >
+                                Postpone ⏩
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setWithdrawTargetPlan(plan);
+                                }}
+                                className="text-xs font-bold border-rose-300 text-rose-700 hover:bg-rose-50 h-8 flex-1 cursor-pointer"
+                              >
+                                Withdraw ❌
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {attendedLearnings.length === 0 ? (
               <Card className="p-12 text-center border-dashed border-2 border-slate-200 bg-slate-50/50">
@@ -2030,6 +2138,46 @@ export default function Dashboard() {
                   )}
                 </div>
               )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Withdraw Confirmation Dialog Modal */}
+          <Dialog open={!!withdrawTargetPlan} onOpenChange={(open) => !open && setWithdrawTargetPlan(null)}>
+            <DialogContent className="max-w-md bg-white p-6 rounded-2xl border border-slate-200 shadow-xl">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-bold flex items-center gap-2 text-rose-600">
+                  <UserX className="w-5 h-5" />
+                  Withdraw from Session
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-3 text-slate-700 text-sm">
+                <p>Are you sure you want to withdraw from <strong className="text-slate-900">{withdrawTargetPlan?.title}</strong>?</p>
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-800 flex items-start gap-2">
+                  <span className="font-bold shrink-0">⚠️ Note:</span>
+                  <span>Your spot will be released immediately to members on the standby waiting list.</span>
+                </div>
+              </div>
+              <DialogFooter className="flex items-center gap-2 justify-end pt-2">
+                <Button variant="outline" onClick={() => setWithdrawTargetPlan(null)} className="rounded-full px-5">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!withdrawTargetPlan) return;
+                    try {
+                      const res = await withdrawRegistration({ planId: withdrawTargetPlan._id, userEmail: user?.email || "" });
+                      if (res.success) toast.success(res.message);
+                      else toast.error(res.message);
+                      setWithdrawTargetPlan(null);
+                    } catch (err: any) {
+                      toast.error(err.message || "Failed to withdraw");
+                    }
+                  }}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-full px-5 shadow-sm cursor-pointer"
+                >
+                  Confirm Withdraw
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </Tabs>
