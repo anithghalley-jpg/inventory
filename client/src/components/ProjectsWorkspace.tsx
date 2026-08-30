@@ -17,10 +17,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
+  Edit3,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ClipboardList,
+  Download,
+  FileText,
   FolderKanban,
   LayoutGrid,
   MessageSquare,
@@ -38,18 +41,34 @@ import {
   formatDateOnly,
   formatDateTime,
   getStatusBadgeClass,
+  getStatusLabel,
+  getStatusAccentClass,
+  getStatusBgClass,
+  getStatusPillClass,
+  getPostTypeStyle,
+  isRecentActivity,
   MediaList,
   normalizeImageUrl,
+  normalizeVideoUrl,
+  PostAuthorHeader,
+  ProgressRing,
   ProjectAvatar,
+  RelativeTime,
+  ImageWithLightbox,
+  KANBAN_COLUMNS,
+  getKanbanColumn,
+  getProjectProgress,
+  InteractiveTimelinePostCard,
+  TimelinePostComposerDialog,
   type CheckpointFieldType,
   type ProjectCardRecord,
   type ProjectDetailRecord,
   type TimelinePostKind,
 } from "@/components/projects/projectShared";
-import ProjectStepFlow from "@/components/projects/ProjectStepFlow";
-import ProjectOverviewPanel from "./projects/ProjectOverviewPanel";
-import ProjectHistoryPanel from "./projects/ProjectHistoryPanel";
+import ProjectProfilePanel from "./projects/ProjectProfilePanel";
+import ProjectPostPanel from "./projects/ProjectPostPanel";
 import ProjectReportGenerator from "./projects/ProjectReportGenerator";
+
 
 interface ProjectsWorkspaceProps {
   workspace?: { projects: ProjectCardRecord[] };
@@ -88,132 +107,99 @@ function TimelineMarker({ createdAt, mobile = false }: { createdAt: string; mobi
 
 function ProjectCardTile({
   project,
-  previewMode,
-  onPreviewChange,
   onOpen,
   onStar,
   onComment,
   selected = false,
 }: {
   project: ProjectCardRecord;
-  previewMode: "team" | "box";
-  onPreviewChange: (mode: "team" | "box") => void;
   onOpen: () => void;
   onStar: () => void;
   onComment: () => void;
   selected?: boolean;
 }) {
-  const previewImage = previewMode === "box" ? project.boxImageUrl ?? "" : project.teamImageUrl ?? "";
+  const previewImage = project.teamImageUrl ?? project.boxImageUrl ?? "";
+  const { percent } = getProjectProgress(project.status);
+  const accentClass = getStatusAccentClass(project.status);
+  const bgClass = getStatusBgClass(project.status);
+  const pillClass = getStatusPillClass(project.status);
+  const hasRecentActivity = isRecentActivity(project.lastActivityAt);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`w-full group rounded-[2rem] border p-4 text-left transition-all duration-300 ${
-        selected
-          ? "border-slate-400 bg-slate-50 shadow-md ring-1 ring-slate-400"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-xl hover:-translate-y-1"
-      }`}
+      className={`project-card-premium w-full text-left ${bgClass} ${selected ? "selected" : ""}`}
     >
-      <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100 shadow-inner">
+      {/* Accent strip */}
+      <div className={`project-card-accent ${accentClass}`} />
+
+      {/* Cover image */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-slate-100 shadow-sm mb-3">
         {previewImage ? (
           <img
             src={normalizeImageUrl(previewImage)}
             alt={project.name}
-            className="h-44 w-full object-cover"
+            className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="flex h-44 items-center justify-center bg-slate-100 text-slate-400">
-            <Sparkles className="h-8 w-8" />
+          <div className="flex h-40 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50">
+            <FolderKanban className="h-10 w-10 text-slate-300" />
           </div>
         )}
       </div>
 
-      <div className="mt-3 flex items-start justify-between gap-3">
+      {/* Name + progress ring row */}
+      <div className="flex items-start justify-between gap-2 mb-2 pl-1">
         <div className="min-w-0">
-          <h3 className="truncate text-lg font-bold text-slate-900">{project.name}</h3>
-          <p className="text-xs text-slate-500">
-            Updated {formatDateOnly(project.lastActivityAt || project.updatedAt)}
-          </p>
+          <h3 className="truncate text-base font-black text-slate-900 leading-snug">{project.name}</h3>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {hasRecentActivity && <span className="project-activity-pulse" />}
+            <RelativeTime value={project.lastActivityAt || project.updatedAt} />
+          </div>
         </div>
-        <Badge className={getStatusBadgeClass(project.status)}>{project.status}</Badge>
+        <ProgressRing percent={percent} size={44} strokeWidth={4} />
       </div>
 
-      <div className="mt-3 inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
-        <button
-          type="button"
-          className={`rounded-full px-3 py-1 ${previewMode === "team" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPreviewChange("team");
-          }}
-        >
-          Team
-        </button>
-        <button
-          type="button"
-          className={`rounded-full px-3 py-1 ${previewMode === "box" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPreviewChange("box");
-          }}
-        >
-          Box
-        </button>
+      {/* Status pill */}
+      <div className="pl-1 mb-3">
+        <span className={pillClass}>{getStatusLabel(project.status)}</span>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <div className="flex -space-x-2">
+      {/* Members + actions */}
+      <div className="flex items-center justify-between pl-1">
+        <div className="project-avatar-stack">
           {project.members.slice(0, 5).map((member) => (
             <ProjectAvatar
               key={member.userEmail}
               imageUrl={member.profileImageUrl}
               label={member.userName}
-              className="h-9 w-9 border-2 border-white"
+              className="h-7 w-7 border-2 border-white text-[10px]"
             />
           ))}
+          {project.members.length > 5 && (
+            <div className="h-7 w-7 rounded-full border-2 border-white bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center font-bold">
+              +{project.members.length - 5}
+            </div>
+          )}
         </div>
-        <div className="text-xs font-medium text-slate-500">{project.memberCount} members</div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {project.members.slice(0, 4).map((member) => (
-          <Badge
-            key={`${project.projectId}-${member.userEmail}`}
-            variant="outline"
-            className="border-slate-200 bg-white text-slate-600"
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="project-card-meta-chip text-amber-500 hover:bg-amber-50 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onStar(); }}
           >
-            {member.userRole}
-          </Badge>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="border-slate-200 bg-white"
-          onClick={(event) => {
-            event.stopPropagation();
-            onStar();
-          }}
-        >
-          <Star className="mr-2 h-4 w-4" />
-          {project.likeCount}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="border-slate-200 bg-white"
-          onClick={(event) => {
-            event.stopPropagation();
-            onComment();
-          }}
-        >
-          <MessageSquare className="mr-2 h-4 w-4" />
-          Comment
-        </Button>
+            <Star className="h-3 w-3 fill-current" /> {project.likeCount}
+          </button>
+          <button
+            type="button"
+            className="project-card-meta-chip text-blue-500 hover:bg-blue-50 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onComment(); }}
+          >
+            <MessageSquare className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </button>
   );
@@ -223,8 +209,7 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   const projects = workspace?.projects ?? [];
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "history" | "report" | "manage">("overview");
-  const [previewMode, setPreviewMode] = useState<Record<string, "team" | "box">>({});
+  const [activeTab, setActiveTab] = useState<"profile" | "post" | "report">("profile");
   const [leftRailCollapsed, setLeftRailCollapsed] = useState(true);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [identityDialogOpen, setIdentityDialogOpen] = useState(false);
@@ -254,9 +239,44 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   const updateProfileMut = useMutation(api.projects.updateMyProfile);
   const updateProjectIdentityMut = useMutation(api.projects.updateProjectIdentity);
   const addTimelinePostMut = useMutation(api.projects.addTimelinePost);
+  const deleteTimelinePostMut = useMutation(api.projects.deleteTimelinePost);
   const createCheckpointFormMut = useMutation(api.projects.createCheckpointForm);
   const submitCheckpointResponseMut = useMutation(api.projects.submitCheckpointResponse);
   const toggleProjectLikeMut = useMutation(api.projects.toggleProjectLike);
+
+  // Rich post editing state
+  const [editingTimelinePost, setEditingTimelinePost] = useState<Extract<
+    ProjectDetailRecord["timeline"][number],
+    { itemType: "post" }
+  > | null>(null);
+  const [timelinePostComposerOpen, setTimelinePostComposerOpen] = useState(false);
+
+  const handleEditTimelinePost = (
+    post: Extract<ProjectDetailRecord["timeline"][number], { itemType: "post" }>,
+  ) => {
+    setEditingTimelinePost(post);
+    setTimelinePostComposerOpen(true);
+  };
+
+  const handleDeleteTimelinePost = async (entryId: string) => {
+    if (!confirm("Are you sure you want to delete this update?")) return;
+    try {
+      await deleteTimelinePostMut({
+        userEmail: userEmail ?? "",
+        projectId: selectedProjectId,
+        entryId,
+      });
+      toast.success("Post deleted successfully");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete post");
+    }
+  };
+
+  const openPostComposer = () => {
+    setEditingTimelinePost(null);
+    setTimelinePostComposerOpen(true);
+  };
+
 
   const filteredProjects = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
@@ -464,97 +484,6 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
             </div>
           ) : null}
 
-          {item.stage === "box" ? (
-            <div className="mt-4 space-y-4">
-              {projectDetail.boxImageUrl ? (
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                  <img
-                    src={normalizeImageUrl(projectDetail.boxImageUrl)}
-                    alt={`${projectDetail.name} box`}
-                    className="h-56 w-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              ) : null}
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Submitted</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    {formatDateTime(projectDetail.boxSubmittedAt)}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Approved</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    {projectDetail.boxApprovedAt
-                      ? `${formatDateTime(projectDetail.boxApprovedAt)} by ${projectDetail.boxApprovedBy || "Admin"}`
-                      : "Waiting for approval"}
-                  </p>
-                </div>
-              </div>
-              {projectDetail.boxRejectionNote ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                  <span className="font-semibold">Feedback:</span> {projectDetail.boxRejectionNote}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {item.stage === "plan" ? (
-            <div className="mt-4 space-y-4">
-              {(projectDetail.sketchImages ?? []).length > 0 ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {(projectDetail.sketchImages ?? []).map((image, index) => (
-                    <div
-                      key={`${image}-${index}`}
-                      className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
-                    >
-                      <img
-                        src={normalizeImageUrl(image)}
-                        alt="Project sketch"
-                        className="h-48 w-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                    {projectDetail.questionConfig.completedBehaviorPrompt}
-                  </p>
-                  <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">
-                    {projectDetail.completedBehavior || "Not answered yet"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                    {projectDetail.questionConfig.materialsRequiredPrompt}
-                  </p>
-                  <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">
-                    {projectDetail.materialsRequired || "Not answered yet"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                    {projectDetail.questionConfig.initialPlansPrompt}
-                  </p>
-                  <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">
-                    {projectDetail.initialPlans || "Not answered yet"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                    {projectDetail.questionConfig.firstStepsPrompt}
-                  </p>
-                  <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">
-                    {projectDetail.firstSteps || "Not answered yet"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </Card>
       );
     }
@@ -714,31 +643,24 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
       );
     }
 
-    return (
-      <Card className="rounded-[1.5rem] border-slate-200 bg-white p-5 shadow-none">
-        <div className="flex items-start gap-4">
-          <ProjectAvatar
-            imageUrl={projectDetail.members.find((member) => member.userEmail === item.authorEmail)?.profileImageUrl}
-            label={item.authorName}
-            className="h-12 w-12"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-bold text-slate-900">{item.authorName}</h3>
-              <Badge variant="outline" className="border-slate-200 text-slate-600">
-                {item.authorRole}
-              </Badge>
-              <Badge className={getStatusBadgeClass(item.kind)}>{item.kind}</Badge>
-            </div>
-            <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700">{item.body}</p>
-            <div className="mt-4">
-              <MediaList images={item.images} videos={item.videos} links={item.links} />
-            </div>
-          </div>
-        </div>
-      </Card>
-    );
+    if (item.itemType === "post") {
+      return (
+        <InteractiveTimelinePostCard
+          key={item.id}
+          post={item}
+          projectDetail={projectDetail}
+          currentUserEmail={userEmail ?? ""}
+          currentUserRole={projectDetail.members.find((m) => m.userEmail === userEmail)?.userRole}
+          onEditPost={handleEditTimelinePost}
+          onDeletePost={handleDeleteTimelinePost}
+        />
+      );
+    }
+
+
+    return null;
   };
+
 
   if (!projects.length) {
     return (
@@ -780,117 +702,113 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 overflow-x-auto pb-4 items-start">
-            {Object.entries(groupedProjects).map(([stage, stageProjects]) => (
-              <div key={stage} className="project-kanban-column flex flex-col gap-3 min-w-[240px] bg-slate-50/50">
-                <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200">
-                  <h3 className="font-display font-semibold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
-                    {stage.replace("_", " ")}
-                  </h3>
-                  <Badge variant="secondary" className="bg-white text-slate-600 shadow-sm border border-slate-200">
-                    {stageProjects.length}
-                  </Badge>
-                </div>
-                
-                {stageProjects.length === 0 ? (
-                  <div className="flex-1 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center p-6 text-center text-slate-400 text-sm bg-white/50">
-                    No projects
-                  </div>
-                ) : (
-                  stageProjects.map((project) => (
-                    <div className="project-kanban-card group" key={project.projectId} onClick={() => openProject(project.projectId)}>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <h4 className="font-bold text-slate-900 text-sm leading-snug group-hover:text-emerald-600 transition-colors line-clamp-2">
-                          {project.name}
-                        </h4>
-                      </div>
-                      <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-100">
-                        <div className="flex -space-x-2">
-                          {project.members.slice(0, 3).map((member) => (
-                            <ProjectAvatar
-                              key={member.userEmail}
-                              imageUrl={member.profileImageUrl}
-                              label={member.userName}
-                              className="h-6 w-6 border-2 border-white text-[10px]"
-                            />
-                          ))}
-                          {project.members.length > 3 && (
-                            <div className="h-6 w-6 rounded-full border-2 border-white bg-slate-100 text-slate-600 text-[10px] flex items-center justify-center font-medium">
-                              +{project.members.length - 3}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-slate-400">
-                          {project.likeCount > 0 && (
-                            <span className="flex items-center gap-1 text-[10px] font-medium text-amber-500">
-                              <Star className="h-3 w-3 fill-current" /> {project.likeCount}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 pb-4 items-start">
+            {KANBAN_COLUMNS.map((col) => {
+              const colProjects = filteredProjects.filter((p) => getKanbanColumn(p.status) === col.key);
+              return (
+                <div
+                  key={col.key}
+                  className={`project-kanban-column project-kanban-col-${col.key} flex flex-col gap-3`}
+                >
+                  <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200/70">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} />
+                      <h3 className={`font-bold text-sm tracking-wide ${col.textColor}`}>{col.label}</h3>
                     </div>
-                  ))
-                )}
-              </div>
-            ))}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${col.textColor} bg-white/80 border-current/30`}>
+                      {colProjects.length}
+                    </span>
+                  </div>
+
+                  {colProjects.length === 0 ? (
+                    <div className="flex-1 rounded-xl border-2 border-dashed border-slate-200/60 flex items-center justify-center p-6 text-center text-slate-400 text-xs bg-white/40">
+                      No projects
+                    </div>
+                  ) : (
+                    colProjects.map((project) => (
+                      <ProjectCardTile
+                        key={project.projectId}
+                        project={project}
+                        onOpen={() => openProject(project.projectId)}
+                        onStar={() => handleToggleLike(project.projectId)}
+                        onComment={() => openComposer(project.projectId, "post")}
+                        selected={selectedProjectId === project.projectId}
+                      />
+                    ))
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
         <div className="space-y-6">
-          <Card className="rounded-[1.75rem] border-slate-200 bg-white shadow-sm overflow-hidden">
-             {/* Header with back button */}
-             <div className="border-b border-slate-200 bg-slate-50/80 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-               <div className="flex items-center gap-4">
-                  <Button variant="outline" size="sm" onClick={() => setSelectedProjectId("")} className="bg-white hover:bg-slate-50 rounded-xl shrink-0">
+          <div className="neumorph-card overflow-hidden bg-white">
+             {/* Header with Project Title & Neumorphic 3-Tab Navigator (Sticky Top) */}
+             <div className="sticky top-0 z-20 border-b border-slate-200/90 bg-white/95 px-6 py-4 backdrop-blur shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+               <div className="flex items-center gap-3 min-w-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedProjectId("")}
+                    className="neumorph-btn h-9 text-xs font-semibold text-slate-700 rounded-xl shrink-0"
+                  >
                     <ChevronLeft className="mr-1 h-4 w-4" />
                     Back
                   </Button>
                   <div className="min-w-0">
-                    <h2 className="text-xl font-bold text-slate-900 truncate">{projectDetail.name}</h2>
-                    <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">Status: {projectDetail.status.replace("_", " ")}</p>
+                    <h2 className="text-xl font-black text-slate-900 truncate tracking-tight">{projectDetail.name}</h2>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={getStatusPillClass(projectDetail.status)}>{getStatusLabel(projectDetail.status)}</span>
+                    </div>
                   </div>
                </div>
-               <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar shrink-0">
-                  <div className="project-detail-tabs w-full sm:w-auto">
-                    <button className={`project-detail-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
-                    <button className={`project-detail-tab ${activeTab === 'manage' ? 'active' : ''}`} onClick={() => setActiveTab('manage')}>Timeline / Manage</button>
-                    <button className={`project-detail-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>History</button>
-                    <button className={`project-detail-tab ${activeTab === 'report' ? 'active' : ''}`} onClick={() => setActiveTab('report')}>Report</button>
-                  </div>
+
+               {/* Neumorphic 3-Tab Group */}
+               <div className="neumorph-tab-group shrink-0 self-start md:self-auto">
+                 <button
+                   type="button"
+                   className={`neumorph-tab-item ${activeTab === 'profile' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('profile')}
+                 >
+                   <FolderKanban className="h-4 w-4" />
+                   Project Profile
+                 </button>
+                 <button
+                   type="button"
+                   className={`neumorph-tab-item ${activeTab === 'post' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('post')}
+                 >
+                   <Edit3 className="h-4 w-4" />
+                   Project Post
+                 </button>
+                 <button
+                   type="button"
+                   className={`neumorph-tab-item ${activeTab === 'report' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('report')}
+                 >
+                   <FileText className="h-4 w-4" />
+                   Project Report
+                 </button>
                </div>
              </div>
 
-             <div className="p-6 md:p-8 bg-slate-50/30">
-                {activeTab === 'overview' && (
-                  <ProjectOverviewPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
+             {/* Tab Content Panes */}
+             <div className="p-4 md:p-6 bg-slate-50/40">
+                {activeTab === 'profile' && (
+                  <ProjectProfilePanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
                 )}
-                {activeTab === 'history' && (
-                  <ProjectHistoryPanel projectId={projectDetail.projectId} userEmail={userEmail ?? ""} projectDetail={projectDetail} />
+                {activeTab === 'post' && (
+                  <ProjectPostPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
                 )}
                 {activeTab === 'report' && (
                   <ProjectReportGenerator projectId={projectDetail.projectId} userEmail={userEmail ?? ""} projectDetail={projectDetail} />
                 )}
-                {activeTab === 'manage' && (
-                  <ProjectStepFlow
-                    projectDetail={projectDetail}
-                    userEmail={userEmail ?? ""}
-                    onSaveIdentity={async (name, teamImageUrl) => {
-                      await updateProjectIdentityMut({
-                        projectId: projectDetail.projectId,
-                        userEmail: userEmail ?? "",
-                        name,
-                        teamImageUrl,
-                      });
-                      toast.success("Project identity updated.");
-                    }}
-                    renderTimelineItem={renderTimelineCard}
-                    onOpenComposer={() => openComposer(projectDetail.projectId, "post")}
-                  />
-                )}
              </div>
-          </Card>
+          </div>
         </div>
       )}
+
 
       <Dialog open={composerDialogOpen} onOpenChange={setComposerDialogOpen}>
         <DialogContent className="border-slate-200 bg-white sm:max-w-3xl">
@@ -1284,6 +1202,17 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TimelinePostComposerDialog
+        open={timelinePostComposerOpen}
+        onOpenChange={setTimelinePostComposerOpen}
+        projectId={selectedProjectId}
+        userEmail={userEmail ?? ""}
+        editingPost={editingTimelinePost}
+        canModerate={Boolean(projectDetail?.permissions.canModerateTimeline)}
+        canPostMedia={Boolean(projectDetail?.permissions.canPostMedia)}
+      />
     </section>
   );
 }
+

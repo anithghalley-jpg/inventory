@@ -166,9 +166,6 @@ export default defineSchema({
       v.literal("DRAFT"),
       v.literal("SETUP_PENDING"),
       v.literal("SETUP_APPROVED"),
-      v.literal("BOX_PENDING"),
-      v.literal("BOX_APPROVED"),
-      v.literal("PLAN_PENDING"),
       v.literal("ACTIVE"),
       v.literal("COMPLETED"),
       v.literal("ARCHIVED"),
@@ -178,6 +175,7 @@ export default defineSchema({
     updatedAt: v.string(),
     lastActivityAt: v.optional(v.string()),
     teamImageUrl: v.optional(v.string()),
+    // Legacy box/plan fields — kept optional so old data stays valid
     boxImageUrl: v.optional(v.string()),
     boxSubmittedAt: v.optional(v.string()),
     boxApprovedAt: v.optional(v.string()),
@@ -188,16 +186,16 @@ export default defineSchema({
     setupApprovedAt: v.optional(v.string()),
     setupApprovedBy: v.optional(v.string()),
     setupRejectionNote: v.optional(v.string()),
-    sketchImages: v.array(v.string()),
-    completedBehavior: v.string(),
-    materialsRequired: v.string(),
-    initialPlans: v.string(),
-    firstSteps: v.string(),
+    // Legacy plan fields — optional, not used in new projects
+    sketchImages: v.optional(v.array(v.string())),
+    completedBehavior: v.optional(v.string()),
+    materialsRequired: v.optional(v.string()),
+    initialPlans: v.optional(v.string()),
+    firstSteps: v.optional(v.string()),
     planSubmittedAt: v.optional(v.string()),
     planApprovedAt: v.optional(v.string()),
     planApprovedBy: v.optional(v.string()),
     planRejectionNote: v.optional(v.string()),
-    // Dynamic planning fields (replaces/extends the 5 hardcoded fields above)
     planningFields: v.optional(v.array(v.object({
       fieldId: v.string(),
       label: v.string(),
@@ -225,6 +223,7 @@ export default defineSchema({
   })
     .index("by_projectId", ["projectId"])
     .index("by_updatedAt", ["updatedAt"]),
+
 
   projectMembers: defineTable({
     projectId: v.string(),

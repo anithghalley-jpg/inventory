@@ -307,22 +307,107 @@ export const withdrawRegistration = mutation({
   },
 });
 
-export const removeParticipant = mutation({
+export const addParticipantManual = mutation({
   args: {
     planId: v.id("learningPlans"),
-    userEmail: v.string(),
+    name: v.string(),
+    email: v.string(),
+    editionNumber: v.optional(v.number()),
+    attended: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
 
-    const currentUsers = plan.registeredUsers || [];
-    const updatedUsers = currentUsers.filter(u => u.email.toLowerCase() !== args.userEmail.toLowerCase());
+    const emailTrimmed = args.email.trim().toLowerCase();
+    const nameTrimmed = args.name.trim();
+    if (!emailTrimmed || !nameTrimmed) {
+      throw new Error("Name and email are required");
+    }
 
-    await ctx.db.patch(args.planId, {
-      registeredUsers: updatedUsers,
-      updatedAt: Date.now(),
-    });
+    const targetEditionNum = args.editionNumber ?? (plan.edition || 1);
+    const isCurrentEdition = targetEditionNum === (plan.edition || 1);
+    const now = Date.now();
+
+    const newUser = {
+      name: nameTrimmed,
+      email: emailTrimmed,
+      registeredAt: now,
+      attended: args.attended ?? (plan.status === "COMPLETED"),
+    };
+
+    if (isCurrentEdition) {
+      const currentUsers = plan.registeredUsers || [];
+      if (currentUsers.some(u => u.email.toLowerCase() === emailTrimmed)) {
+        throw new Error("User is already registered for this edition");
+      }
+      const updatedUsers = [...currentUsers, newUser];
+      await ctx.db.patch(args.planId, {
+        registeredUsers: updatedUsers,
+        updatedAt: now,
+      });
+    } else {
+      const pastEditions = plan.pastEditions || [];
+      const edIndex = pastEditions.findIndex(e => e.editionNumber === targetEditionNum);
+      if (edIndex === -1) {
+        throw new Error(`Edition ${targetEditionNum} not found`);
+      }
+      const ed = pastEditions[edIndex];
+      if ((ed.registeredUsers || []).some(u => u.email.toLowerCase() === emailTrimmed)) {
+        throw new Error(`User is already in Edition ${targetEditionNum}`);
+      }
+      const updatedEdRegistered = [...(ed.registeredUsers || []), newUser];
+      const updatedPastEditions = pastEditions.map((e, idx) =>
+        idx === edIndex ? { ...e, registeredUsers: updatedEdRegistered } : e
+      );
+      await ctx.db.patch(args.planId, {
+        pastEditions: updatedPastEditions,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true, message: `Added ${nameTrimmed} to Edition ${targetEditionNum}` };
+  },
+});
+
+export const removeParticipant = mutation({
+  args: {
+    planId: v.id("learningPlans"),
+    userEmail: v.string(),
+    editionNumber: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get(args.planId);
+    if (!plan) throw new Error("Plan not found");
+
+    const emailTrimmed = args.userEmail.trim().toLowerCase();
+    const targetEditionNum = args.editionNumber ?? (plan.edition || 1);
+    const isCurrentEdition = targetEditionNum === (plan.edition || 1);
+    const now = Date.now();
+
+    if (isCurrentEdition) {
+      const currentUsers = plan.registeredUsers || [];
+      const updatedUsers = currentUsers.filter(u => u.email.toLowerCase() !== emailTrimmed);
+      await ctx.db.patch(args.planId, {
+        registeredUsers: updatedUsers,
+        updatedAt: now,
+      });
+    } else {
+      const pastEditions = plan.pastEditions || [];
+      const updatedPastEditions = pastEditions.map(ed => {
+        if (ed.editionNumber === targetEditionNum) {
+          return {
+            ...ed,
+            registeredUsers: (ed.registeredUsers || []).filter(u => u.email.toLowerCase() !== emailTrimmed),
+          };
+        }
+        return ed;
+      });
+      await ctx.db.patch(args.planId, {
+        pastEditions: updatedPastEditions,
+        updatedAt: now,
+      });
+    }
 
     return { success: true, message: "Participant removed successfully" };
   },
@@ -333,27 +418,84 @@ export const toggleAttendance = mutation({
     planId: v.id("learningPlans"),
     userEmail: v.string(),
     attended: v.boolean(),
+    editionNumber: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
 
-    const currentUsers = plan.registeredUsers || [];
-    const updatedUsers = currentUsers.map(u => {
-      if (u.email.toLowerCase() === args.userEmail.toLowerCase()) {
-        return { ...u, attended: args.attended };
-      }
-      return u;
-    });
+    const emailTrimmed = args.userEmail.trim().toLowerCase();
+    const targetEditionNum = args.editionNumber ?? (plan.edition || 1);
+    const isCurrentEdition = targetEditionNum === (plan.edition || 1);
+    const now = Date.now();
 
-    await ctx.db.patch(args.planId, {
-      registeredUsers: updatedUsers,
-      updatedAt: Date.now(),
-    });
+    if (isCurrentEdition) {
+      const currentUsers = plan.registeredUsers || [];
+      const updatedUsers = currentUsers.map(u => {
+        if (u.email.toLowerCase() === emailTrimmed) {
+          return { ...u, attended: args.attended };
+        }
+        return u;
+      });
+      await ctx.db.patch(args.planId, {
+        registeredUsers: updatedUsers,
+        updatedAt: now,
+      });
+    } else {
+      const pastEditions = plan.pastEditions || [];
+      const updatedPastEditions = pastEditions.map(ed => {
+        if (ed.editionNumber === targetEditionNum) {
+          return {
+            ...ed,
+            registeredUsers: (ed.registeredUsers || []).map(u => {
+              if (u.email.toLowerCase() === emailTrimmed) {
+                return { ...u, attended: args.attended };
+              }
+              return u;
+            }),
+          };
+        }
+        return ed;
+      });
+      await ctx.db.patch(args.planId, {
+        pastEditions: updatedPastEditions,
+        updatedAt: now,
+      });
+    }
 
     return { success: true, message: args.attended ? "Marked as Attended" : "Marked as Absent" };
   },
 });
+
+export const deletePastEdition = mutation({
+  args: {
+    planId: v.id("learningPlans"),
+    editionNumber: v.number(),
+    actorEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get(args.planId);
+    if (!plan) throw new Error("Plan not found");
+
+    const pastEditions = plan.pastEditions || [];
+    const filteredPastEditions = pastEditions.filter(ed => ed.editionNumber !== args.editionNumber);
+
+    if (filteredPastEditions.length === pastEditions.length) {
+      throw new Error(`Edition ${args.editionNumber} was not found in past editions`);
+    }
+
+    const newCompletedCount = Math.max(0, filteredPastEditions.length + (plan.status === "COMPLETED" ? 1 : 0));
+
+    await ctx.db.patch(args.planId, {
+      pastEditions: filteredPastEditions,
+      completedEditionsCount: newCompletedCount,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true, message: `Edition ${args.editionNumber} deleted successfully` };
+  },
+});
+
 
 export const setPlanStatus = mutation({
   args: {
@@ -387,13 +529,46 @@ export const getMyAttendedLearnings = query({
     if (!args.userEmail) return [];
     const allPlans = await ctx.db.query("learningPlans").collect();
 
-    // Return plans where user attendance was marked as true
-    const myAttended = allPlans.filter((plan) => {
-      const registeredUsers = plan.registeredUsers || [];
-      return registeredUsers.some(
+    const myAttended: any[] = [];
+    for (const plan of allPlans) {
+      const currentUsers = plan.registeredUsers || [];
+      const attendedInCurrent = currentUsers.find(
         (u) => u.email.toLowerCase() === args.userEmail.toLowerCase() && u.attended === true
       );
-    });
+
+      let attendedRecord: any = null;
+      let attendedEditionNum: number | undefined = undefined;
+
+      if (attendedInCurrent) {
+        attendedEditionNum = plan.edition || 1;
+        attendedRecord = attendedInCurrent;
+      } else {
+        const pastEditions = plan.pastEditions || [];
+        for (const ed of pastEditions) {
+          const foundInEd = (ed.registeredUsers || []).find(
+            (u: any) => u.email.toLowerCase() === args.userEmail.toLowerCase() && u.attended === true
+          );
+          if (foundInEd) {
+            attendedRecord = foundInEd;
+            attendedEditionNum = ed.editionNumber;
+            break;
+          }
+        }
+      }
+
+      if (attendedRecord) {
+        // Ensure registeredUsers contains this user record so frontend finds myRecord
+        const hasInCurrentList = (plan.registeredUsers || []).some(
+          (u) => u.email.toLowerCase() === args.userEmail.toLowerCase()
+        );
+        myAttended.push({
+          ...plan,
+          myRecord: attendedRecord,
+          attendedEdition: attendedEditionNum,
+          registeredUsers: hasInCurrentList ? plan.registeredUsers : [...(plan.registeredUsers || []), attendedRecord],
+        });
+      }
+    }
 
     return myAttended.sort((a, b) => b.updatedAt - a.updatedAt);
   },
@@ -407,7 +582,7 @@ export const getMyRegisteredLearnings = query({
     if (!args.userEmail) return [];
     const allPlans = await ctx.db.query("learningPlans").collect();
 
-    // Return plans where user is currently registered (or attended)
+    // Return plans where user is currently registered (or attended in current edition)
     const myRegistered = allPlans.filter((plan) => {
       const registeredUsers = plan.registeredUsers || [];
       return registeredUsers.some(
@@ -430,8 +605,19 @@ export const submitLearningProof = mutation({
     if (!plan) throw new Error("Plan not found");
 
     const currentUsers = plan.registeredUsers || [];
-    const updatedUsers = currentUsers.map(u => {
-      if (u.email.toLowerCase() === args.userEmail.toLowerCase()) {
+    const currentRecord = currentUsers.find((u) => u.email.toLowerCase() === args.userEmail.toLowerCase());
+    
+    // Check in past editions as well
+    const pastRecords = (plan.pastEditions || []).flatMap((ed: any) => ed.registeredUsers || []);
+    const pastRecord = pastRecords.find((u: any) => u.email.toLowerCase() === args.userEmail.toLowerCase());
+
+    const isAttended = Boolean(currentRecord?.attended || pastRecord?.attended);
+    if (!isAttended) {
+      throw new Error("Only participants marked as Attended by the session curator can submit completion links.");
+    }
+
+    const updatedUsers = currentUsers.map((u) => {
+      if (u.email.toLowerCase() === args.userEmail.toLowerCase() && u.attended) {
         return {
           ...u,
           submissionUrl: args.submissionUrl.trim(),
@@ -442,8 +628,24 @@ export const submitLearningProof = mutation({
       return u;
     });
 
+    const updatedPastEditions = (plan.pastEditions || []).map((ed: any) => ({
+      ...ed,
+      registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+        if (u.email.toLowerCase() === args.userEmail.toLowerCase() && u.attended) {
+          return {
+            ...u,
+            submissionUrl: args.submissionUrl.trim(),
+            submissionStatus: "PENDING" as const,
+            submittedAt: Date.now(),
+          };
+        }
+        return u;
+      }),
+    }));
+
     await ctx.db.patch(args.planId, {
       registeredUsers: updatedUsers,
+      pastEditions: updatedPastEditions,
       updatedAt: Date.now(),
     });
 
@@ -463,7 +665,7 @@ export const reviewLearningSubmission = mutation({
     if (!plan) throw new Error("Plan not found");
 
     const currentUsers = plan.registeredUsers || [];
-    const updatedUsers = currentUsers.map(u => {
+    const updatedUsers = currentUsers.map((u) => {
       if (u.email.toLowerCase() === args.userEmail.toLowerCase()) {
         return {
           ...u,
@@ -474,8 +676,23 @@ export const reviewLearningSubmission = mutation({
       return u;
     });
 
+    const updatedPastEditions = (plan.pastEditions || []).map((ed: any) => ({
+      ...ed,
+      registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+        if (u.email.toLowerCase() === args.userEmail.toLowerCase()) {
+          return {
+            ...u,
+            submissionStatus: args.status,
+            feedbackNote: args.feedbackNote || "",
+          };
+        }
+        return u;
+      }),
+    }));
+
     await ctx.db.patch(args.planId, {
       registeredUsers: updatedUsers,
+      pastEditions: updatedPastEditions,
       updatedAt: Date.now(),
     });
 
@@ -485,6 +702,7 @@ export const reviewLearningSubmission = mutation({
     };
   },
 });
+
 
 function formatUserForSheets(user: any) {
   return {

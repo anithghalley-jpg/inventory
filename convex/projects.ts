@@ -14,17 +14,16 @@ const VISIBLE_PROJECT_STATUSES = new Set([
   "DRAFT",
   "SETUP_PENDING",
   "SETUP_APPROVED",
-  "BOX_PENDING",
-  "BOX_APPROVED",
-  "PLAN_PENDING",
   "ACTIVE",
   "COMPLETED",
 ]);
 
 const lifecycleStatusValidator = v.union(
+  v.literal("ACTIVE"),
   v.literal("COMPLETED"),
   v.literal("ARCHIVED"),
 );
+
 
 const postKindValidator = v.union(
   v.literal("comment"),
@@ -379,68 +378,13 @@ async function buildProjectDetail(
       stage: "team_setup",
       title: "Project group created",
       description:
-        "The project group is ready for members to shape the team profile and prepare the first approval steps.",
+        "The project group is ready for members to shape the team profile. Once the team setup is approved, the project becomes active.",
       createdAt: project.createdAt,
-      status: "READY",
+      status: project.setupApprovedAt ? "APPROVED" : project.setupRejectionNote ? "REJECTED" : project.setupSubmittedAt ? "PENDING" : "READY",
       details: {
         projectName: project.name,
         teamImageUrl: project.teamImageUrl ?? "",
         memberCount: members.length,
-      },
-    },
-    {
-      itemType: "system" as const,
-      id: `${project.projectId}-box-stage`,
-      stage: "box",
-      title: questionConfig.boxTitle,
-      description: questionConfig.boxDescription,
-      createdAt: project.boxSubmittedAt || project.createdAt,
-      status:
-        project.status === "BOX_PENDING"
-          ? "PENDING"
-          : project.boxApprovedAt
-            ? "APPROVED"
-            : project.boxRejectionNote
-              ? "REJECTED"
-              : "WAITING",
-      details: {
-        imageUrl: project.boxImageUrl ?? "",
-        submittedAt: project.boxSubmittedAt ?? "",
-        approvedAt: project.boxApprovedAt ?? "",
-        approvedBy: project.boxApprovedBy ?? "",
-        rejectionNote: project.boxRejectionNote ?? "",
-      },
-    },
-    {
-      itemType: "system" as const,
-      id: `${project.projectId}-plan-stage`,
-      stage: "plan",
-      title: "Project planning",
-      description: project.planningFields?.length
-        ? `Submit responses for: ${project.planningFields.map((f) => f.label).join(", ")}`
-        : "Submit sketches, completed behavior, required materials, initial plans, and the first build step.",
-      createdAt: project.planSubmittedAt || project.createdAt,
-      status:
-        project.status === "PLAN_PENDING"
-          ? "PENDING"
-          : project.planApprovedAt
-            ? "APPROVED"
-            : project.planRejectionNote
-              ? "REJECTED"
-              : "WAITING",
-      details: {
-        prompts: questionConfig,
-        sketchImages: project.sketchImages ?? [],
-        completedBehavior: project.completedBehavior ?? "",
-        materialsRequired: project.materialsRequired ?? "",
-        initialPlans: project.initialPlans ?? "",
-        firstSteps: project.firstSteps ?? "",
-        submittedAt: project.planSubmittedAt ?? "",
-        approvedAt: project.planApprovedAt ?? "",
-        approvedBy: project.planApprovedBy ?? "",
-        rejectionNote: project.planRejectionNote ?? "",
-        planningFields: project.planningFields ?? [],
-        planningResponses: project.planningResponses ?? [],
       },
     },
   ];
@@ -673,23 +617,6 @@ export const upsertProject = mutation({
         updatedAt: now,
         lastActivityAt: now,
         teamImageUrl: "",
-        boxImageUrl: "",
-        boxSubmittedAt: "",
-        boxApprovedAt: "",
-        boxApprovedBy: "",
-        boxRejectionNote: "",
-        sketchImages: [],
-        completedBehavior: "",
-        materialsRequired: "",
-        initialPlans: "",
-        firstSteps: "",
-        planSubmittedAt: "",
-        planApprovedAt: "",
-        planApprovedBy: "",
-        planRejectionNote: "",
-        planningFields: args.planningFields ?? [],
-        planningResponses: [],
-        questionConfig: DEFAULT_QUESTION_CONFIG,
       });
       await logProjectHistory(ctx, projectId, "PROJECT_CREATED", args.actorEmail, "Admin", JSON.stringify({ name: trimmedName }));
     }
@@ -845,23 +772,16 @@ export const submitBox = mutation({
     if (!project) {
       throw new Error("Project not found");
     }
-    if (!["DRAFT", "SETUP_PENDING", "SETUP_APPROVED", "BOX_PENDING"].includes(project.status)) {
-      throw new Error("Box submission is not allowed at this stage");
-    }
-
+    // Box step removed — just save the image url for legacy/history purposes
     const now = new Date().toISOString();
     await ctx.db.patch(project._id, {
-      status: "BOX_PENDING",
       boxImageUrl: sanitizeText(args.boxImageUrl),
       boxSubmittedAt: now,
-      boxRejectionNote: "",
       updatedAt: now,
       lastActivityAt: now,
     });
-
     const user = await getUserByEmail(ctx, args.userEmail);
     await logProjectHistory(ctx, args.projectId, "BOX_SUBMITTED", args.userEmail, user?.name ?? "Team Member");
-
     return { success: true };
   },
 });
@@ -879,32 +799,17 @@ export const reviewBox = mutation({
     if (!project) {
       throw new Error("Project not found");
     }
-
+    // Box step removed — this mutation is kept for legacy compatibility only
     const now = new Date().toISOString();
-    await ctx.db.patch(
-      project._id,
-      args.approve
-        ? {
-            status: "BOX_APPROVED",
-            boxApprovedAt: now,
-            boxApprovedBy: args.actorEmail,
-            boxRejectionNote: "",
-            updatedAt: now,
-            lastActivityAt: now,
-          }
-        : {
-            status: "SETUP_APPROVED",   // stay at step 2 — step 1 approval is NOT revoked
-            boxApprovedAt: "",
-            boxApprovedBy: "",
-            boxRejectionNote: sanitizeText(args.rejectionNote ?? ""),
-            updatedAt: now,
-            lastActivityAt: now,
-          },
-    );
-
+    await ctx.db.patch(project._id, {
+      boxApprovedAt: args.approve ? now : "",
+      boxApprovedBy: args.approve ? args.actorEmail : "",
+      boxRejectionNote: args.approve ? "" : sanitizeText(args.rejectionNote ?? ""),
+      updatedAt: now,
+      lastActivityAt: now,
+    });
     const actor = await getUserByEmail(ctx, args.actorEmail);
     await logProjectHistory(ctx, args.projectId, args.approve ? "BOX_APPROVED" : "BOX_REJECTED", args.actorEmail, actor?.name ?? "Admin", args.approve ? undefined : args.rejectionNote);
-
     return { success: true };
   },
 });
@@ -995,38 +900,24 @@ export const reviewPlan = mutation({
     if (!project) {
       throw new Error("Project not found");
     }
-
+    // Plan step removed — this mutation is kept for legacy compatibility only
     const now = new Date().toISOString();
-    await ctx.db.patch(
-      project._id,
-      args.approve
-        ? {
-            status: "ACTIVE",
-            planApprovedAt: now,
-            planApprovedBy: args.actorEmail,
-            planRejectionNote: "",
-            updatedAt: now,
-            lastActivityAt: now,
-          }
-        : {
-            status: "BOX_APPROVED",
-            planApprovedAt: "",
-            planApprovedBy: "",
-            planRejectionNote: sanitizeText(args.rejectionNote ?? ""),
-            updatedAt: now,
-            lastActivityAt: now,
-          },
-    );
-
+    await ctx.db.patch(project._id, {
+      planApprovedAt: args.approve ? now : "",
+      planApprovedBy: args.approve ? args.actorEmail : "",
+      planRejectionNote: args.approve ? "" : sanitizeText(args.rejectionNote ?? ""),
+      updatedAt: now,
+      lastActivityAt: now,
+    });
     const actor = await getUserByEmail(ctx, args.actorEmail);
     await logProjectHistory(ctx, args.projectId, args.approve ? "PLAN_APPROVED" : "PLAN_REJECTED", args.actorEmail, actor?.name ?? "Admin", args.approve ? undefined : args.rejectionNote);
-
     return { success: true };
   },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Team Setup Stage
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Save a member's per-project profile image and role note. */
@@ -1048,6 +939,138 @@ export const updateMyProfile = mutation({
     return { success: true };
   },
 });
+
+/** Add a new member to an existing project (accessible by members, team, and admins). */
+export const addProjectMember = mutation({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+    newMemberEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const caller = await assertApprovedViewer(ctx, args.userEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    const members = await getProjectMembers(ctx, args.projectId);
+    const isCallerMember = members.some((m) => m.userEmail.toLowerCase() === caller.email.toLowerCase());
+    const isPrivileged = caller.role === "TEAM" || caller.role === "ADMIN";
+
+    if (!isCallerMember && !isPrivileged) {
+      throw new Error("Only project members, team, or admin can add new members");
+    }
+
+    const newMemberEmail = args.newMemberEmail.trim().toLowerCase();
+    if (members.some((m) => m.userEmail.toLowerCase() === newMemberEmail)) {
+      throw new Error("User is already a member of this project");
+    }
+
+    const newUser = await getUserByEmail(ctx, newMemberEmail);
+    if (!newUser || newUser.status !== "APPROVED") {
+      throw new Error("User not found or account is not approved");
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.insert("projectMembers", {
+      projectId: args.projectId,
+      userEmail: newUser.email,
+      userName: newUser.name,
+      userRole: newUser.role,
+      projectNote: "",
+      joinedAt: now,
+      order: members.length,
+    });
+
+    await touchProject(ctx, args.projectId, now);
+    await logProjectHistory(
+      ctx,
+      args.projectId,
+      "MEMBER_JOINED",
+      caller.email,
+      caller.name,
+      JSON.stringify({ memberAdded: newUser.name, email: newUser.email }),
+    );
+
+    return { success: true };
+  },
+});
+
+/** Remove a member from a project (accessible by members, team, and admins). */
+export const removeProjectMember = mutation({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+    memberEmailToRemove: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const caller = await assertApprovedViewer(ctx, args.userEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    const members = await getProjectMembers(ctx, args.projectId);
+    const isCallerMember = members.some((m) => m.userEmail.toLowerCase() === caller.email.toLowerCase());
+    const isPrivileged = caller.role === "TEAM" || caller.role === "ADMIN";
+
+    if (!isCallerMember && !isPrivileged) {
+      throw new Error("Only project members, team, or admin can remove members");
+    }
+
+    const targetEmail = args.memberEmailToRemove.trim().toLowerCase();
+    const targetMember = members.find((m) => m.userEmail.toLowerCase() === targetEmail);
+    if (!targetMember) {
+      throw new Error("Member not found in project");
+    }
+
+    if (members.length <= 1) {
+      throw new Error("A project must have at least one member");
+    }
+
+    await ctx.db.delete(targetMember._id);
+
+    // Remove any tagged items for this member in this project
+    const projectItems = await ctx.db
+      .query("projectItems")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .take(MAX_ITEMS_PER_PROJECT);
+    for (const item of projectItems) {
+      if (item.userEmail.toLowerCase() === targetEmail) {
+        await ctx.db.delete(item._id);
+      }
+    }
+
+    const now = new Date().toISOString();
+    await touchProject(ctx, args.projectId, now);
+    await logProjectHistory(
+      ctx,
+      args.projectId,
+      "MEMBER_REMOVED",
+      caller.email,
+      caller.name,
+      JSON.stringify({ memberRemoved: targetMember.userName, email: targetMember.userEmail }),
+    );
+
+    return { success: true };
+  },
+});
+
+/** Get approved users eligible to be added to projects. */
+export const getEligibleProjectUsers = query({
+  args: { userEmail: v.string() },
+  handler: async (ctx, args) => {
+    await assertApprovedViewer(ctx, args.userEmail);
+    const allUsers = await ctx.db.query("users").take(300);
+    return allUsers
+      .filter((u) => u.status === "APPROVED")
+      .map((u) => ({
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        profileImageUrl: u.profileImageUrl ?? "",
+      }));
+  },
+});
+
+
 
 /**
  * Any member can submit on behalf of the whole team.
@@ -1122,7 +1145,8 @@ export const reviewTeamSetup = mutation({
       project._id,
       args.approve
         ? {
-            status: "SETUP_APPROVED",
+            // Skip SETUP_APPROVED — jump directly to ACTIVE
+            status: "ACTIVE",
             setupApprovedAt: now,
             setupApprovedBy: args.actorEmail,
             setupRejectionNote: "",
@@ -1409,6 +1433,98 @@ export const addTimelinePost = mutation({
   },
 });
 
+export const updateTimelinePost = mutation({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+    entryId: v.string(),
+    body: v.string(),
+    kind: v.optional(postKindValidator),
+    images: v.optional(v.array(v.string())),
+    videos: v.optional(v.array(v.string())),
+    links: v.optional(v.array(linkValidator)),
+  },
+  handler: async (ctx, args) => {
+    const user = await assertApprovedViewer(ctx, args.userEmail);
+    const post = await ctx.db
+      .query("projectTimelineEntries")
+      .withIndex("by_entryId", (q) => q.eq("entryId", args.entryId))
+      .first();
+    if (!post || post.projectId !== args.projectId) {
+      throw new Error("Timeline post not found");
+    }
+
+    const isAuthor = post.authorEmail.toLowerCase() === user.email.toLowerCase();
+    const isPrivileged = user.role === "ADMIN" || user.role === "TEAM";
+    if (!isAuthor && !isPrivileged) {
+      throw new Error("You do not have permission to edit this post");
+    }
+
+    const body = sanitizeText(args.body);
+    if (!body) {
+      throw new Error("Post content is required");
+    }
+
+    const images = sanitizeUrlArray(args.images ?? post.images ?? []);
+    const videos = sanitizeUrlArray(args.videos ?? post.videos ?? []);
+    const links = sanitizeLinks(args.links ?? post.links ?? []);
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(post._id, {
+      body,
+      kind: args.kind ?? post.kind,
+      images,
+      videos,
+      links,
+      updatedAt: now,
+    });
+
+    await touchProject(ctx, args.projectId, now);
+    return { success: true };
+  },
+});
+
+export const deleteTimelinePost = mutation({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+    entryId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await assertApprovedViewer(ctx, args.userEmail);
+    const post = await ctx.db
+      .query("projectTimelineEntries")
+      .withIndex("by_entryId", (q) => q.eq("entryId", args.entryId))
+      .first();
+    if (!post || post.projectId !== args.projectId) {
+      throw new Error("Timeline post not found");
+    }
+
+    const isAuthor = post.authorEmail.toLowerCase() === user.email.toLowerCase();
+    const isPrivileged = user.role === "ADMIN" || user.role === "TEAM";
+    if (!isAuthor && !isPrivileged) {
+      throw new Error("You do not have permission to delete this post");
+    }
+
+    // Delete associated reactions
+    const reactions = await ctx.db
+      .query("projectEntryReactions")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .take(MAX_REACTIONS);
+    for (const reaction of reactions) {
+      if (reaction.entryId === args.entryId) {
+        await ctx.db.delete(reaction._id);
+      }
+    }
+
+    await ctx.db.delete(post._id);
+    const now = new Date().toISOString();
+    await touchProject(ctx, args.projectId, now);
+    return { success: true };
+  },
+});
+
+
 export const toggleProjectLike = mutation({
   args: {
     userEmail: v.string(),
@@ -1517,11 +1633,18 @@ export const setLifecycleStatus = mutation({
     });
 
     const actor = await getUserByEmail(ctx, args.actorEmail);
-    await logProjectHistory(ctx, args.projectId, args.status === "COMPLETED" ? "MARKED_COMPLETED" : "MARKED_ARCHIVED", args.actorEmail, actor?.name ?? "Admin");
+    const historyAction =
+      args.status === "ACTIVE"
+        ? "MARKED_ACTIVE"
+        : args.status === "COMPLETED"
+        ? "MARKED_COMPLETED"
+        : "MARKED_ARCHIVED";
+    await logProjectHistory(ctx, args.projectId, historyAction, args.actorEmail, actor?.name ?? "Admin");
 
     return { success: true };
   },
 });
+
 
 export const deleteProject = mutation({
   args: {
@@ -1733,5 +1856,42 @@ export const getProjectReportData = query({
       project: detail,
       history,
     };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One-time migration: move projects out of removed statuses
+// Run once from the Convex dashboard after deploying the schema change.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const migrateRemoveBoxPlanStatuses = mutation({
+  args: {
+    actorEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await assertAdmin(ctx, args.actorEmail);
+
+    const all = await ctx.db
+      .query("projects")
+      .withIndex("by_updatedAt")
+      .take(MAX_PROJECTS);
+
+    const now = new Date().toISOString();
+    let migrated = 0;
+
+    for (const project of all) {
+      const s = project.status as string;
+      if (s === "BOX_PENDING" || s === "BOX_APPROVED" || s === "PLAN_PENDING" || s === "SETUP_APPROVED") {
+        await ctx.db.patch(project._id, {
+          status: "ACTIVE",
+          updatedAt: now,
+          lastActivityAt: now,
+        } as any);
+        await logProjectHistory(ctx, project.projectId, "STATUS_MIGRATED", args.actorEmail, "System", `Migrated from ${s} to ACTIVE`);
+        migrated++;
+      }
+    }
+
+    return { migrated };
   },
 });

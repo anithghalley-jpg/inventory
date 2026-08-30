@@ -20,7 +20,7 @@ import MyPlansTab from '@/components/MyPlansTab';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -850,8 +850,6 @@ export default function TeamDashboard() {
         const s = project.status;
         // Show rejection alert only when the team needs to resubmit (rejection note present + not yet re-pending)
         if (s === 'DRAFT' && project.setupRejectionNote) return true;          // Setup rejected
-        if (s === 'SETUP_APPROVED' && project.boxRejectionNote) return true;   // Box rejected
-        if (s === 'BOX_APPROVED' && project.planRejectionNote) return true;    // Plan rejected
         return false;
     });
 
@@ -1066,10 +1064,8 @@ export default function TeamDashboard() {
                                 <div className="space-y-3">
                                     {projectRejectionAlerts.map((project) => {
                                         const isSetup = project.status === 'DRAFT' && project.setupRejectionNote;
-                                        const isBox = project.status === 'SETUP_APPROVED' && project.boxRejectionNote;
-                                        const isPlan = project.status === 'BOX_APPROVED' && project.planRejectionNote;
-                                        const stepLabel = isSetup ? 'Step 1 — Team Setup' : isBox ? 'Step 2 — Project Box' : 'Step 3 — Project Planning';
-                                        const note = (isSetup ? project.setupRejectionNote : isBox ? project.boxRejectionNote : project.planRejectionNote) ?? '';
+                                        const stepLabel = 'Step 1 — Team Setup';
+                                        const note = (isSetup ? project.setupRejectionNote : '') ?? '';
                                         return (
                                             <div
                                                 key={project.projectId}
@@ -2111,94 +2107,103 @@ export default function TeamDashboard() {
                                                     )}
                                                 </div>
 
-                                                {isApproved && (
-                                                    <div className="text-xs space-y-1.5 bg-emerald-50/80 p-3 rounded-lg border border-emerald-200 text-emerald-900">
-                                                        <p className="font-semibold">Your completion proof has been reviewed & approved by the session leader!</p>
-                                                        {myRecord.submissionUrl && (
-                                                            <p className="flex items-center gap-1">
-                                                                <span>Submitted Link:</span>
-                                                                <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold underline truncate max-w-sm">
-                                                                    {myRecord.submissionUrl}
-                                                                </a>
-                                                            </p>
+                                                {!myRecord.attended ? (
+                                                    <div className="text-xs p-3.5 rounded-xl bg-slate-50 text-slate-600 border border-slate-200/80 flex items-center gap-2.5">
+                                                        <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                                                        <span>You are registered for this session. Submission of completion proof links will be enabled once your attendance is marked as Attended by the session host.</span>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        {isApproved && (
+                                                            <div className="text-xs space-y-1.5 bg-emerald-50/80 p-3 rounded-lg border border-emerald-200 text-emerald-900">
+                                                                <p className="font-semibold">Your completion proof has been reviewed & approved by the session leader!</p>
+                                                                {myRecord.submissionUrl && (
+                                                                    <p className="flex items-center gap-1">
+                                                                        <span>Submitted Link:</span>
+                                                                        <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold underline truncate max-w-sm">
+                                                                            {myRecord.submissionUrl}
+                                                                        </a>
+                                                                    </p>
+                                                                )}
+                                                            </div>
                                                         )}
-                                                    </div>
-                                                )}
 
-                                                {isRejected && (
-                                                    <div className="text-xs space-y-2 bg-rose-50/80 p-3 rounded-lg border border-rose-200 text-rose-900">
-                                                        <p className="font-bold text-rose-800 flex items-center gap-1">
-                                                            ⚠️ Follow-up Requested by Publisher
-                                                        </p>
-                                                        {myRecord.feedbackNote && (
-                                                            <p className="italic bg-white/90 p-2.5 rounded-md border border-rose-200 text-rose-800 font-medium">
-                                                                Note from curator: "{myRecord.feedbackNote}"
-                                                            </p>
+                                                        {isRejected && (
+                                                            <div className="text-xs space-y-2 bg-rose-50/80 p-3 rounded-lg border border-rose-200 text-rose-900">
+                                                                <p className="font-bold text-rose-800 flex items-center gap-1">
+                                                                    ⚠️ Follow-up Requested by Publisher
+                                                                </p>
+                                                                {myRecord.feedbackNote && (
+                                                                    <p className="italic bg-white/90 p-2.5 rounded-md border border-rose-200 text-rose-800 font-medium">
+                                                                        Note from curator: "{myRecord.feedbackNote}"
+                                                                    </p>
+                                                                )}
+                                                                <p className="text-slate-600">Please review the notes above and submit a new project link below:</p>
+                                                            </div>
                                                         )}
-                                                        <p className="text-slate-600">Please review the notes above and submit a new project link below:</p>
-                                                    </div>
-                                                )}
 
-                                                {isPending && (
-                                                    <div className="text-xs space-y-1.5 bg-amber-50/80 p-3 rounded-lg border border-amber-200 text-amber-900">
-                                                        <p className="font-semibold">Your submission is currently under review by the session publisher & collaborators.</p>
-                                                        {myRecord.submissionUrl && (
-                                                            <p className="flex items-center gap-1">
-                                                                <span>Submitted Link:</span>
-                                                                <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-amber-800 font-bold underline truncate max-w-sm">
-                                                                    {myRecord.submissionUrl}
-                                                                </a>
-                                                            </p>
+                                                        {isPending && (
+                                                            <div className="text-xs space-y-1.5 bg-amber-50/80 p-3 rounded-lg border border-amber-200 text-amber-900">
+                                                                <p className="font-semibold">Your submission is currently under review by the session publisher & collaborators.</p>
+                                                                {myRecord.submissionUrl && (
+                                                                    <p className="flex items-center gap-1">
+                                                                        <span>Submitted Link:</span>
+                                                                        <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-amber-800 font-bold underline truncate max-w-sm">
+                                                                            {myRecord.submissionUrl}
+                                                                        </a>
+                                                                    </p>
+                                                                )}
+                                                            </div>
                                                         )}
-                                                    </div>
-                                                )}
 
-                                                {(!isApproved || isRejected) && (
-                                                    <div className="space-y-2 pt-1">
-                                                        <label className="text-xs font-medium text-slate-700 block">
-                                                            {myRecord.submissionUrl ? "Update / Resubmit Completion Link:" : "Paste link to project / proof of completion (GitHub, Drive, Docs, etc.):"}
-                                                        </label>
-                                                        <div className="flex gap-2">
-                                                            <Input
-                                                                type="url"
-                                                                placeholder="https://github.com/..."
-                                                                value={submissionUrlInput}
-                                                                onChange={(e) => setSubmissionUrlInput(e.target.value)}
-                                                                className="text-xs h-9 flex-1"
-                                                            />
-                                                            <Button
-                                                                size="sm"
-                                                                onClick={async () => {
-                                                                    if (!submissionUrlInput.trim()) {
-                                                                        toast.error("Please enter a valid link");
-                                                                        return;
-                                                                    }
-                                                                    try {
-                                                                        const res = await submitLearningProof({
-                                                                            planId: selectedExperience._id,
-                                                                            userEmail: user?.email || "",
-                                                                            submissionUrl: submissionUrlInput
-                                                                        });
-                                                                        toast.success(res.message);
-                                                                        setSubmissionUrlInput("");
-                                                                        setSelectedExperience((prev: any) => ({
-                                                                            ...prev,
-                                                                            registeredUsers: prev.registeredUsers.map((usr: any) =>
-                                                                                usr.email.toLowerCase() === user?.email?.toLowerCase()
-                                                                                    ? { ...usr, submissionUrl: submissionUrlInput, submissionStatus: "PENDING" }
-                                                                                    : usr
-                                                                            )
-                                                                        }));
-                                                                    } catch (e: any) {
-                                                                        toast.error(e.message || "Failed to submit link");
-                                                                    }
-                                                                }}
-                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-9 rounded-lg shrink-0 px-4"
-                                                            >
-                                                                {myRecord.submissionUrl ? "Resubmit Link" : "Submit for Review"}
-                                                            </Button>
-                                                        </div>
-                                                    </div>
+                                                        {(!isApproved || isRejected) && (
+                                                            <div className="space-y-2 pt-1">
+                                                                <label className="text-xs font-medium text-slate-700 block">
+                                                                    {myRecord.submissionUrl ? "Update / Resubmit Completion Link:" : "Paste link to project / proof of completion (GitHub, Drive, Docs, etc.):"}
+                                                                </label>
+                                                                <div className="flex gap-2">
+                                                                    <Input
+                                                                        type="url"
+                                                                        placeholder="https://github.com/..."
+                                                                        value={submissionUrlInput}
+                                                                        onChange={(e) => setSubmissionUrlInput(e.target.value)}
+                                                                        className="text-xs h-9 flex-1"
+                                                                    />
+                                                                    <Button
+                                                                        size="sm"
+                                                                        onClick={async () => {
+                                                                            if (!submissionUrlInput.trim()) {
+                                                                                toast.error("Please enter a valid link");
+                                                                                return;
+                                                                            }
+                                                                            try {
+                                                                                const res = await submitLearningProof({
+                                                                                    planId: selectedExperience._id,
+                                                                                    userEmail: user?.email || "",
+                                                                                    submissionUrl: submissionUrlInput
+                                                                                });
+                                                                                toast.success(res.message);
+                                                                                setSubmissionUrlInput("");
+                                                                                setSelectedExperience((prev: any) => ({
+                                                                                    ...prev,
+                                                                                    registeredUsers: prev.registeredUsers.map((usr: any) =>
+                                                                                        usr.email.toLowerCase() === user?.email?.toLowerCase()
+                                                                                            ? { ...usr, submissionUrl: submissionUrlInput, submissionStatus: "PENDING" }
+                                                                                            : usr
+                                                                                    )
+                                                                                }));
+                                                                            } catch (e: any) {
+                                                                                toast.error(e.message || "Failed to submit link");
+                                                                            }
+                                                                        }}
+                                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-9 rounded-lg shrink-0 px-4"
+                                                                    >
+                                                                        {myRecord.submissionUrl ? "Resubmit Link" : "Submit for Review"}
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         );

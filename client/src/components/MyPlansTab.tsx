@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Edit, Trash, Plus, FileText, Image as ImageIcon, Video, Link as LinkIcon, Users, X, CheckCircle2, UserX, Square, CheckCircle, Award, ThumbsUp, ThumbsDown, ExternalLink, Star, Clock, Calendar, Tag, MapPin } from "lucide-react";
+import { Edit, Trash, Plus, FileText, Image as ImageIcon, Video, Link as LinkIcon, Users, X, CheckCircle2, UserX, Square, CheckCircle, Award, ThumbsUp, ThumbsDown, ExternalLink, Star, Clock, Calendar, Tag, MapPin, History, UserPlus, Search, Filter, RotateCcw } from "lucide-react";
 import { getOptimizedImageUrl } from "@/lib/utils";
 import { SCRIPT_URL } from "@/config";
 
@@ -20,6 +20,7 @@ interface MyPlansTabProps {
 export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const { user } = useAuth();
   const myPlans = useQuery(api.learningPlans.getMyPlans, { userEmail: user?.email || "" });
+  const allUsers = useQuery(api.users.getAll);
   const createPlan = useMutation(api.learningPlans.createPlan);
   const updatePlan = useMutation(api.learningPlans.updatePlan);
   const deletePlan = useMutation(api.learningPlans.deletePlan);
@@ -28,6 +29,8 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const setPlanStatus = useMutation(api.learningPlans.setPlanStatus);
   const reviewLearningSubmission = useMutation(api.learningPlans.reviewLearningSubmission);
   const completeSessionWithTags = useMutation(api.learningPlans.completeSessionWithTags);
+  const addParticipantManual = useMutation(api.learningPlans.addParticipantManual);
+  const deletePastEdition = useMutation(api.learningPlans.deletePastEdition);
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<any>(null);
@@ -51,6 +54,17 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const [selectedCollaborators, setSelectedCollaborators] = useState<string[]>([]);
 
   const [viewPlan, setViewPlan] = useState<any>(null);
+  const [viewPlanEditionTab, setViewPlanEditionTab] = useState<string>("current");
+  const [participantSubTab, setParticipantSubTab] = useState<"all" | "confirmed" | "standby" | "attended" | "absent">("all");
+  const [participantSearchQuery, setParticipantSearchQuery] = useState("");
+
+  // Manual Add Participant Modal State
+  const [showAddParticipantModal, setShowAddParticipantModal] = useState(false);
+  const [manualAddUserEmail, setManualAddUserEmail] = useState("");
+  const [manualAddUserName, setManualAddUserName] = useState("");
+  const [manualAddAttended, setManualAddAttended] = useState(true);
+  const [isSubmittingManualAdd, setIsSubmittingManualAdd] = useState(false);
+
 
   const resetForm = () => {
     setTitle("");
@@ -432,47 +446,71 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
         </DialogContent>
       </Dialog>
 
+      {/* ── Expanded Plan Details & Management Dialog (Mild Neumorphism) ── */}
       <Dialog open={!!viewPlan} onOpenChange={(open) => !open && setViewPlan(null)}>
-        <DialogContent className="max-w-4xl lg:max-w-5xl max-h-[92vh] overflow-y-auto p-6 md:p-8">
-          <DialogHeader className="flex flex-row items-center justify-between pr-4">
-            <DialogTitle className="text-2xl font-extrabold text-slate-900">{viewPlan?.title}</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-4xl lg:max-w-5xl max-h-[92vh] overflow-y-auto p-5 md:p-8 bg-slate-50/70 border-slate-200/90 rounded-[2rem] shadow-2xl">
           {viewPlan && (
-            <div className="space-y-6 py-2">
-              {viewPlan.imageUrls && viewPlan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
-                <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center max-h-64">
-                  <img
-                    src={getOptimizedImageUrl(viewPlan.imageUrls.find((u: string) => typeof u === "string" && u.trim().length > 5))}
-                    alt={viewPlan.title}
-                    className="w-full h-auto max-h-64 object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              )}
-              
-              <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-slate-500">Status:</span>
-                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${viewPlan.status === 'COMPLETED' ? 'bg-purple-100 text-purple-700 border border-purple-200' : viewPlan.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            <div className="space-y-6">
+              {/* ── Top Header with Plan Title & Close ── */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-200/80">
+                <div className="space-y-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${
+                      viewPlan.status === 'COMPLETED'
+                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                        : viewPlan.status === 'PUBLISHED'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}>
                       {viewPlan.status}
                     </span>
+                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      Edition {viewPlan.edition || 1}
+                    </span>
+                    {viewPlan.completedEditionsCount > 0 && (
+                      <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+                        {viewPlan.completedEditionsCount} {viewPlan.completedEditionsCount === 1 ? "Edition" : "Editions"} Total
+                      </span>
+                    )}
                   </div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">{viewPlan.title}</h2>
                   {(viewPlan.date || viewPlan.time || viewPlan.location) && (
-                    <div className="text-xs text-slate-500 font-medium flex flex-wrap gap-x-3 gap-y-1 pt-1">
-                      {viewPlan.date && <span>📅 {viewPlan.date}</span>}
-                      {viewPlan.time && <span>⏰ {viewPlan.time}</span>}
-                      {viewPlan.location && <span>📍 {viewPlan.location}</span>}
+                    <div className="text-xs text-slate-600 font-medium flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+                      {viewPlan.date && (
+                        <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                          {viewPlan.date}
+                        </span>
+                      )}
+                      {viewPlan.time && (
+                        <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                          <Clock className="w-3.5 h-3.5 text-blue-600" />
+                          {viewPlan.time}
+                        </span>
+                      )}
+                      {viewPlan.location && (
+                        <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                          <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                          {viewPlan.location}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
 
-                {viewPlan.status === "COMPLETED" ? (
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-purple-900 bg-purple-100 border border-purple-300 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
-                      <Award className="w-3.5 h-3.5 text-purple-600" />
-                      Completed • Tag: {viewPlan.awardedTag || viewPlan.tags?.[0] || 'Mastery'} 🎉
-                    </span>
+                {/* Top Action Controls */}
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleEdit(viewPlan)}
+                    className="neumorph-btn h-9 text-xs font-semibold text-slate-700 rounded-xl gap-1.5"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-slate-500" />
+                    Edit Plan Details
+                  </Button>
+
+                  {viewPlan.status === "COMPLETED" ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -485,283 +523,818 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                           toast.error(e.message || "Failed to update status");
                         }
                       }}
-                      className="text-amber-700 border-amber-300 hover:bg-amber-50 font-semibold text-xs rounded-full"
+                      className="h-9 text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100 font-bold text-xs rounded-xl"
                     >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
                       Re-open Session
                     </Button>
-                  </div>
-                ) : (
-                  (() => {
-                    const attendedUsers = viewPlan.registeredUsers?.filter((u: any) => u.attended) || [];
-                    const approvedUsers = attendedUsers.filter((u: any) => u.submissionStatus === "APPROVED");
-                    const allApproved = (viewPlan.registeredUsers?.length || 0) === 0 || (attendedUsers.length > 0 && approvedUsers.length === attendedUsers.length);
+                  ) : (
+                    (() => {
+                      const attendedUsers = viewPlan.registeredUsers?.filter((u: any) => u.attended) || [];
+                      const approvedUsers = attendedUsers.filter((u: any) => u.submissionStatus === "APPROVED");
+                      const allApproved = (viewPlan.registeredUsers?.length || 0) === 0 || (attendedUsers.length > 0 && approvedUsers.length === attendedUsers.length);
 
-                    if (allApproved) {
+                      if (allApproved) {
+                        return (
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setAwardTagInput(viewPlan.tags?.[0] || "3D");
+                              setShowAwardTagModal(true);
+                            }}
+                            className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-sm px-4 h-9 flex items-center gap-1.5"
+                          >
+                            <Award className="w-3.5 h-3.5" />
+                            Complete & Award Tag 🎉
+                          </Button>
+                        );
+                      }
+
                       return (
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setAwardTagInput(viewPlan.tags?.[0] || "3D");
-                            setShowAwardTagModal(true);
-                          }}
-                          className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-full shadow-md px-4 py-2 flex items-center gap-1.5"
-                        >
-                          <Award className="w-4 h-4" />
-                          Complete & Award Mastery Tag 🎉
-                        </Button>
+                        <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs text-amber-900 font-semibold h-9">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
+                          <span>Awaiting Approvals ({approvedUsers.length}/{attendedUsers.length})</span>
+                        </div>
                       );
-                    }
-
-                    return (
-                      <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs text-amber-900 font-semibold">
-                        <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
-                        <span>Awaiting Proof Approvals ({approvedUsers.length}/{attendedUsers.length} Approved)</span>
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-semibold text-slate-900 mb-2 text-sm">Description</h4>
-                <p className="text-sm text-slate-600 whitespace-pre-wrap bg-white p-3 rounded-lg border border-slate-100">{viewPlan.description}</p>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
-                  <h4 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
-                    <Users className="w-4 h-4 text-emerald-600" />
-                    Registered Participants ({viewPlan.registeredUsers?.length || 0})
-                  </h4>
-                  {viewPlan.registeredUsers?.length > 0 && (
-                    <span className="text-xs text-slate-500 font-medium">
-                      {viewPlan.registeredUsers.filter((u: any) => u.attended).length} / {viewPlan.registeredUsers.length} Attended
-                    </span>
+                    })()
                   )}
                 </div>
+              </div>
 
-                {viewPlan.registeredUsers?.length > 0 ? (
-                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-72 overflow-y-auto bg-white shadow-sm">
-                    {viewPlan.registeredUsers.map((u: any, i: number) => (
-                      <div key={i} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {u.submissionStatus === "APPROVED" && (
-                              <Star className="w-4 h-4 fill-amber-400 text-amber-500 shrink-0" />
-                            )}
-                            <p className="font-semibold text-sm text-slate-900">{u.name}</p>
-                            {u.submissionStatus === "APPROVED" && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
-                                <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
-                                Starred Experience ⭐
-                              </span>
-                            )}
-                            {u.submissionStatus === "REJECTED" && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
-                                Needs Follow-up ❌
-                              </span>
-                            )}
-                            {u.submissionStatus === "PENDING" && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                                Pending Review ⏳
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500">{u.email}</p>
-                          
-                          {u.submissionUrl && (
-                            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/80 px-2.5 py-1 rounded-md max-w-md border border-slate-200">
-                              <LinkIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <span className="font-medium shrink-0">Submitted Link:</span>
-                              <a
-                                href={u.submissionUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-emerald-600 hover:text-emerald-700 underline font-semibold truncate max-w-[200px]"
-                              >
-                                {u.submissionUrl}
-                              </a>
-                              <a href={u.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-slate-600">
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            </div>
-                          )}
+              {/* ── Cover Image & Plan Description ── */}
+              {viewPlan.imageUrls && viewPlan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
+                <div className="neumorph-card rounded-2xl overflow-hidden max-h-56 bg-slate-100 flex items-center justify-center">
+                  <img
+                    src={getOptimizedImageUrl(viewPlan.imageUrls.find((u: string) => typeof u === "string" && u.trim().length > 5))}
+                    alt={viewPlan.title}
+                    className="w-full h-full max-h-56 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              )}
 
-                          {u.feedbackNote && (
-                            <p className="text-[11px] text-rose-600 italic mt-1 font-medium">
-                              Note sent: "{u.feedbackNote}"
-                            </p>
-                          )}
+              {/* Description & Tags Inset Well */}
+              <div className="neumorph-inset p-4 sm:p-5 rounded-2xl bg-white space-y-3">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  Plan Overview & Objectives
+                </h4>
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{viewPlan.description}</p>
+
+                {viewPlan.tags && viewPlan.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+                    {viewPlan.tags.map((tag: string) => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg">
+                        <Tag className="w-3 h-3 text-slate-400" />
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Scalable Editions Navigation System ── */}
+              <div className="neumorph-card p-4 sm:p-5 bg-white space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs">
+                      <History className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Session Editions ({(viewPlan.pastEditions?.length || 0) + 1} Total)
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        Select an edition below to manage attendance, waiting list, and project proof reviews
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scalable Edition Tabs Group */}
+                <div className="flex gap-2 overflow-x-auto pb-1.5 hide-scrollbar">
+                  {/* Current Session Tab */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewPlanEditionTab("current");
+                      setParticipantSubTab("all");
+                      setParticipantSearchQuery("");
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2 ${
+                      viewPlanEditionTab === "current"
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "neumorph-btn text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Edition {viewPlan.edition || 1} (Current)</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                      viewPlanEditionTab === "current" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {viewPlan.registeredUsers?.length || 0} Registered
+                    </span>
+                  </button>
+
+                  {/* Past Edition Tabs */}
+                  {(viewPlan.pastEditions || []).length > 0 &&
+                    [...viewPlan.pastEditions].reverse().map((ed: any) => {
+                      const isSelected = viewPlanEditionTab === `past-${ed.editionNumber}`;
+                      const attendedCount = (ed.registeredUsers || []).filter((u: any) => u.attended).length;
+                      return (
+                        <button
+                          key={ed.editionNumber}
+                          type="button"
+                          onClick={() => {
+                            setViewPlanEditionTab(`past-${ed.editionNumber}`);
+                            setParticipantSubTab("all");
+                            setParticipantSearchQuery("");
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2 ${
+                            isSelected
+                              ? "bg-purple-700 text-white shadow-sm"
+                              : "neumorph-btn text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-purple-300" />
+                          <span>Edition {ed.editionNumber} {ed.date ? `(${ed.date})` : "(Past)"}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                            isSelected ? "bg-white/20 text-white" : "bg-purple-50 text-purple-800 border border-purple-200"
+                          }`}>
+                            {attendedCount} Attended
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+
+                {/* ── Active Edition Participant Roster & Controls ── */}
+                {(() => {
+                  const isViewingPast = viewPlanEditionTab.startsWith("past-");
+                  const pastNum = isViewingPast ? parseInt(viewPlanEditionTab.replace("past-", ""), 10) : null;
+                  const activePast = pastNum ? (viewPlan.pastEditions || []).find((p: any) => p.editionNumber === pastNum) : null;
+                  const activeEditionNumber = isViewingPast ? pastNum! : (viewPlan.edition || 1);
+                  const maxCap = viewPlan.maxParticipants || 20;
+
+                  const rawUsers = isViewingPast ? (activePast?.registeredUsers || []) : (viewPlan.registeredUsers || []);
+                  const sortedActiveUsers = [...rawUsers].sort((a: any, b: any) => (a.registeredAt || 0) - (b.registeredAt || 0));
+
+                  const confirmedUsers = sortedActiveUsers.slice(0, maxCap);
+                  const standbyUsers = sortedActiveUsers.slice(maxCap);
+                  const attendedUsers = sortedActiveUsers.filter((u: any) => u.attended === true);
+                  const absentUsers = sortedActiveUsers.filter((u: any) => !u.attended);
+                  const attendedWithSubmissions = attendedUsers.filter((u: any) => u.submissionUrl);
+                  const approvedUsers = attendedUsers.filter((u: any) => u.submissionStatus === "APPROVED");
+
+                  let displayUsers =
+                    participantSubTab === "all"
+                      ? sortedActiveUsers
+                      : participantSubTab === "confirmed"
+                      ? confirmedUsers
+                      : participantSubTab === "standby"
+                      ? standbyUsers
+                      : participantSubTab === "attended"
+                      ? attendedUsers
+                      : absentUsers;
+
+                  if (participantSearchQuery.trim()) {
+                    const q = participantSearchQuery.toLowerCase().trim();
+                    displayUsers = displayUsers.filter(
+                      (u: any) => u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4 pt-2">
+                      {/* Edition Metrics Summary Row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <div className="neumorph-inset p-3 rounded-xl bg-slate-50/60 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Confirmed Spots</span>
+                          <span className="text-base font-black text-emerald-800">
+                            {confirmedUsers.length} <span className="text-xs font-semibold text-slate-400">/ {maxCap}</span>
+                          </span>
+                        </div>
+                        <div className="neumorph-inset p-3 rounded-xl bg-slate-50/60 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attended</span>
+                          <span className="text-base font-black text-purple-800">{attendedUsers.length}</span>
+                        </div>
+                        <div className="neumorph-inset p-3 rounded-xl bg-slate-50/60 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Waiting List</span>
+                          <span className="text-base font-black text-amber-800">{standbyUsers.length}</span>
+                        </div>
+                        <div className="neumorph-inset p-3 rounded-xl bg-slate-50/60 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Proofs Approved</span>
+                          <span className="text-base font-black text-indigo-800">
+                            {approvedUsers.length} <span className="text-xs font-semibold text-slate-400">/ {attendedWithSubmissions.length}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Toolbar Row: Action Buttons & Subtabs */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                        {/* Subtabs for Filtering */}
+                        <div className="flex gap-1.5 overflow-x-auto pb-1 hide-scrollbar">
+                          <button
+                            type="button"
+                            onClick={() => setParticipantSubTab("all")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                              participantSubTab === "all"
+                                ? "bg-slate-900 text-white shadow-xs font-bold"
+                                : "neumorph-btn text-slate-600"
+                            }`}
+                          >
+                            All ({sortedActiveUsers.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setParticipantSubTab("confirmed")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                              participantSubTab === "confirmed"
+                                ? "bg-emerald-700 text-white shadow-xs font-bold"
+                                : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200"
+                            }`}
+                          >
+                            <span>Confirmed</span>
+                            <span className="font-extrabold text-[10px]">({confirmedUsers.length}/{maxCap})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setParticipantSubTab("standby")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                              participantSubTab === "standby"
+                                ? "bg-amber-700 text-white shadow-xs font-bold"
+                                : "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200"
+                            }`}
+                          >
+                            <span>Waiting</span>
+                            <span className="font-extrabold text-[10px]">({standbyUsers.length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setParticipantSubTab("attended")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                              participantSubTab === "attended"
+                                ? "bg-purple-700 text-white shadow-xs font-bold"
+                                : "bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
+                            }`}
+                          >
+                            <span>Attended</span>
+                            <span className="font-extrabold text-[10px]">({attendedUsers.length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setParticipantSubTab("absent")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                              participantSubTab === "absent"
+                                ? "bg-rose-700 text-white shadow-xs font-bold"
+                                : "bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200"
+                            }`}
+                          >
+                            <span>Unattended</span>
+                            <span className="font-extrabold text-[10px]">({absentUsers.length})</span>
+                          </button>
                         </div>
 
+                        {/* Search & Add Controls */}
                         <div className="flex items-center gap-2 shrink-0">
-                          {u.submissionUrl && (
-                            <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Approve Completion (Thumbs Up)"
-                                onClick={async () => {
+                          <div className="relative w-full sm:w-44">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Input
+                              placeholder="Search participant..."
+                              value={participantSearchQuery}
+                              onChange={(e) => setParticipantSearchQuery(e.target.value)}
+                              className="h-8 text-xs pl-8 pr-2.5 rounded-xl border-slate-200 bg-white"
+                            />
+                          </div>
+
+                          <Button
+                            size="sm"
+                            type="button"
+                            onClick={() => {
+                              setManualAddUserEmail("");
+                              setManualAddUserName("");
+                              setManualAddAttended(isViewingPast || viewPlan.status === "COMPLETED");
+                              setShowAddParticipantModal(true);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 h-8 px-3"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>Add</span>
+                          </Button>
+
+                          {isViewingPast && (
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              onClick={async () => {
+                                if (window.confirm(`Are you sure you want to permanently delete Edition ${pastNum} from past records? All participant and attendance history for this edition will be removed.`)) {
                                   try {
-                                    const res = await reviewLearningSubmission({
+                                    const res = await deletePastEdition({
                                       planId: viewPlan._id,
-                                      userEmail: u.email,
-                                      status: "APPROVED"
+                                      editionNumber: pastNum!,
+                                      actorEmail: user?.email || "",
                                     });
                                     toast.success(res.message);
-                                    setViewPlan((p: any) => ({
-                                      ...p,
-                                      registeredUsers: p.registeredUsers.map((usr: any) =>
-                                        usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "APPROVED" } : usr
-                                      )
+                                    const updatedPast = (viewPlan.pastEditions || []).filter((p: any) => p.editionNumber !== pastNum);
+                                    setViewPlan((prev: any) => ({
+                                      ...prev,
+                                      pastEditions: updatedPast,
+                                      completedEditionsCount: Math.max(0, updatedPast.length + (prev.status === "COMPLETED" ? 1 : 0))
                                     }));
+                                    setViewPlanEditionTab("current");
                                   } catch (e: any) {
-                                    toast.error(e.message || "Failed to approve submission");
+                                    toast.error(e.message || "Failed to delete edition");
                                   }
-                                }}
-                                className={`h-8 px-2.5 rounded-md font-semibold text-xs transition-all gap-1 ${
-                                  u.submissionStatus === "APPROVED"
-                                    ? "bg-emerald-600 text-white shadow-sm"
-                                    : "text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800"
-                                }`}
-                              >
-                                <ThumbsUp className="w-3.5 h-3.5" />
-                                <span>Approve</span>
-                              </Button>
-
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Red Mark / Request Revision (Thumbs Down)"
-                                onClick={async () => {
-                                  const feedbackNote = window.prompt(`Enter follow-up note / instructions for ${u.name}:`) || "";
-                                  try {
-                                    const res = await reviewLearningSubmission({
-                                      planId: viewPlan._id,
-                                      userEmail: u.email,
-                                      status: "REJECTED",
-                                      feedbackNote
-                                    });
-                                    toast.success(res.message);
-                                    setViewPlan((p: any) => ({
-                                      ...p,
-                                      registeredUsers: p.registeredUsers.map((usr: any) =>
-                                        usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "REJECTED", feedbackNote } : usr
-                                      )
-                                    }));
-                                  } catch (e: any) {
-                                    toast.error(e.message || "Failed to request follow-up");
-                                  }
-                                }}
-                                className={`h-8 px-2.5 rounded-md font-semibold text-xs transition-all gap-1 ${
-                                  u.submissionStatus === "REJECTED"
-                                    ? "bg-rose-600 text-white shadow-sm"
-                                    : "text-rose-600 hover:bg-rose-100 hover:text-rose-800"
-                                }`}
-                              >
-                                <ThumbsDown className="w-3.5 h-3.5" />
-                                <span>Red Mark</span>
-                              </Button>
-                            </div>
-                          )}
-
-                          {viewPlan.status === "COMPLETED" ? (
-                            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
-                              {u.attended ? "Attended ✓" : "Absence Noted"}
-                            </span>
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant={u.attended ? "default" : "outline"}
-                                onClick={async () => {
-                                  try {
-                                    const newAttended = !u.attended;
-                                    const res = await toggleAttendance({ planId: viewPlan._id, userEmail: u.email, attended: newAttended });
-                                    toast.success(res.message);
-                                    setViewPlan((p: any) => ({
-                                      ...p,
-                                      registeredUsers: p.registeredUsers.map((usr: any) =>
-                                        usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, attended: newAttended } : usr
-                                      )
-                                    }));
-                                  } catch (e: any) {
-                                    toast.error(e.message || "Failed to update attendance");
-                                  }
-                                }}
-                                className={`text-xs h-8 px-3 rounded-full font-medium transition-all ${
-                                  u.attended
-                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
-                                    : 'text-slate-600 border-slate-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'
-                                }`}
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                                {u.attended ? "Attended" : "Mark Present"}
-                              </Button>
-
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                title="Remove participant"
-                                onClick={async () => {
-                                  if (window.confirm(`Are you sure you want to remove ${u.name} from this session?`)) {
-                                    try {
-                                      const res = await removeParticipant({ planId: viewPlan._id, userEmail: u.email });
-                                      toast.success(res.message);
-                                      setViewPlan((p: any) => ({
-                                        ...p,
-                                        registeredUsers: p.registeredUsers.filter((usr: any) => usr.email.toLowerCase() !== u.email.toLowerCase())
-                                      }));
-                                    } catch (e: any) {
-                                      toast.error(e.message || "Failed to remove participant");
-                                    }
-                                  }
-                                }}
-                                className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full"
-                              >
-                                <UserX className="w-4 h-4" />
-                              </Button>
-                            </>
+                                }
+                              }}
+                              className="text-rose-600 border-rose-200 hover:bg-rose-50 font-semibold text-xs rounded-xl h-8 px-2.5 flex items-center gap-1"
+                              title="Delete this historical edition"
+                            >
+                              <Trash className="w-3.5 h-3.5" />
+                            </Button>
                           )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500 italic py-4 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    No participants have registered for this session yet.
-                  </p>
-                )}
 
-                {viewPlan.registeredUsers?.length > 0 && (
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between bg-purple-50/50 p-3 rounded-xl border border-purple-100">
-                    <div>
-                      <p className="text-xs font-semibold text-purple-900">Finish Attendance</p>
-                      <p className="text-[11px] text-purple-700">Mark session complete so attended students receive their Learning Experience.</p>
+                      {/* ── Participant List Cards (Mild Neumorphism) ── */}
+                      {displayUsers.length > 0 ? (
+                        <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                          {displayUsers.map((u: any, i: number) => {
+                            const originalIndex = sortedActiveUsers.findIndex(
+                              (usr: any) => usr.email.toLowerCase() === u.email.toLowerCase()
+                            );
+                            const isConfirmedSpot = originalIndex >= 0 && originalIndex < maxCap;
+                            const isStandbySpot = originalIndex >= maxCap;
+
+                            return (
+                              <div
+                                key={i}
+                                className="neumorph-inset p-3.5 rounded-2xl bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 border border-slate-200/80 transition-all hover:bg-slate-50/70"
+                              >
+                                {/* Left: User Info & Submission Link */}
+                                <div className="min-w-0 flex-1 space-y-1.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {isConfirmedSpot && (
+                                      <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                        #{originalIndex + 1} Confirmed
+                                      </span>
+                                    )}
+                                    {isStandbySpot && (
+                                      <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                        #{originalIndex + 1} Waiting List
+                                      </span>
+                                    )}
+
+                                    <p className="font-bold text-sm text-slate-900 truncate">{u.name}</p>
+
+                                    {u.attended ? (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        Attended ✓
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                        Unattended / Absent
+                                      </span>
+                                    )}
+
+                                    {u.attended && u.submissionStatus === "APPROVED" && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                                        <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                                        Approved ⭐
+                                      </span>
+                                    )}
+                                    {u.attended && u.submissionStatus === "REJECTED" && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                                        Needs Revision ❌
+                                      </span>
+                                    )}
+                                    {u.attended && u.submissionStatus === "PENDING" && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                                        Pending Review ⏳
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                                    <span className="font-medium">{u.email}</span>
+                                    {u.registeredAt && (
+                                      <span className="text-[11px] text-slate-400">
+                                        • Registered {new Date(u.registeredAt).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Submission Link Gating: Only for Attended participants */}
+                                  {u.attended ? (
+                                    u.submissionUrl ? (
+                                      <div className="pt-1">
+                                        <div className="inline-flex items-center gap-2 text-xs bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 max-w-full">
+                                          <LinkIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                          <span className="font-bold text-slate-700 shrink-0">Submitted Link:</span>
+                                          <a
+                                            href={u.submissionUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-emerald-700 hover:text-emerald-800 underline font-semibold truncate max-w-xs"
+                                          >
+                                            {u.submissionUrl}
+                                          </a>
+                                          <a href={u.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-slate-600">
+                                            <ExternalLink className="w-3 h-3" />
+                                          </a>
+                                        </div>
+                                        {u.feedbackNote && (
+                                          <p className="text-[11px] text-rose-600 italic mt-1 font-medium pl-1">
+                                            Feedback note: "{u.feedbackNote}"
+                                          </p>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px] text-slate-400 italic pt-0.5">
+                                        Awaiting project completion link submission from participant
+                                      </p>
+                                    )
+                                  ) : (
+                                    <p className="text-[11px] text-slate-400 italic pt-0.5">
+                                      Unattended participant — no project link submission active
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Right: Action Buttons */}
+                                <div className="flex items-center gap-2 shrink-0 flex-wrap self-end md:self-center">
+                                  {/* Approval actions for Attended participants with links */}
+                                  {u.attended && u.submissionUrl && (
+                                    <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        title="Approve Completion"
+                                        onClick={async () => {
+                                          try {
+                                            const res = await reviewLearningSubmission({
+                                              planId: viewPlan._id,
+                                              userEmail: u.email,
+                                              status: "APPROVED"
+                                            });
+                                            toast.success(res.message);
+                                            if (isViewingPast) {
+                                              setViewPlan((p: any) => ({
+                                                ...p,
+                                                pastEditions: (p.pastEditions || []).map((ed: any) =>
+                                                  ed.editionNumber === pastNum
+                                                    ? {
+                                                        ...ed,
+                                                        registeredUsers: (ed.registeredUsers || []).map((usr: any) =>
+                                                          usr.email.toLowerCase() === u.email.toLowerCase()
+                                                            ? { ...usr, submissionStatus: "APPROVED" }
+                                                            : usr
+                                                        ),
+                                                      }
+                                                    : ed
+                                                ),
+                                              }));
+                                            } else {
+                                              setViewPlan((p: any) => ({
+                                                ...p,
+                                                registeredUsers: p.registeredUsers.map((usr: any) =>
+                                                  usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "APPROVED" } : usr
+                                                )
+                                              }));
+                                            }
+                                          } catch (e: any) {
+                                            toast.error(e.message || "Failed to approve submission");
+                                          }
+                                        }}
+                                        className={`h-8 px-2.5 rounded-lg font-bold text-xs transition-all gap-1 ${
+                                          u.submissionStatus === "APPROVED"
+                                            ? "bg-emerald-600 text-white shadow-xs"
+                                            : "text-emerald-700 hover:bg-emerald-100"
+                                        }`}
+                                      >
+                                        <ThumbsUp className="w-3.5 h-3.5" />
+                                        <span>Approve</span>
+                                      </Button>
+
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        title="Request Revision / Follow-up"
+                                        onClick={async () => {
+                                          const feedbackNote = window.prompt(`Enter follow-up note / instructions for ${u.name}:`) || "";
+                                          try {
+                                            const res = await reviewLearningSubmission({
+                                              planId: viewPlan._id,
+                                              userEmail: u.email,
+                                              status: "REJECTED",
+                                              feedbackNote
+                                            });
+                                            toast.success(res.message);
+                                            if (isViewingPast) {
+                                              setViewPlan((p: any) => ({
+                                                ...p,
+                                                pastEditions: (p.pastEditions || []).map((ed: any) =>
+                                                  ed.editionNumber === pastNum
+                                                    ? {
+                                                        ...ed,
+                                                        registeredUsers: (ed.registeredUsers || []).map((usr: any) =>
+                                                          usr.email.toLowerCase() === u.email.toLowerCase()
+                                                            ? { ...usr, submissionStatus: "REJECTED", feedbackNote }
+                                                            : usr
+                                                        ),
+                                                      }
+                                                    : ed
+                                                ),
+                                              }));
+                                            } else {
+                                              setViewPlan((p: any) => ({
+                                                ...p,
+                                                registeredUsers: p.registeredUsers.map((usr: any) =>
+                                                  usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "REJECTED", feedbackNote } : usr
+                                                )
+                                              }));
+                                            }
+                                          } catch (e: any) {
+                                            toast.error(e.message || "Failed to request follow-up");
+                                          }
+                                        }}
+                                        className={`h-8 px-2.5 rounded-lg font-bold text-xs transition-all gap-1 ${
+                                          u.submissionStatus === "REJECTED"
+                                            ? "bg-rose-600 text-white shadow-xs"
+                                            : "text-rose-700 hover:bg-rose-100"
+                                        }`}
+                                      >
+                                        <ThumbsDown className="w-3.5 h-3.5" />
+                                        <span>Revision</span>
+                                      </Button>
+                                    </div>
+                                  )}
+
+                                  {/* Attendance Toggle Button */}
+                                  <Button
+                                    size="sm"
+                                    variant={u.attended ? "default" : "outline"}
+                                    onClick={async () => {
+                                      try {
+                                        const newAttended = !u.attended;
+                                        const res = await toggleAttendance({
+                                          planId: viewPlan._id,
+                                          userEmail: u.email,
+                                          attended: newAttended,
+                                          editionNumber: activeEditionNumber,
+                                        });
+                                        toast.success(res.message);
+                                        if (isViewingPast) {
+                                          setViewPlan((p: any) => ({
+                                            ...p,
+                                            pastEditions: (p.pastEditions || []).map((ed: any) =>
+                                              ed.editionNumber === pastNum
+                                                ? {
+                                                    ...ed,
+                                                    registeredUsers: (ed.registeredUsers || []).map((usr: any) =>
+                                                      usr.email.toLowerCase() === u.email.toLowerCase()
+                                                        ? { ...usr, attended: newAttended }
+                                                        : usr
+                                                    ),
+                                                  }
+                                                : ed
+                                            ),
+                                          }));
+                                        } else {
+                                          setViewPlan((p: any) => ({
+                                            ...p,
+                                            registeredUsers: p.registeredUsers.map((usr: any) =>
+                                              usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, attended: newAttended } : usr
+                                            )
+                                          }));
+                                        }
+                                      } catch (e: any) {
+                                        toast.error(e.message || "Failed to update attendance");
+                                      }
+                                    }}
+                                    className={`text-xs h-8 px-3 rounded-xl font-semibold transition-all ${
+                                      u.attended
+                                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                                        : "neumorph-btn text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
+                                    }`}
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                    {u.attended ? "Attended" : "Mark Present"}
+                                  </Button>
+
+                                  {/* Remove Participant */}
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    title={`Remove ${u.name} from this edition`}
+                                    onClick={async () => {
+                                      if (window.confirm(`Are you sure you want to remove ${u.name} from Edition ${activeEditionNumber}?`)) {
+                                        try {
+                                          const res = await removeParticipant({
+                                            planId: viewPlan._id,
+                                            userEmail: u.email,
+                                            editionNumber: activeEditionNumber,
+                                          });
+                                          toast.success(res.message);
+                                          if (isViewingPast) {
+                                            setViewPlan((p: any) => ({
+                                              ...p,
+                                              pastEditions: (p.pastEditions || []).map((ed: any) =>
+                                                ed.editionNumber === pastNum
+                                                  ? {
+                                                      ...ed,
+                                                      registeredUsers: (ed.registeredUsers || []).filter(
+                                                        (usr: any) => usr.email.toLowerCase() !== u.email.toLowerCase()
+                                                      ),
+                                                    }
+                                                  : ed
+                                              ),
+                                            }));
+                                          } else {
+                                            setViewPlan((p: any) => ({
+                                              ...p,
+                                              registeredUsers: p.registeredUsers.filter((usr: any) => usr.email.toLowerCase() !== u.email.toLowerCase())
+                                            }));
+                                          }
+                                        } catch (e: any) {
+                                          toast.error(e.message || "Failed to remove participant");
+                                        }
+                                      }
+                                    }}
+                                    className="h-8 w-8 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                                  >
+                                    <UserX className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-400 italic py-8 text-center bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
+                          {participantSearchQuery ? "No participants match your search query." : "No participants registered in this category."}
+                        </p>
+                      )}
                     </div>
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const res = await setPlanStatus({ planId: viewPlan._id, status: "COMPLETED" });
-                          toast.success("Attendance completed! Session marked as Completed.");
-                          setViewPlan((p: any) => ({ ...p, status: "COMPLETED" }));
-                        } catch (e: any) {
-                          toast.error(e.message || "Failed to complete attendance");
-                        }
-                      }}
-                      className="bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-full shadow-sm gap-1.5 shrink-0"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Complete Attendance
-                    </Button>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
           )}
-          </DialogContent>
+        </DialogContent>
       </Dialog>
+
+      {/* Manual Add Participant Modal */}
+      <Dialog open={showAddParticipantModal} onOpenChange={setShowAddParticipantModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <UserPlus className="w-6 h-6 text-emerald-600" />
+              Add Participant Manually
+            </DialogTitle>
+          </DialogHeader>
+
+          {viewPlan && (() => {
+            const isViewingPast = viewPlanEditionTab.startsWith("past-");
+            const pastNum = isViewingPast ? parseInt(viewPlanEditionTab.replace("past-", ""), 10) : null;
+            const targetEditionNum = isViewingPast ? pastNum! : (viewPlan.edition || 1);
+
+            return (
+              <div className="space-y-4 py-2">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">Target Session:</span>
+                  <span className="font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                    Edition {targetEditionNum} {isViewingPast ? "(Archived Session)" : "(Current Session)"}
+                  </span>
+                </div>
+
+                {/* Quick Select from Registered Users */}
+                {allUsers && allUsers.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Quick select approved user:</Label>
+                    <select
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      onChange={(e) => {
+                        const selected = (allUsers || []).find((u: any) => u.email === e.target.value);
+                        if (selected) {
+                          setManualAddUserName(selected.name);
+                          setManualAddUserEmail(selected.email);
+                        }
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Choose existing user or enter below...</option>
+                      {allUsers.map((usr: any) => (
+                        <option key={usr._id} value={usr.email}>
+                          {usr.name} ({usr.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Participant Full Name</Label>
+                    <Input
+                      placeholder="e.g. Anith Ghalley"
+                      value={manualAddUserName}
+                      onChange={(e) => setManualAddUserName(e.target.value)}
+                      className="text-xs h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Participant Email</Label>
+                    <Input
+                      type="email"
+                      placeholder="e.g. anith@example.com"
+                      value={manualAddUserEmail}
+                      onChange={(e) => setManualAddUserEmail(e.target.value)}
+                      className="text-xs h-9"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                    <input
+                      type="checkbox"
+                      id="manual-attended-check"
+                      checked={manualAddAttended}
+                      onChange={(e) => setManualAddAttended(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <label htmlFor="manual-attended-check" className="text-xs font-semibold text-slate-800 cursor-pointer">
+                      Mark as Attended immediately (Verified Participant)
+                    </label>
+                  </div>
+                </div>
+
+                <DialogFooter className="flex gap-2 pt-2">
+                  <Button variant="ghost" type="button" onClick={() => setShowAddParticipantModal(false)} className="flex-1">
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={isSubmittingManualAdd || !manualAddUserName.trim() || !manualAddUserEmail.trim()}
+                    onClick={async () => {
+                      if (!manualAddUserName.trim() || !manualAddUserEmail.trim()) {
+                        toast.error("Please enter participant name and email");
+                        return;
+                      }
+                      setIsSubmittingManualAdd(true);
+                      try {
+                        const res = await addParticipantManual({
+                          planId: viewPlan._id,
+                          name: manualAddUserName.trim(),
+                          email: manualAddUserEmail.trim(),
+                          editionNumber: targetEditionNum,
+                          attended: manualAddAttended,
+                        });
+                        toast.success(res.message);
+
+                        const newUserObj = {
+                          name: manualAddUserName.trim(),
+                          email: manualAddUserEmail.trim().toLowerCase(),
+                          registeredAt: Date.now(),
+                          attended: manualAddAttended,
+                        };
+
+                        if (isViewingPast) {
+                          setViewPlan((prev: any) => ({
+                            ...prev,
+                            pastEditions: (prev.pastEditions || []).map((ed: any) =>
+                              ed.editionNumber === targetEditionNum
+                                ? { ...ed, registeredUsers: [...(ed.registeredUsers || []), newUserObj] }
+                                : ed
+                            ),
+                          }));
+                        } else {
+                          setViewPlan((prev: any) => ({
+                            ...prev,
+                            registeredUsers: [...(prev.registeredUsers || []), newUserObj],
+                          }));
+                        }
+
+                        setShowAddParticipantModal(false);
+                      } catch (e: any) {
+                        toast.error(e.message || "Failed to add participant");
+                      } finally {
+                        setIsSubmittingManualAdd(false);
+                      }
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex-1"
+                  >
+                    {isSubmittingManualAdd ? "Adding..." : "Add to Session"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
 
       {/* Award Mastery Tag Modal */}
       <Dialog open={showAwardTagModal} onOpenChange={setShowAwardTagModal}>

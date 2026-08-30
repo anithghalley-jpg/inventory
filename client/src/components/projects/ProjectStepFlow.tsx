@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useState, useMemo } from "react";
+import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,23 @@ import {
   Lock,
   Plus,
   Image as ImageIcon,
-  FileText,
   Users,
-  Package,
   AlertCircle,
+  UserPlus,
+  Trash2,
 } from "lucide-react";
 import {
   formatDateOnly,
-  formatDateTime,
   normalizeImageUrl,
-  normalizeVideoUrl,
   ProjectAvatar,
   type ProjectDetailRecord,
   ImageWithLightbox,
+  TimelineFilterBar,
+  AddMemberDialog,
 } from "./projectShared";
+
+
+
 
 // ─────────────────────────────────────────────
 // Types
@@ -180,7 +183,7 @@ function PendingBanner({ submittedAt }: { submittedAt: string }) {
     <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
       <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
       <p className="text-sm font-medium text-amber-800">
-        Submitted{submittedAt ? ` ${formatDateTime(submittedAt)}` : ""} — waiting for admin review…
+        Submitted{submittedAt ? ` on ${new Date(submittedAt).toLocaleDateString()}` : ""} — waiting for admin review…
       </p>
     </div>
   );
@@ -209,7 +212,7 @@ interface ProjectStepFlowProps {
   renderTimelineItem: (item: ProjectDetailRecord["timeline"][number]) => React.ReactNode;
   onOpenComposer: () => void;
   /** When provided (admin context) the Apply gate is replaced with Approve/Reject controls. */
-  onReview?: (stage: "setup" | "box" | "plan", approve: boolean) => void;
+  onReview?: (stage: "setup", approve: boolean) => void;
 }
 
 export default function ProjectStepFlow({
@@ -223,13 +226,6 @@ export default function ProjectStepFlow({
   const updateMyProfileMut = useMutation(api.projects.updateMyProfile);
   const submitTeamSetupMut = useMutation(api.projects.submitTeamSetup);
   const updateProjectIdentityMut = useMutation(api.projects.updateProjectIdentity);
-  const submitBoxMut = useMutation(api.projects.submitBox);
-  const submitPlanMut = useMutation(api.projects.submitPlan);
-
-  const planComments = useQuery(api.projects.getPlanComments, {
-    projectId: projectDetail.projectId,
-    userEmail,
-  });
 
   const membership = projectDetail.members.find((m) => m.userEmail === userEmail);
 
@@ -239,62 +235,44 @@ export default function ProjectStepFlow({
   // Step 1 — team identity
   const [projectNameDraft, setProjectNameDraft] = useState(projectDetail.name);
   const [teamImageDraft, setTeamImageDraft] = useState(projectDetail.teamImageUrl ?? "");
-  // Step 2 — box
-  const [boxImageDraft, setBoxImageDraft] = useState(projectDetail.boxImageUrl ?? "");
-  // Step 3 — plan
-  const [sketchImagesDraft, setSketchImagesDraft] = useState<string[]>(
-    projectDetail.sketchImages?.length ? projectDetail.sketchImages : [""],
-  );
-  const [completedBehaviorDraft, setCompletedBehaviorDraft] = useState(
-    projectDetail.completedBehavior ?? "",
-  );
-  const [materialsRequiredDraft, setMaterialsRequiredDraft] = useState(
-    projectDetail.materialsRequired ?? "",
-  );
-  const [initialPlansDraft, setInitialPlansDraft] = useState(projectDetail.initialPlans ?? "");
-  const [firstStepsDraft, setFirstStepsDraft] = useState(projectDetail.firstSteps ?? "");
-  // Materials reference links
-  const [materialsLinks, setMaterialsLinks] = useState<{ label: string; url: string }[]>([]);
 
-  // Dynamic Step 3 responses
-  const [dynamicResponses, setDynamicResponses] = useState<Record<string, { singleValue?: string, multiValues?: string[] }>>(() => {
-    const initial: Record<string, { singleValue?: string, multiValues?: string[] }> = {};
-    projectDetail.planningResponses?.forEach(res => {
-      initial[res.fieldId] = { singleValue: res.singleValue, multiValues: res.multiValues };
-    });
-    return initial;
-  });
+  // Timeline filtering & scaling state
+  const [timelineSearch, setTimelineSearch] = useState("");
+  const [timelineKind, setTimelineKind] = useState("all");
+  const [timelineSort, setTimelineSort] = useState<"desc" | "asc">("desc");
+  const [timelinePageLimit, setTimelinePageLimit] = useState(10);
+
+  // Member management
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const removeMemberMut = useMutation(api.projects.removeProjectMember);
+
+  const handleRemoveMember = async (memberEmail: string, memberName: string) => {
+    if (!confirm(`Are you sure you want to remove ${memberName} from this project?`)) return;
+    try {
+      await removeMemberMut({
+        userEmail,
+        projectId: projectDetail.projectId,
+        memberEmailToRemove: memberEmail,
+      });
+      toast.success(`${memberName} removed from project.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove member");
+    }
+  };
 
   const s = projectDetail.status;
 
-  // ── Step status resolution ──
-  // Step 1: completed as soon as admin has approved it (SETUP_APPROVED+)
+
+
+  // Step 1: completed as soon as admin has approved it
   const step1Status: StepStatus =
     s === "DRAFT" || s === "SETUP_PENDING" ? "current" : "completed";
 
-  // Step 2: locked until step1 approved; current while in box flow (SETUP_APPROVED, BOX_PENDING);
-  // completed only when boxApprovedAt is set (BOX_APPROVED+)
+  // Step 2: Active work — locked until team setup approved
   const step2Status: StepStatus =
-    s === "DRAFT" || s === "SETUP_PENDING"
-      ? "locked"
-      : s === "BOX_APPROVED" || s === "PLAN_PENDING" || s === "ACTIVE" || s === "COMPLETED" || s === "ARCHIVED"
-      ? "completed"
-      : "current"; // SETUP_APPROVED (awaiting box) or BOX_PENDING (review pending)
-
-  // Step 3: locked until box approved; current while in plan flow; completed when plan approved
-  const step3Status: StepStatus =
-    !["BOX_APPROVED", "PLAN_PENDING", "ACTIVE", "COMPLETED", "ARCHIVED"].includes(s)
-      ? "locked"
-      : s === "ACTIVE" || s === "COMPLETED" || s === "ARCHIVED"
-      ? "completed"
-      : "current"; // BOX_APPROVED (awaiting plan) or PLAN_PENDING (review pending)
-
-  const step4Status: StepStatus =
     s === "ACTIVE" || s === "COMPLETED" || s === "ARCHIVED" ? "current" : "locked";
 
-
   // ── Can "Apply for Step 1 Approval"? ──
-  // ALL members must have profileImageUrl + projectNote saved. Team image must be set.
   const allMembersReady = projectDetail.members.every(
     (m) => m.profileImageUrl?.trim() && m.projectNote?.trim(),
   );
@@ -312,25 +290,12 @@ export default function ProjectStepFlow({
     },
     {
       number: 2,
-      label: "Project Box",
-      icon: <Package className="h-4 w-4" />,
-      status: step2Status,
-      completedAt: projectDetail.boxApprovedAt || undefined,
-    },
-    {
-      number: 3,
-      label: "Planning",
-      icon: <FileText className="h-4 w-4" />,
-      status: step3Status,
-      completedAt: projectDetail.planApprovedAt || undefined,
-    },
-    {
-      number: 4,
       label: "Active Project",
       icon: <ImageIcon className="h-4 w-4" />,
-      status: step4Status,
+      status: step2Status,
     },
   ];
+
 
   // ── Handlers ──
   const handleSaveProfile = async () => {
@@ -368,117 +333,9 @@ export default function ProjectStepFlow({
     );
   };
 
-  const handleSubmitBox = () => {
-    if (!boxImageDraft.trim()) return;
-    toast.promise(
-      submitBoxMut({
-        projectId: projectDetail.projectId,
-        userEmail,
-        boxImageUrl: boxImageDraft.trim(),
-      }),
-      {
-        loading: "Submitting project box…",
-        success: "Box submitted for admin approval!",
-        error: (e) => `Failed: ${e.message}`,
-      },
-    );
-  };
 
-  const handleSubmitPlan = () => {
-    const isDynamic = (projectDetail.planningFields?.length ?? 0) > 0;
-    
-    if (isDynamic) {
-      // Validate required fields
-      for (const field of projectDetail.planningFields!) {
-        const res = dynamicResponses[field.fieldId];
-        if (field.required) {
-          const hasValue = field.fieldType === 'image_links' || field.fieldType === 'video_links' || field.fieldType === 'labeled_links'
-            ? (res?.multiValues?.length ?? 0) > 0
-            : (res?.singleValue?.trim().length ?? 0) > 0;
-          
-          if (!hasValue) {
-            toast.error(`Please provide a value for "${field.label}"`);
-            return;
-          }
-        }
-      }
 
-      toast.promise(
-        submitPlanMut({
-          projectId: projectDetail.projectId,
-          userEmail,
-          values: Object.entries(dynamicResponses).map(([fieldId, res]) => {
-            const fieldDef = projectDetail.planningFields?.find(f => f.fieldId === fieldId);
-            return {
-              fieldId,
-              label: fieldDef?.label || "Unknown Field",
-              fieldType: fieldDef?.fieldType || "short_text",
-              singleValue: res.singleValue,
-              multiValues: res.multiValues,
-            };
-          }),
-        }),
-        {
-          loading: "Submitting project plan…",
-          success: "Plan submitted for admin approval!",
-          error: (e) => `Failed: ${e.message}`,
-        },
-      );
-    } else {
-      // Legacy 
-      if (!completedBehaviorDraft.trim()) {
-        toast.error("Please describe what the project will do when completed.");
-        return;
-      }
-      toast.promise(
-        submitPlanMut({
-          projectId: projectDetail.projectId,
-          userEmail,
-          sketchImages: sketchImagesDraft.filter((u) => u.trim()),
-          completedBehavior: completedBehaviorDraft.trim(),
-          materialsRequired: [
-            materialsRequiredDraft.trim(),
-            // Append any reference links as formatted text
-            ...(materialsLinks.filter((l) => l.url.trim()).map(
-              (l) => `• ${l.label.trim() || l.url.trim()}: ${l.url.trim()}`
-            )),
-          ].filter(Boolean).join("\n"),
-          initialPlans: initialPlansDraft.trim(),
-          firstSteps: firstStepsDraft.trim(),
-        }),
-        {
-          loading: "Submitting project plan…",
-          success: "Plan submitted for admin approval!",
-          error: (e) => `Failed: ${e.message}`,
-        },
-      );
-    }
-  };
 
-  // ── Helper: group plan comments by questionKey ──
-  const commentsByQuestion = (planComments ?? []).reduce(
-    (acc, c) => {
-      if (!acc[c.questionKey]) acc[c.questionKey] = [];
-      acc[c.questionKey].push(c);
-      return acc;
-    },
-    {} as Record<string, { authorName: string; comment: string; createdAt: string }[]>,
-  );
-
-  function QuestionComments({ questionKey }: { questionKey: string }) {
-    const comments = commentsByQuestion[questionKey] ?? [];
-    if (!comments.length) return null;
-    return (
-      <div className="mt-2 space-y-1">
-        {comments.map((c, i) => (
-          <div key={i} className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs">
-            <span className="font-semibold text-blue-800">{c.authorName}: </span>
-            <span className="text-blue-700">{c.comment}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
 
   // ─────────────────────────────────────────────
   // Render
@@ -521,12 +378,23 @@ export default function ProjectStepFlow({
 
             {/* Member profile cards — inline grid */}
             <div className="mb-4 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Team Members — Individual Profiles
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Team Members ({projectDetail.members.length})
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-200 text-xs rounded-lg gap-1.5 h-8 bg-white hover:bg-slate-50"
+                  onClick={() => setAddMemberOpen(true)}
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Add Member
+                </Button>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
               {projectDetail.members.map((m) => {
-                const isMe = m.userEmail === userEmail;
+                const isMe = Boolean(userEmail && m.userEmail && m.userEmail.toLowerCase() === userEmail.toLowerCase());
                 const hasProfile = m.profileImageUrl?.trim();
                 const hasNote = m.projectNote?.trim();
                 return (
@@ -547,16 +415,28 @@ export default function ProjectStepFlow({
                           </div>
                         )}
                       </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">{m.userName}</p>
-                        <p className="text-xs text-slate-500">{m.userEmail}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-slate-900">{m.userName}</p>
+                        <p className="truncate text-xs text-slate-500">{m.userEmail}</p>
                       </div>
                       {hasProfile && hasNote && (
-                        <Badge className="ml-auto border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px]">
+                        <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px]">
                           Ready
                         </Badge>
                       )}
+                      {projectDetail.members.length > 1 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg shrink-0"
+                          title={`Remove ${m.userName} from project`}
+                          onClick={() => handleRemoveMember(m.userEmail, m.userName)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
+
 
                     {isMe ? (
                       <div className="space-y-2">
@@ -699,402 +579,15 @@ export default function ProjectStepFlow({
           </ActiveStepCard>
         )}
 
-        {/* ── STEP 2: Project Box ── */}
+        {/* ── STEP 2: Active Project ── */}
         {step2Status === "locked" ? (
-          <LockedStep stepNumber={2} label="Find a Project Box" />
-        ) : step2Status === "completed" ? (
-          <CollapsedStep
-            stepNumber={2}
-            label="Find a Project Box"
-            completedAt={projectDetail.boxApprovedAt}
-            summary={`Approved by ${projectDetail.boxApprovedBy || "Admin"}`}
-          />
-        ) : (
-          <ActiveStepCard
-            stepNumber={2}
-            label="Find a Project Box"
-            subtitle={
-              s === "BOX_PENDING"
-                ? "Your box is under admin review"
-                : "Upload a photo of your project box and apply for approval"
-            }
-          >
-            {projectDetail.boxRejectionNote && (
-              <div className="mb-4">
-                <RejectionBanner note={projectDetail.boxRejectionNote} />
-              </div>
-            )}
-            {s === "BOX_PENDING" && (
-              <div className="mb-4">
-                <PendingBanner submittedAt={projectDetail.boxSubmittedAt ?? ""} />
-              </div>
-            )}
-
-            {projectDetail.boxImageUrl && (
-              <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                <ImageWithLightbox
-                  src={projectDetail.boxImageUrl}
-                  alt="Current box"
-                  className="w-full h-auto max-h-[380px] object-contain"
-                />
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <Input
-                value={boxImageDraft}
-                onChange={(e) => setBoxImageDraft(e.target.value)}
-                placeholder="Box image URL"
-                className="border-slate-200 bg-slate-50"
-              />
-              {boxImageDraft.trim() && boxImageDraft !== projectDetail.boxImageUrl && (
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                  <ImageWithLightbox
-                    src={boxImageDraft}
-                    alt="Box preview"
-                    className="w-full h-auto max-h-[300px] object-contain"
-                  />
-                </div>
-              )}
-              {!onReview && (
-                <Button
-                  className="w-full bg-slate-900 hover:bg-slate-800"
-                  disabled={!boxImageDraft.trim()}
-                  onClick={handleSubmitBox}
-                >
-                  {s === "BOX_PENDING" ? "Resubmit Box" : "Submit Box for Approval"}
-                </Button>
-              )}
-
-              {/* Admin review inline — shown at the end of this step */}
-              {onReview && s === "BOX_PENDING" && (
-                <div className="flex gap-3 pt-1">
-                  <Button
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => onReview("box", true)}
-                  >
-                    Approve Box
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
-                    onClick={() => onReview("box", false)}
-                  >
-                    Reject Box
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Step 3 preview — visible but locked */}
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Lock className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Step 3 — Project Planning (unlocks after box approved)
-                </p>
-              </div>
-              <div className="space-y-2 opacity-60 pointer-events-none select-none">
-                {projectDetail.planningFields && projectDetail.planningFields.length > 0 ? (
-                  projectDetail.planningFields.map((field) => (
-                    <div key={field.fieldId} className="space-y-1">
-                      <p className="text-xs font-medium text-slate-500">{field.label}</p>
-                      <div className="h-9 rounded-xl border border-slate-200 bg-white" />
-                    </div>
-                  ))
-                ) : (
-                  [
-                    projectDetail.questionConfig.completedBehaviorPrompt || "What will it do when completed?",
-                    projectDetail.questionConfig.materialsRequiredPrompt || "Materials required",
-                    projectDetail.questionConfig.initialPlansPrompt || "Initial plans",
-                    projectDetail.questionConfig.firstStepsPrompt || "First steps",
-                    projectDetail.questionConfig.sketchPrompt || "Sketch images",
-                  ].map((prompt, i) => (
-                    <div key={i} className="space-y-1">
-                      <p className="text-xs font-medium text-slate-500">{prompt}</p>
-                      <div className="h-9 rounded-xl border border-slate-200 bg-white" />
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </ActiveStepCard>
-        )}
-
-        {/* ── STEP 3: Project Planning ── */}
-        {step3Status === "locked" ? (
-          <LockedStep stepNumber={3} label="Project Planning" />
-        ) : step3Status === "completed" ? (
-          <CollapsedStep
-            stepNumber={3}
-            label="Project Planning"
-            completedAt={projectDetail.planApprovedAt}
-            summary={`Approved by ${projectDetail.planApprovedBy || "Admin"}`}
-          />
-        ) : (
-          <ActiveStepCard
-            stepNumber={3}
-            label="Project Planning"
-            subtitle={
-              s === "PLAN_PENDING"
-                ? "Your plan is under admin review"
-                : "Answer all questions then submit for final approval"
-            }
-          >
-            {projectDetail.planRejectionNote && (
-              <div className="mb-4">
-                <RejectionBanner note={projectDetail.planRejectionNote} />
-              </div>
-            )}
-            {s === "PLAN_PENDING" && (
-              <div className="mb-4">
-                <PendingBanner submittedAt={projectDetail.planSubmittedAt ?? ""} />
-              </div>
-            )}
-
-            <div className="space-y-6">
-              {projectDetail.planningFields?.length ? (
-                /* Dynamic Fields */
-                projectDetail.planningFields.map((field) => (
-                  <div key={field.fieldId} className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                      {field.label} {field.required && <span className="text-rose-500">*</span>}
-                    </label>
-                    
-                    {field.fieldType === "image_links" || field.fieldType === "video_links" ? (
-                      <div className="space-y-3">
-                        {(dynamicResponses[field.fieldId]?.multiValues || [""]).map((val, i) => (
-                          <div key={i} className="space-y-1">
-                            <Input
-                              value={val}
-                              onChange={(e) => {
-                                const newMulti = [...(dynamicResponses[field.fieldId]?.multiValues || [""])];
-                                newMulti[i] = e.target.value;
-                                setDynamicResponses(prev => ({ 
-                                  ...prev, 
-                                  [field.fieldId]: { ...prev[field.fieldId], multiValues: newMulti } 
-                                }));
-                              }}
-                              placeholder={`${field.fieldType === "image_links" ? "Image" : "Video"} URL`}
-                              className="border-slate-200 bg-slate-50"
-                            />
-                            {val.trim() && (
-                              <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                                {field.fieldType === "image_links" ? (
-                                  <ImageWithLightbox src={val} alt={`${field.label} ${i+1}`} className="w-full h-auto max-h-[240px] object-contain" />
-                                ) : (
-                                  <iframe src={normalizeVideoUrl(val)} className="aspect-video w-full" allowFullScreen />
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="border-slate-200 text-slate-600"
-                          onClick={() => {
-                            const current = dynamicResponses[field.fieldId]?.multiValues || [""];
-                            setDynamicResponses(prev => ({
-                              ...prev,
-                              [field.fieldId]: { ...prev[field.fieldId], multiValues: [...current, ""] }
-                            }));
-                          }}
-                        >
-                          <Plus className="mr-2 h-3.5 w-3.5" /> Add {field.fieldType === "image_links" ? "Image" : "Video"}
-                        </Button>
-                      </div>
-                    ) : field.fieldType === "long_text" ? (
-                      <Textarea
-                        value={dynamicResponses[field.fieldId]?.singleValue || ""}
-                        onChange={(e) => setDynamicResponses(prev => ({ 
-                          ...prev, 
-                          [field.fieldId]: { ...prev[field.fieldId], singleValue: e.target.value } 
-                        }))}
-                        placeholder={`Enter ${field.label.toLowerCase()}…`}
-                        className="min-h-[120px] border-slate-200 bg-slate-50"
-                      />
-                    ) : (
-                      <Input
-                        type={field.fieldType === "number" ? "number" : field.fieldType === "date" ? "date" : "text"}
-                        value={dynamicResponses[field.fieldId]?.singleValue || ""}
-                        onChange={(e) => setDynamicResponses(prev => ({ 
-                          ...prev, 
-                          [field.fieldId]: { ...prev[field.fieldId], singleValue: e.target.value } 
-                        }))}
-                        className="border-slate-200 bg-slate-50"
-                      />
-                    )}
-                    <QuestionComments questionKey={field.fieldId} />
-                  </div>
-                ))
-              ) : (
-                /* Legacy Fields */
-                <>
-                  {/* completedBehavior */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      {projectDetail.questionConfig.completedBehaviorPrompt || "What will it do when completed?"}
-                    </label>
-                    <Textarea
-                      value={completedBehaviorDraft}
-                      onChange={(e) => setCompletedBehaviorDraft(e.target.value)}
-                      placeholder="Describe expected behavior…"
-                      className="min-h-[90px] border-slate-200 bg-slate-50"
-                    />
-                    <QuestionComments questionKey="completedBehavior" />
-                  </div>
-
-                  {/* materialsRequired */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      {projectDetail.questionConfig.materialsRequiredPrompt || "Materials required"}
-                    </label>
-                    <Textarea
-                      value={materialsRequiredDraft}
-                      onChange={(e) => setMaterialsRequiredDraft(e.target.value)}
-                      placeholder="List materials and components…"
-                      className="min-h-[90px] border-slate-200 bg-slate-50"
-                    />
-                    {/* Material reference links */}
-                    {materialsLinks.length > 0 && (
-                      <div className="space-y-2 pt-1">
-                        {materialsLinks.map((link, i) => (
-                          <div key={i} className="flex gap-2">
-                            <Input
-                              value={link.label}
-                              onChange={(e) =>
-                                setMaterialsLinks((prev) =>
-                                  prev.map((l, j) => j === i ? { ...l, label: e.target.value } : l)
-                                )
-                              }
-                              placeholder="Name"
-                              className="flex-1 border-slate-200 bg-white text-sm"
-                            />
-                            <Input
-                              value={link.url}
-                              onChange={(e) =>
-                                setMaterialsLinks((prev) =>
-                                  prev.map((l, j) => j === i ? { ...l, url: e.target.value } : l)
-                                )
-                              }
-                              placeholder="Link"
-                              className="flex-1 border-slate-200 bg-white text-sm"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="border-red-200 text-red-500"
-                              onClick={() => setMaterialsLinks((prev) => prev.filter((_, j) => j !== i))}
-                            >✕</Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="border-slate-200 text-slate-600 mt-2"
-                      onClick={() => setMaterialsLinks((prev) => [...prev, { label: "", url: "" }])}
-                    >
-                      <Plus className="mr-2 h-3.5 w-3.5" /> Add Link
-                    </Button>
-                    <QuestionComments questionKey="materialsRequired" />
-                  </div>
-
-                  {/* initialPlans */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      {projectDetail.questionConfig.initialPlansPrompt || "Initial plans"}
-                    </label>
-                    <Textarea
-                      value={initialPlansDraft}
-                      onChange={(e) => setInitialPlansDraft(e.target.value)}
-                      placeholder="Describe your initial plans…"
-                      className="min-h-[90px] border-slate-200 bg-slate-50"
-                    />
-                    <QuestionComments questionKey="initialPlans" />
-                  </div>
-
-                  {/* sketchImages */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      {projectDetail.questionConfig.sketchPrompt || "Sketch / diagram images"}
-                    </label>
-                    {sketchImagesDraft.map((url, i) => (
-                      <div key={i} className="space-y-1">
-                        <Input
-                          value={url}
-                          onChange={(e) =>
-                            setSketchImagesDraft((prev) =>
-                              prev.map((v, j) => (j === i ? e.target.value : v)),
-                            )
-                          }
-                          placeholder="Sketch image URL"
-                          className="border-slate-200 bg-slate-50"
-                        />
-                        {url.trim() && (
-                          <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                            <ImageWithLightbox src={url} alt={`Sketch ${i + 1}`} className="w-full h-auto max-h-[240px] object-contain" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="border-slate-200"
-                      onClick={() => setSketchImagesDraft((prev) => [...prev, ""])}
-                    >
-                      <Plus className="mr-2 h-4 w-4" /> Add Sketch
-                    </Button>
-                    <QuestionComments questionKey="sketchImages" />
-                  </div>
-                </>
-              )}
-            </div>
-
-              {/* Submit / Admin review at the end of Step 3 */}
-              {onReview ? (
-                /* Admin: show approve/reject instead of submit */
-                s === "PLAN_PENDING" ? (
-                  <div className="flex gap-3 pt-1">
-                    <Button
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-                      onClick={() => onReview("plan", true)}
-                    >
-                      Approve Plan
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
-                      onClick={() => onReview("plan", false)}
-                    >
-                      Reject Plan
-                    </Button>
-                  </div>
-                ) : null
-              ) : (
-                <Button className="w-full bg-slate-900 hover:bg-slate-800" onClick={handleSubmitPlan}>
-                  {s === "PLAN_PENDING" ? "Resubmit Plan" : "Submit Plan for Final Approval"}
-                </Button>
-              )}
-          </ActiveStepCard>
-        )}
-
-        {/* ── STEP 4: Active Project ── */}
-        {step4Status === "locked" ? (
-          <LockedStep stepNumber={4} label="Active Project" />
+          <LockedStep stepNumber={2} label="Active Project" />
         ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
-                  4
+                  2
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900">Active Project Timeline</h3>
@@ -1132,20 +625,105 @@ export default function ProjectStepFlow({
             )}
 
             {(() => {
-              const posts = projectDetail.timeline.filter(
+              const allTimelinePosts = projectDetail.timeline.filter(
                 (item) => item.itemType === "post" || item.itemType === "checkpoint",
               );
-              return posts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-                  No timeline posts yet. Use "Add to Timeline" to get started.
+
+              if (allTimelinePosts.length === 0) {
+                return (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                    No timeline posts yet. Use "Add to Timeline" to share updates, media, and notes.
+                  </div>
+                );
+              }
+
+              // Apply Search, Kind filter, and Sort
+              const filtered = allTimelinePosts.filter((item) => {
+                if (timelineKind === "comment" && (item.itemType !== "post" || item.kind !== "comment")) return false;
+                if (timelineKind === "note" && (item.itemType !== "post" || item.kind !== "note")) return false;
+                if (timelineKind === "question" && (item.itemType !== "post" || item.kind !== "question")) return false;
+                if (timelineKind === "checkpoint" && item.itemType !== "checkpoint") return false;
+                if (timelineKind === "media") {
+                  if (item.itemType !== "post") return false;
+                  if (!item.images?.length && !item.videos?.length && !item.links?.length) return false;
+                }
+
+                if (timelineSearch.trim()) {
+                  const q = timelineSearch.toLowerCase();
+                  if (item.itemType === "post") {
+                    const inBody = item.body.toLowerCase().includes(q);
+                    const inAuthor = item.authorName.toLowerCase().includes(q) || item.authorEmail.toLowerCase().includes(q);
+                    const inLinks = item.links?.some((l) => l.label.toLowerCase().includes(q) || l.url.toLowerCase().includes(q));
+                    if (!inBody && !inAuthor && !inLinks) return false;
+                  } else if (item.itemType === "checkpoint") {
+                    const inTitle = item.title.toLowerCase().includes(q);
+                    const inDesc = item.description?.toLowerCase().includes(q);
+                    if (!inTitle && !inDesc) return false;
+                  }
+                }
+
+                return true;
+              }).sort((a, b) => {
+                if (timelineSort === "desc") {
+                  return b.createdAt.localeCompare(a.createdAt);
+                }
+                return a.createdAt.localeCompare(b.createdAt);
+              });
+
+              const visible = filtered.slice(0, timelinePageLimit);
+              const remaining = filtered.length - visible.length;
+
+              return (
+                <div className="space-y-4">
+                  <TimelineFilterBar
+                    searchQuery={timelineSearch}
+                    onSearchChange={setTimelineSearch}
+                    selectedKind={timelineKind}
+                    onKindChange={setTimelineKind}
+                    sortOrder={timelineSort}
+                    onSortChange={setTimelineSort}
+                    totalCount={allTimelinePosts.length}
+                    visibleCount={filtered.length}
+                  />
+
+                  {filtered.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+                      No updates match your filter criteria.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {visible.map((item) => renderTimelineItem(item))}
+                    </div>
+                  )}
+
+                  {remaining > 0 && (
+                    <div className="pt-2 text-center">
+                      <Button
+                        variant="outline"
+                        onClick={() => setTimelinePageLimit((prev) => prev + 10)}
+                        className="rounded-full border-slate-200 bg-white px-6 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs"
+                      >
+                        Load more updates ({remaining} remaining)
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="space-y-4">{posts.map((item) => renderTimelineItem(item))}</div>
               );
             })()}
           </div>
         )}
+
       </div>
+
+      <AddMemberDialog
+        open={addMemberOpen}
+        onOpenChange={setAddMemberOpen}
+        projectId={projectDetail.projectId}
+        userEmail={userEmail}
+        currentMemberEmails={projectDetail.members.map((m) => m.userEmail)}
+      />
     </div>
   );
 }
+
+

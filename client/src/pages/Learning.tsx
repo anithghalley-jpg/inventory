@@ -3,9 +3,12 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { motion } from "framer-motion";
-import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2, Users, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Star } from "lucide-react";
+
+import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2, Users, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Star, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+
+
 import { toast } from "sonner";
 
 import { getOptimizedImageUrl } from "@/lib/utils";
@@ -43,6 +46,7 @@ function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
   if (trimmedDate > todayStr) return false;
 
   if (!timeStr || !timeStr.trim()) return false;
+
   const trimmedTime = timeStr.trim();
   const nowHours = today.getHours();
   const nowMinutes = today.getMinutes();
@@ -73,21 +77,61 @@ function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
 }
 
 function PlanParticipantsPanel({ plan }: { plan: any }) {
-  const registered = plan.registeredUsers || [];
+  const currentRegistered = plan.registeredUsers || [];
   const maxCap = plan.maxParticipants || 20;
+  const pastEditions = (plan.pastEditions || []) as Array<{
+    editionNumber: number;
+    date?: string;
+    time?: string;
+    location?: string;
+    registeredUsers: Array<{
+      name: string;
+      email: string;
+      registeredAt?: number;
+      attended?: boolean;
+      submissionUrl?: string;
+      submissionStatus?: "PENDING" | "APPROVED" | "REJECTED";
+      submittedAt?: number;
+      feedbackNote?: string;
+    }>;
+    completedAt: number;
+  }>;
 
-  const attendedUsers = registered.filter((u: any) => u.attended === true);
-  const waitingListUsers = registered.filter((u: any) => !u.attended);
-  
   const isExpired = isDateTimeExpired(plan.date, plan.time);
-  const isCompleted = plan.status === "COMPLETED" || (plan.status === "PUBLISHED" && isExpired);
+  const isCurrentCompleted = plan.status === "COMPLETED" || (plan.status === "PUBLISHED" && isExpired);
 
-  const confirmedSpotUsers = registered.slice(0, maxCap);
-  const standbyUsers = registered.slice(maxCap);
+  // Selected edition: "current" or `past-${ed.editionNumber}`
+  const [selectedEditionKey, setSelectedEditionKey] = useState<string>("current");
 
-  const [activeTab, setActiveTab] = useState<"attended" | "waiting" | "confirmed" | "standby">(
-    isCompleted ? "attended" : "confirmed"
+  // Determine active edition data
+  const isViewingPast = selectedEditionKey.startsWith("past-");
+  const pastEditionNum = isViewingPast ? parseInt(selectedEditionKey.replace("past-", ""), 10) : null;
+  const activePastEdition = pastEditionNum ? pastEditions.find((p) => p.editionNumber === pastEditionNum) : null;
+
+  const rawRegisteredList = isViewingPast
+    ? (activePastEdition?.registeredUsers || [])
+    : currentRegistered;
+
+  // Chronologically sort strictly by registration timestamp ascending
+  const sortedActiveList = [...rawRegisteredList].sort((a: any, b: any) => (a.registeredAt || 0) - (b.registeredAt || 0));
+
+  const isEditionCompleted = isViewingPast ? true : isCurrentCompleted;
+
+  const confirmedSpotUsers = sortedActiveList.slice(0, maxCap);
+  const standbyUsers = sortedActiveList.slice(maxCap);
+  const attendedUsers = sortedActiveList.filter((u: any) => u.attended === true);
+  const absentUsers = confirmedSpotUsers.filter((u: any) => !u.attended);
+
+  // Subtab for active view: "attended" | "absent" | "confirmed" | "standby"
+  const [activeSubTab, setActiveSubTab] = useState<"attended" | "absent" | "confirmed" | "standby">(
+    isEditionCompleted ? "attended" : "confirmed"
   );
+
+  // Calculate total historical attendees
+  const totalHistoricalAttendees = pastEditions.reduce(
+    (sum, ed) => sum + (ed.registeredUsers || []).filter((u: any) => u.attended).length,
+    0
+  ) + (isCurrentCompleted ? currentRegistered.filter((u: any) => u.attended).length : 0);
 
   return (
     <motion.div
@@ -95,43 +139,128 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
       animate={{ opacity: 1, height: "auto" }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.25 }}
-      className="mt-6 pt-6 border-t border-slate-200 bg-slate-50/80 rounded-2xl p-4 md:p-6 w-full text-left"
+      className="mt-6 pt-6 border-t border-slate-200 bg-slate-50/90 rounded-2xl p-4 md:p-6 w-full text-left"
     >
-      {isCompleted ? (
+      {/* ── Top Edition Selector Bar (If past editions exist) ── */}
+      {pastEditions.length > 0 && (
+        <div className="mb-5 pb-4 border-b border-slate-200">
+          <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-purple-600" />
+              Session Editions & Attendance History ({pastEditions.length + 1} Total)
+            </span>
+            <span className="text-[11px] font-semibold text-purple-800 bg-purple-100/80 px-2.5 py-0.5 rounded-full border border-purple-200">
+              {totalHistoricalAttendees} Total Verified Attendees
+            </span>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
+            {/* Current Edition Tab */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedEditionKey("current");
+                setActiveSubTab(isCurrentCompleted ? "attended" : "confirmed");
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                selectedEditionKey === "current"
+                  ? isCurrentCompleted
+                    ? "bg-purple-600 text-white shadow-sm"
+                    : "bg-emerald-600 text-white shadow-sm"
+                  : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+              }`}
+            >
+              {isCurrentCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
+              <span>Edition {plan.edition || 1} {isCurrentCompleted ? "(Current • Completed)" : "(Upcoming Registration)"}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                selectedEditionKey === "current" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+              }`}>
+                {isCurrentCompleted ? `${currentRegistered.filter((u: any) => u.attended).length} Attended` : `${currentRegistered.length}/${maxCap}`}
+              </span>
+            </button>
+
+            {/* Past Editions Tabs (sorted latest first) */}
+            {[...pastEditions].reverse().map((ed) => {
+              const edAttendedCount = (ed.registeredUsers || []).filter((u: any) => u.attended).length;
+              const isSelected = selectedEditionKey === `past-${ed.editionNumber}`;
+              return (
+                <button
+                  key={ed.editionNumber}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEditionKey(`past-${ed.editionNumber}`);
+                    setActiveSubTab("attended");
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                    isSelected
+                      ? "bg-purple-700 text-white shadow-sm"
+                      : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-300" />
+                  <span>Edition {ed.editionNumber} ({ed.date || "Completed"})</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                    isSelected ? "bg-white/20 text-white" : "bg-purple-50 text-purple-800 border border-purple-200"
+                  }`}>
+                    {edAttendedCount} Attended
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Active Edition Content ── */}
+      {isEditionCompleted ? (
         <div>
-          {/* Completed Session View: Attended vs Waiting List */}
+          {/* Completed Session View: Attended vs Absent vs Waiting List */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-600" />
-              Session Attendance Summary (Edition {plan.edition || 1})
-            </h4>
+            <div>
+              <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Users className="w-4 h-4 text-purple-600" />
+                Session Attendance Record (Edition {isViewingPast ? pastEditionNum : (plan.edition || 1)})
+              </h4>
+              {isViewingPast && activePastEdition && (
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Held on {activePastEdition.date || "Past Date"} {activePastEdition.time ? `at ${activePastEdition.time}` : ""} {activePastEdition.location ? `• 📍 ${activePastEdition.location}` : ""}
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-xs text-xs font-semibold">
               <button
                 type="button"
-                onClick={() => setActiveTab("attended")}
-                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeTab === 'attended' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
+                onClick={() => setActiveSubTab("attended")}
+                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeSubTab === 'attended' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
               >
                 Attended ({attendedUsers.length})
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("waiting")}
-                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeTab === 'waiting' ? 'bg-amber-100 text-amber-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
+                onClick={() => setActiveSubTab("absent")}
+                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeSubTab === 'absent' ? 'bg-rose-100 text-rose-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
               >
-                Waiting List ({waitingListUsers.length})
+                Absent ({absentUsers.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab("standby")}
+                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeSubTab === 'standby' ? 'bg-amber-100 text-amber-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Waiting List ({standbyUsers.length})
               </button>
             </div>
           </div>
 
-          {activeTab === "attended" && (
+          {activeSubTab === "attended" && (
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-1.5">
                 <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Members who attended this session ({attendedUsers.length})</span>
+                <span>Verified participants who attended this session ({attendedUsers.length})</span>
               </div>
               {attendedUsers.length === 0 ? (
                 <div className="bg-white p-4 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
-                  No attendance was recorded for this session.
+                  No attendance was recorded for this edition.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
@@ -157,21 +286,57 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
             </div>
           )}
 
-          {activeTab === "waiting" && (
+          {activeSubTab === "absent" && (
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-1.5">
-                <UserX className="w-3.5 h-3.5 text-amber-600" />
-                <span>Waiting List Members (Registered First Come First Served - Did Not Attend) ({waitingListUsers.length})</span>
+                <UserX className="w-3.5 h-3.5 text-rose-600" />
+                <span>Confirmed registrants who were marked absent ({absentUsers.length})</span>
               </div>
-              {waitingListUsers.length === 0 ? (
+              {absentUsers.length === 0 ? (
                 <div className="bg-white p-4 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
-                  No members on the waiting list for this session.
+                  All confirmed registrants attended this session.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
-                  {waitingListUsers.map((u: any, idx: number) => (
+                  {absentUsers.map((u: any, idx: number) => (
+                    <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 shadow-xs hover:border-rose-200 transition-colors">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-800 font-bold text-xs flex items-center justify-center shrink-0 border border-rose-200">
+                          {u.name ? u.name.charAt(0).toUpperCase() : '?'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-xs text-slate-900 truncate">{u.name}</p>
+                          <p className="text-[11px] text-slate-500 truncate">{u.email}</p>
+                        </div>
+                      </div>
+                      <span className="shrink-0 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        Absent
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSubTab === "standby" && (
+            <div>
+              <div className="text-xs font-semibold text-slate-500 mb-3 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Waiting List Members (Beyond Max Capacity of {maxCap}) ({standbyUsers.length})</span>
+              </div>
+              {standbyUsers.length === 0 ? (
+                <div className="bg-white p-4 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
+                  No members on the waiting list for this edition.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                  {standbyUsers.map((u: any, idx: number) => (
                     <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 shadow-xs hover:border-amber-200 transition-colors">
                       <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-[11px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded shrink-0 border border-amber-200">
+                          #{maxCap + idx + 1}
+                        </span>
                         <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-xs flex items-center justify-center shrink-0 border border-amber-200">
                           {u.name ? u.name.charAt(0).toUpperCase() : '?'}
                         </div>
@@ -202,22 +367,22 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
             <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-xs text-xs font-semibold">
               <button
                 type="button"
-                onClick={() => setActiveTab("confirmed")}
-                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeTab === 'confirmed' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
+                onClick={() => setActiveSubTab("confirmed")}
+                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeSubTab === 'confirmed' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
               >
                 Confirmed Spots ({confirmedSpotUsers.length}/{maxCap})
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab("standby")}
-                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeTab === 'standby' ? 'bg-amber-100 text-amber-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
+                onClick={() => setActiveSubTab("standby")}
+                className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${activeSubTab === 'standby' ? 'bg-amber-100 text-amber-800 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
               >
                 Standby List ({standbyUsers.length})
               </button>
             </div>
           </div>
 
-          {activeTab === "confirmed" && (
+          {activeSubTab === "confirmed" && (
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-3 flex items-center justify-between">
                 <span>Registered Members with Confirmed Spots (First Come, First Served)</span>
@@ -227,7 +392,7 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
               </div>
               {confirmedSpotUsers.length === 0 ? (
                 <div className="bg-white p-4 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
-                  No registrations yet. Be the first to join!
+                  No registrations for this edition yet. Be the first to join!
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
@@ -255,7 +420,7 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
             </div>
           )}
 
-          {activeTab === "standby" && (
+          {activeSubTab === "standby" && (
             <div>
               <div className="text-xs font-semibold text-slate-500 mb-3 flex items-center justify-between">
                 <span>Standby / Waiting List Members (Beyond Max Capacity of {maxCap})</span>
@@ -299,7 +464,9 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
   );
 }
 
+
 export default function Learning() {
+
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"alternating" | "grid">("alternating");
@@ -496,9 +663,11 @@ export default function Learning() {
 
               const registered = plan.registeredUsers || [];
               const attendedUsers = registered.filter((u: any) => u.attended === true);
+              const pastEditions = plan.pastEditions || [];
+              const totalPastAttendees = pastEditions.reduce((sum: number, ed: any) => sum + (ed.registeredUsers || []).filter((u: any) => u.attended).length, 0);
               const isExpanded = Boolean(expandedPlanIds[plan._id]);
               const editionNum = plan.edition || 1;
-              const completedEditions = plan.completedEditionsCount || (isCompleted ? 1 : 0);
+              const completedEditions = plan.completedEditionsCount || (isCompleted ? 1 : pastEditions.length);
               const maxCap = plan.maxParticipants || 20;
 
               // Media rendering logic
@@ -569,6 +738,16 @@ export default function Learning() {
                               {completedEditions} Star{completedEditions === 1 ? '' : 's'}
                             </span>
                           )}
+                          {pastEditions.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandPlan(plan._id)}
+                              className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300 text-xs font-extrabold rounded-full flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                            >
+                              <History className="w-3.5 h-3.5 text-purple-700" />
+                              <span>{pastEditions.length} Past Session{pastEditions.length === 1 ? '' : 's'} ({totalPastAttendees} Attended)</span>
+                            </button>
+                          )}
                           {isCompleted && (
                             <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
                               <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
@@ -631,7 +810,7 @@ export default function Learning() {
                                 className="rounded-full px-6 py-6 h-auto text-base w-full sm:w-auto border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-2 cursor-pointer"
                               >
                                 <Users className="w-5 h-5 text-emerald-600" />
-                                <span>{registered.length}/{maxCap} Registered</span>
+                                <span>{registered.length}/{maxCap} Registered{totalPastAttendees > 0 ? ` • ${totalPastAttendees} Past Attendees` : ''}</span>
                                 {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                               </Button>
                             </div>
@@ -647,7 +826,7 @@ export default function Learning() {
                                 className="rounded-full px-6 py-6 h-auto text-base w-full sm:w-auto border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-2 cursor-pointer"
                               >
                                 <Users className="w-5 h-5 text-emerald-600" />
-                                <span>{registered.length}/{maxCap} Registered</span>
+                                <span>{registered.length}/{maxCap} Registered{totalPastAttendees > 0 ? ` • ${totalPastAttendees} Past Attendees` : ''}</span>
                                 {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                               </Button>
                             </div>
@@ -658,6 +837,7 @@ export default function Learning() {
                         </div>
                       </div>
                     </div>
+
 
                     {/* Expandable Attendees / Waiting List Panel */}
                     {isExpanded && (
@@ -681,7 +861,14 @@ export default function Learning() {
                             {completedEditions} ⭐
                           </span>
                         )}
+                        {pastEditions.length > 0 && (
+                          <span className="px-2 py-0.5 bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-extrabold rounded-sm flex items-center gap-0.5">
+                            <History className="w-3 h-3 text-purple-700" />
+                            {totalPastAttendees} Attended
+                          </span>
+                        )}
                         {plan.tags?.slice(0, 2).map((tag: string) => (
+
                           <span key={tag} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wider rounded-sm">
                             {tag}
                           </span>

@@ -18,19 +18,27 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   CalendarDays,
+  Check,
   ChevronLeft,
+  ChevronRight,
   ClipboardList,
+  Download,
+  Edit3,
+  FileText,
   FolderKanban,
+  Image as ImageIcon,
   LayoutGrid,
+  Link,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Send,
-  Settings2,
   Sparkles,
+  Star,
   Trash2,
+  Users,
 } from "lucide-react";
 import {
   createEmptyCheckpointField,
@@ -38,16 +46,31 @@ import {
   formatDateOnly,
   formatDateTime,
   getStatusBadgeClass,
+  getStatusLabel,
+  getStatusAccentClass,
+  getStatusBgClass,
+  getStatusPillClass,
+  getPostTypeStyle,
+  isRecentActivity,
   MediaList,
   normalizeImageUrl,
   normalizeVideoUrl,
+  PostAuthorHeader,
+  ProgressRing,
   ProjectAvatar,
+  RelativeTime,
   ImageWithLightbox,
+  getProjectProgress,
+  InteractiveTimelinePostCard,
+  TimelinePostComposerDialog,
   type CheckpointFieldType,
   type ProjectCardRecord,
   type ProjectDetailRecord,
 } from "@/components/projects/projectShared";
-import ProjectStepFlow from "@/components/projects/ProjectStepFlow";
+
+import ProjectProfilePanel from "@/components/projects/ProjectProfilePanel";
+import ProjectPostPanel from "@/components/projects/ProjectPostPanel";
+import ProjectReportGenerator from "@/components/projects/ProjectReportGenerator";
 
 interface EligibleUser {
   email: string;
@@ -86,98 +109,89 @@ function TimelineMarker({ createdAt, mobile = false }: { createdAt: string; mobi
 
 function AdminProjectCardTile({
   project,
-  previewMode,
-  onPreviewChange,
   onOpen,
   selected = false,
 }: {
   project: ProjectCardRecord;
-  previewMode: "team" | "box";
-  onPreviewChange: (mode: "team" | "box") => void;
   onOpen: () => void;
   selected?: boolean;
 }) {
-  const previewImage = previewMode === "box" ? project.boxImageUrl ?? "" : project.teamImageUrl ?? "";
+  const previewImage = project.teamImageUrl ?? project.boxImageUrl ?? "";
+  const { percent } = getProjectProgress(project.status);
+  const accentClass = getStatusAccentClass(project.status);
+  const bgClass = getStatusBgClass(project.status);
+  const pillClass = getStatusPillClass(project.status);
+  const hasRecentActivity = isRecentActivity(project.lastActivityAt);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`w-full group rounded-[2rem] border p-4 text-left transition-all duration-300 ${
-        selected
-          ? "border-slate-400 bg-slate-50 shadow-md ring-1 ring-slate-400"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-xl hover:-translate-y-1"
-      }`}
+      className={`project-card-premium w-full text-left ${bgClass} ${selected ? "selected" : ""}`}
     >
-      <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-100 shadow-inner">
+      {/* Accent strip */}
+      <div className={`project-card-accent ${accentClass}`} />
+
+      {/* Cover image */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-slate-100 shadow-sm mb-3">
         {previewImage ? (
           <img
             src={normalizeImageUrl(previewImage)}
             alt={project.name}
-            className="h-44 w-full object-cover"
+            className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="flex h-44 items-center justify-center bg-slate-100 text-slate-400">
-            <Sparkles className="h-8 w-8" />
+          <div className="flex h-40 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50">
+            <FolderKanban className="h-10 w-10 text-slate-300" />
           </div>
         )}
       </div>
 
-      <div className="mt-3 flex items-start justify-between gap-3">
+      {/* Name + progress ring row */}
+      <div className="flex items-start justify-between gap-2 mb-2 pl-1">
         <div className="min-w-0">
-          <h3 className="truncate text-lg font-bold text-slate-900">{project.name}</h3>
-          <p className="text-xs text-slate-500">
-            Updated {formatDateOnly(project.lastActivityAt || project.updatedAt)}
-          </p>
+          <h3 className="truncate text-base font-black text-slate-900 leading-snug">{project.name}</h3>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {hasRecentActivity && <span className="project-activity-pulse" />}
+            <RelativeTime value={project.lastActivityAt || project.updatedAt} />
+          </div>
         </div>
-        <Badge className={getStatusBadgeClass(project.status)}>{project.status}</Badge>
+        <ProgressRing percent={percent} size={44} strokeWidth={4} />
       </div>
 
-      <div className="mt-3 inline-flex rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold">
-        <button
-          type="button"
-          className={`rounded-full px-3 py-1 ${previewMode === "team" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPreviewChange("team");
-          }}
-        >
-          Team
-        </button>
-        <button
-          type="button"
-          className={`rounded-full px-3 py-1 ${previewMode === "box" ? "bg-slate-900 text-white" : "text-slate-600"}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPreviewChange("box");
-          }}
-        >
-          Box
-        </button>
+      {/* Status pill */}
+      <div className="pl-1 mb-3">
+        <span className={pillClass}>{getStatusLabel(project.status)}</span>
       </div>
 
-      <div className="mt-4 flex -space-x-2">
-        {project.members.slice(0, 6).map((member) => (
-          <ProjectAvatar
-            key={member.userEmail}
-            imageUrl={member.profileImageUrl}
-            label={member.userName}
-            className="h-9 w-9 border-2 border-white"
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {project.members.slice(0, 4).map((member) => (
-          <Badge
-            key={`${project.projectId}-${member.userEmail}`}
-            variant="outline"
-            className="border-slate-200 bg-white text-slate-600"
-          >
-            {member.userRole}
-          </Badge>
-        ))}
+      {/* Members */}
+      <div className="flex items-center justify-between pl-1">
+        <div className="project-avatar-stack">
+          {project.members.slice(0, 5).map((member) => (
+            <ProjectAvatar
+              key={member.userEmail}
+              imageUrl={member.profileImageUrl}
+              label={member.userName}
+              className="h-7 w-7 border-2 border-white text-[10px]"
+            />
+          ))}
+          {project.members.length > 5 && (
+            <div className="h-7 w-7 rounded-full border-2 border-white bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center font-bold">
+              +{project.members.length - 5}
+            </div>
+          )}
+        </div>
+        <div className="project-card-meta">
+          {project.likeCount > 0 && (
+            <span className="project-card-meta-chip text-amber-500">
+              <Star className="h-3 w-3 fill-current" /> {project.likeCount}
+            </span>
+          )}
+          <span className="project-card-meta-chip">
+            <Users className="h-3 w-3" /> {project.memberCount}
+          </span>
+        </div>
       </div>
     </button>
   );
@@ -192,10 +206,13 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [projectSearch, setProjectSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
-  const [previewMode, setPreviewMode] = useState<Record<string, "team" | "box">>({});
   const [leftRailCollapsed, setLeftRailCollapsed] = useState(true);
+  const [activeTab, setActiveTab] = useState<"profile" | "post" | "report">("profile");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | undefined>(undefined);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardCoverImageUrl, setWizardCoverImageUrl] = useState("");
+
   const [composerDialogOpen, setComposerDialogOpen] = useState(false);
   const [composerMode, setComposerMode] = useState<"post" | "checkpoint">("post");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -224,10 +241,8 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
 
   // ── Admin review dialog state ──
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewAction, setReviewAction] = useState<{ stage: "setup" | "box" | "plan"; approve: boolean } | null>(null);
+  const [reviewAction, setReviewAction] = useState<{ stage: "setup"; approve: boolean } | null>(null);
   const [adminComment, setAdminComment] = useState("");
-  // Per-question comments for plan review
-  const [planQuestionComments, setPlanQuestionComments] = useState<Record<string, string>>({});
 
   const projectDetail = useQuery(
     api.projects.getProjectDetail,
@@ -238,19 +253,46 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
   const updateQuestionConfigMut = useMutation(api.projects.updateQuestionConfig);
   const updateProjectIdentityMut = useMutation(api.projects.updateProjectIdentity);
   const reviewTeamSetupMut = useMutation(api.projects.reviewTeamSetup);
-  const reviewBoxMut = useMutation(api.projects.reviewBox);
-  const reviewPlanMut = useMutation(api.projects.reviewPlan);
-  const addPlanCommentMut = useMutation(api.projects.addPlanComment);
   const createCheckpointFormMut = useMutation(api.projects.createCheckpointForm);
   const updatePlanningFieldsMut = useMutation(api.projects.updatePlanningFields);
   const addTimelinePostMut = useMutation(api.projects.addTimelinePost);
+  const deleteTimelinePostMut = useMutation(api.projects.deleteTimelinePost);
   const setLifecycleStatusMut = useMutation(api.projects.setLifecycleStatus);
   const deleteProjectMut = useMutation(api.projects.deleteProject);
 
-  const planComments = useQuery(
-    api.projects.getPlanComments,
-    selectedProjectId ? { projectId: selectedProjectId, userEmail: currentUserEmail } : "skip",
-  );
+  // Rich post editing state
+  const [editingTimelinePost, setEditingTimelinePost] = useState<Extract<
+    ProjectDetailRecord["timeline"][number],
+    { itemType: "post" }
+  > | null>(null);
+  const [timelinePostComposerOpen, setTimelinePostComposerOpen] = useState(false);
+
+  const handleEditTimelinePost = (
+    post: Extract<ProjectDetailRecord["timeline"][number], { itemType: "post" }>,
+  ) => {
+    setEditingTimelinePost(post);
+    setTimelinePostComposerOpen(true);
+  };
+
+  const handleDeleteTimelinePost = async (entryId: string) => {
+    if (!confirm("Are you sure you want to delete this update?")) return;
+    try {
+      await deleteTimelinePostMut({
+        userEmail: currentUserEmail,
+        projectId: selectedProjectId,
+        entryId,
+      });
+      toast.success("Post deleted successfully");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete post");
+    }
+  };
+
+  const openPostComposer = () => {
+    setEditingTimelinePost(null);
+    setTimelinePostComposerOpen(true);
+  };
+
 
   const projects = projectWorkspace?.projects ?? [];
   const eligibleUsers = useMemo(
@@ -299,12 +341,16 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
     );
   };
 
+  const [editTab, setEditTab] = useState<"info" | "members">("info");
+
   const openCreateDialog = () => {
     setEditingProjectId(undefined);
     setProjectName("");
     setSelectedEmails([]);
     setMemberSearch("");
     setPlanningFields([createEmptyCheckpointField()]);
+    setWizardStep(1);
+    setWizardCoverImageUrl("");
     setCreateDialogOpen(true);
   };
 
@@ -315,6 +361,9 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
     setSelectedEmails(projectDetail.members.map((member) => member.userEmail));
     setMemberSearch("");
     setPlanningFields(projectDetail.planningFields?.length ? projectDetail.planningFields : [createEmptyCheckpointField()]);
+    setWizardStep(1);
+    setEditTab("info");
+    setWizardCoverImageUrl(projectDetail.teamImageUrl ?? "");
     setCreateDialogOpen(true);
   };
 
@@ -326,7 +375,11 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
   };
 
   const handleCreateProject = async () => {
-    await upsertProjectMut({
+    if (!projectName.trim()) {
+      toast.error("Please enter a project name.");
+      return;
+    }
+    const res = await upsertProjectMut({
       actorEmail: currentUserEmail,
       projectId: editingProjectId,
       name: projectName,
@@ -335,6 +388,17 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
         .map((f, i) => ({ ...f, fieldId: (f as any).fieldId || crypto.randomUUID(), position: i }))
         .filter((f) => f.label.trim()),
     });
+    if (wizardCoverImageUrl.trim()) {
+      const pid = editingProjectId || (res as any)?.projectId;
+      if (pid) {
+        await updateProjectIdentityMut({
+          projectId: pid,
+          userEmail: currentUserEmail,
+          name: projectName,
+          teamImageUrl: wizardCoverImageUrl.trim(),
+        });
+      }
+    }
     toast.success(editingProjectId ? "Project group updated." : "Project group created.");
     setCreateDialogOpen(false);
     setEditingProjectId(undefined);
@@ -343,6 +407,7 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
     setMemberSearch("");
     setPlanningFields([createEmptyCheckpointField()]);
   };
+
 
   const handleSavePrompts = async () => {
     if (!projectDetail) return;
@@ -366,67 +431,56 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
     toast.success("Project planning questions updated.");
   };
 
-  const openReviewDialog = (stage: "setup" | "box" | "plan", approve: boolean) => {
+  const openReviewDialog = (stage: "setup", approve: boolean) => {
     setReviewAction({ stage, approve });
     setAdminComment("");
-    setPlanQuestionComments({});
     setReviewDialogOpen(true);
   };
 
   const handleReviewSetup = (approve: boolean) => openReviewDialog("setup", approve);
-  const handleReviewBox = (approve: boolean) => openReviewDialog("box", approve);
-  const handleReviewPlan = (approve: boolean) => openReviewDialog("plan", approve);
 
   const handleConfirmReview = async () => {
     if (!projectDetail || !reviewAction) return;
-    const { stage, approve } = reviewAction;
+    const { approve } = reviewAction;
     const rejectionNote = approve ? undefined : adminComment.trim() || "Rejected by admin.";
     try {
-      if (stage === "setup") {
-        await reviewTeamSetupMut({ actorEmail: currentUserEmail, projectId: projectDetail.projectId, approve, rejectionNote });
-      } else if (stage === "box") {
-        await reviewBoxMut({ actorEmail: currentUserEmail, projectId: projectDetail.projectId, approve, rejectionNote });
-      } else {
-        await reviewPlanMut({ actorEmail: currentUserEmail, projectId: projectDetail.projectId, approve, rejectionNote });
-        // Post per-question comments
-        for (const [questionKey, comment] of Object.entries(planQuestionComments)) {
-          if (comment.trim()) {
-            await addPlanCommentMut({ actorEmail: currentUserEmail, projectId: projectDetail.projectId, questionKey, comment: comment.trim() });
-          }
-        }
-      }
+      await reviewTeamSetupMut({ actorEmail: currentUserEmail, projectId: projectDetail.projectId, approve, rejectionNote });
       if (approve && adminComment.trim()) {
         await addTimelinePostMut({
           userEmail: currentUserEmail,
           projectId: projectDetail.projectId,
           kind: "note",
-          body: `Admin note on ${stage === "setup" ? "Team Setup" : stage === "box" ? "Box" : "Plan"} approval: ${adminComment.trim()}`,
+          body: `Admin note on Team Setup approval: ${adminComment.trim()}`,
           images: [],
           videos: [],
           links: [],
         });
       }
-      const stageLabel = stage === "setup" ? "Team Setup" : stage === "box" ? "Box" : "Plan";
-      toast.success(approve ? `${stageLabel} approved!` : "Feedback sent to the team.");
-    } catch (e: any) {
-      toast.error(`Failed: ${e.message}`);
+      toast.success(approve ? "Team Setup approved! Project is now active." : "Feedback sent to the team.");
+      setReviewDialogOpen(false);
+      setReviewAction(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Review action failed");
     }
-    setReviewDialogOpen(false);
-    setReviewAction(null);
-    setAdminComment("");
-    setPlanQuestionComments({});
   };
 
 
-  const handleLifecycleChange = async (status: "COMPLETED" | "ARCHIVED") => {
+  const handleLifecycleChange = async (status: "ACTIVE" | "COMPLETED" | "ARCHIVED") => {
     if (!projectDetail) return;
     await setLifecycleStatusMut({
       actorEmail: currentUserEmail,
       projectId: projectDetail.projectId,
       status,
     });
-    toast.success(status === "COMPLETED" ? "Project marked completed." : "Project archived.");
+    toast.success(
+      status === "ACTIVE"
+        ? "Project activated and visible to team!"
+        : status === "COMPLETED"
+        ? "Project marked completed."
+        : "Project archived.",
+    );
   };
+
 
   const handleDeleteProject = async () => {
     if (!projectDetail) return;
@@ -504,22 +558,7 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
             <Badge className={getStatusBadgeClass(item.status)}>{item.status}</Badge>
           </div>
 
-          {item.stage === "box" && projectDetail.boxImageUrl ? (
-            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-              <img
-                src={normalizeImageUrl(projectDetail.boxImageUrl)}
-                alt={`${projectDetail.name} box`}
-                className="h-56 w-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-          ) : null}
 
-          {item.stage === "plan" ? (
-            <div className="mt-4">
-              <MediaList images={projectDetail.sketchImages ?? []} />
-            </div>
-          ) : null}
         </Card>
       );
     }
@@ -581,31 +620,23 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
       );
     }
 
-    return (
-      <Card className="rounded-[1.5rem] border-slate-200 bg-white p-5 shadow-none">
-        <div className="flex items-start gap-4">
-          <ProjectAvatar
-            imageUrl={projectDetail.members.find((member) => member.userEmail === item.authorEmail)?.profileImageUrl}
-            label={item.authorName}
-            className="h-12 w-12"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-lg font-bold text-slate-900">{item.authorName}</p>
-              <Badge variant="outline" className="border-slate-200 text-slate-600">
-                {item.authorRole}
-              </Badge>
-              <Badge className={getStatusBadgeClass(item.kind)}>{item.kind}</Badge>
-            </div>
-            <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700">{item.body}</p>
-            <div className="mt-4">
-              <MediaList images={item.images} videos={item.videos} links={item.links} />
-            </div>
-          </div>
-        </div>
-      </Card>
-    );
+    if (item.itemType === "post") {
+      return (
+        <InteractiveTimelinePostCard
+          key={item.id}
+          post={item}
+          projectDetail={projectDetail}
+          currentUserEmail={currentUserEmail}
+          currentUserRole="ADMIN"
+          onEditPost={handleEditTimelinePost}
+          onDeletePost={handleDeleteTimelinePost}
+        />
+      );
+    }
+
+    return null;
   };
+
 
   return (
     <section className="space-y-6">
@@ -664,9 +695,11 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
               <AdminProjectCardTile
                 key={project.projectId}
                 project={project}
-                previewMode={previewMode[project.projectId] ?? "team"}
-                onPreviewChange={(mode) => setPreviewMode((prev) => ({ ...prev, [project.projectId]: mode }))}
-                onOpen={() => setSelectedProjectId(project.projectId)}
+                selected={project.projectId === selectedProjectId}
+                onOpen={() => {
+                  setSelectedProjectId(project.projectId);
+                  setLeftRailCollapsed(true);
+                }}
               />
             ))}
           </div>
@@ -702,19 +735,18 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
                     <AdminProjectCardTile
                       key={project.projectId}
                       project={project}
-                      previewMode={previewMode[project.projectId] ?? "team"}
-                      onPreviewChange={(mode) => setPreviewMode((prev) => ({ ...prev, [project.projectId]: mode }))}
                       onOpen={() => setSelectedProjectId(project.projectId)}
                       selected={selectedProjectId === project.projectId}
                     />
                   ))}
+
                 </div>
               </div>
             </Card>
           ) : null}
 
-          <Card className="overflow-hidden rounded-[1.75rem] border-slate-200 bg-white shadow-sm">
-            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
+          <div className="neumorph-card overflow-hidden bg-white">
+            <div className="sticky top-0 z-20 border-b border-slate-200/90 bg-white/95 px-6 py-5 backdrop-blur shadow-xs">
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-center gap-4">
@@ -731,186 +763,160 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" className="border-slate-200" onClick={openEditDialog}>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <Button variant="outline" className="neumorph-btn text-xs font-semibold text-slate-700" onClick={openEditDialog}>
+                      <Users className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
                       Edit Members
                     </Button>
-                    <Button className="bg-slate-900 hover:bg-slate-800" onClick={() => openComposer("post")}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add
-                    </Button>
+                    {projectDetail.status !== "ACTIVE" && projectDetail.status !== "COMPLETED" && projectDetail.status !== "ARCHIVED" && (
+                      <Button className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl" onClick={() => handleLifecycleChange("ACTIVE")}>
+                        <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                        Activate Project
+                      </Button>
+                    )}
                     {projectDetail.status === "ACTIVE" ? (
-                      <Button variant="outline" className="border-slate-200" onClick={() => handleLifecycleChange("COMPLETED")}>
+                      <Button variant="outline" className="neumorph-btn text-xs font-semibold text-slate-700" onClick={() => handleLifecycleChange("COMPLETED")}>
                         Mark Completed
                       </Button>
                     ) : null}
                     {projectDetail.status !== "ARCHIVED" ? (
-                      <Button variant="outline" className="border-slate-200" onClick={() => handleLifecycleChange("ARCHIVED")}>
+                      <Button variant="outline" className="neumorph-btn text-xs font-semibold text-slate-700" onClick={() => handleLifecycleChange("ARCHIVED")}>
                         Archive
                       </Button>
-                    ) : null}
+                    ) : (
+                      <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl" onClick={() => handleLifecycleChange("ACTIVE")}>
+                        <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                        Restore to Active
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
-                      className="border-rose-200 text-rose-600 hover:border-rose-300 hover:bg-rose-50"
+                      className="border-rose-200 text-rose-600 hover:border-rose-300 hover:bg-rose-50 text-xs rounded-xl"
                       onClick={handleDeleteProject}
                     >
-                      <Trash2 className="mr-2 h-4 w-4" />
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                       Delete
                     </Button>
+
                     <Button
                       variant="outline"
-                      className="border-slate-200"
+                      className="neumorph-btn text-xs font-semibold text-slate-700"
                       onClick={() => setLeftRailCollapsed((prev) => !prev)}
                     >
                       {leftRailCollapsed ? (
                         <>
-                          <PanelLeftOpen className="mr-2 h-4 w-4" />
+                          <PanelLeftOpen className="mr-1.5 h-3.5 w-3.5" />
                           Show Cards
                         </>
                       ) : (
                         <>
-                          <PanelLeftClose className="mr-2 h-4 w-4" />
+                          <PanelLeftClose className="mr-1.5 h-3.5 w-3.5" />
                           Collapse Cards
                         </>
                       )}
                     </Button>
-                    <Button variant="outline" className="border-slate-200" onClick={() => setSelectedProjectId("")}>
-                      <ChevronLeft className="mr-2 h-4 w-4" />
+                    <Button variant="outline" className="neumorph-btn text-xs font-semibold text-slate-700" onClick={() => setSelectedProjectId("")}>
+                      <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
                       Back
                     </Button>
                   </div>
                 </div>
 
-                <div className="flex -space-x-2">
-                  {projectDetail.members.map((member) => (
-                    <ProjectAvatar
-                      key={member.userEmail}
-                      imageUrl={member.profileImageUrl}
-                      label={member.userName}
-                      className="h-10 w-10 border-2 border-white"
-                    />
-                  ))}
+                {/* 3-Tab Navigator Row */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+                  <div className="neumorph-tab-group">
+                    <button
+                      type="button"
+                      className={`neumorph-tab-item ${activeTab === "profile" ? "active" : ""}`}
+                      onClick={() => setActiveTab("profile")}
+                    >
+                      <FolderKanban className="h-4 w-4" />
+                      Project Profile
+                    </button>
+                    <button
+                      type="button"
+                      className={`neumorph-tab-item ${activeTab === "post" ? "active" : ""}`}
+                      onClick={() => setActiveTab("post")}
+                    >
+                      <Edit3 className="h-4 w-4" />
+                      Project Post
+                    </button>
+                    <button
+                      type="button"
+                      className={`neumorph-tab-item ${activeTab === "report" ? "active" : ""}`}
+                      onClick={() => setActiveTab("report")}
+                    >
+                      <FileText className="h-4 w-4" />
+                      Project Report
+                    </button>
+                  </div>
+
+                  <div className="flex -space-x-2">
+                    {projectDetail.members.map((member) => (
+                      <ProjectAvatar
+                        key={member.userEmail}
+                        imageUrl={member.profileImageUrl}
+                        label={member.userName}
+                        className="h-8 w-8 border-2 border-white shadow-xs"
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Pending review indicator — buttons are at the end of each step card */}
-            {(projectDetail.status === "SETUP_PENDING" || projectDetail.status === "BOX_PENDING" || projectDetail.status === "PLAN_PENDING") && (
-              <div className="border-b border-slate-200 bg-amber-50 px-6 py-3 flex items-center gap-2">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-amber-400 shrink-0" />
-                <p className="text-sm font-semibold text-amber-800">
-                  {projectDetail.status === "SETUP_PENDING"
-                    ? "⏳ Team Setup submitted — review profiles and team image below"
-                    : projectDetail.status === "BOX_PENDING"
-                    ? "⏳ Project Box submitted — review the box image below"
-                    : "⏳ Project Plan submitted — review the team's answers below"}
-                </p>
-              </div>
-            )}
-
-
-
-            {/* Admin customise built-in questions (collapsed by default) */}
-            <details className="border-b border-slate-100">
-              <summary className="cursor-pointer px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600">
-                ⚙ Customise Project Steps (Box & Planning)
-              </summary>
-              <div className="space-y-6 px-6 pb-5 pt-3">
-                {/* Step 2 prompts */}
-                <div className="space-y-3">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Step 2 — Project Box Questions</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <Input value={promptDraft.boxTitle} onChange={(event) => setPromptDraft((prev) => ({ ...prev, boxTitle: event.target.value }))} className="border-slate-200 bg-white" placeholder="Box title" />
-                    <Input value={promptDraft.boxDescription} onChange={(event) => setPromptDraft((prev) => ({ ...prev, boxDescription: event.target.value }))} className="border-slate-200 bg-white" placeholder="Box description" />
-                  </div>
+            {/* Pending review banner */}
+            {projectDetail.status === "SETUP_PENDING" && (
+              <div className="border-b border-amber-200 bg-amber-50 px-6 py-3.5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 shrink-0" />
+                  <p className="text-sm font-semibold text-amber-900">
+                    Team Setup submitted — review profiles and team identity
+                  </p>
                 </div>
-
-                {/* Step 3 dynamic form builder */}
-                <div className="space-y-4">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Step 3 — Project Planning Form Builder</p>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                    {planningFields.map((field, index) => (
-                      <div key={`admin-detail-planning-field-${index}`} className="grid gap-3 md:grid-cols-[1.2fr_0.9fr_auto_auto]">
-                        <Input 
-                          value={field.label} 
-                          onChange={(event) => setPlanningFields((prev) => prev.map((entry, currentIndex) => currentIndex === index ? { ...entry, label: event.target.value } : entry))} 
-                          placeholder="Field label (e.g. Prototype Video)" 
-                          className="border-slate-200 bg-white" 
-                        />
-                        <Select 
-                          value={field.fieldType} 
-                          onValueChange={(value) => setPlanningFields((prev) => prev.map((entry, currentIndex) => currentIndex === index ? { ...entry, fieldType: value as CheckpointFieldType } : entry))}
-                        >
-                          <SelectTrigger className="border-slate-200 bg-white">
-                            <SelectValue placeholder="Type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="short_text">Short text</SelectItem>
-                            <SelectItem value="long_text">Long text</SelectItem>
-                            <SelectItem value="number">Number</SelectItem>
-                            <SelectItem value="date">Date</SelectItem>
-                            <SelectItem value="link">Single link</SelectItem>
-                            <SelectItem value="image_links">Image links</SelectItem>
-                            <SelectItem value="video_links">Video links</SelectItem>
-                            <SelectItem value="labeled_links">Labeled links</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <label className="flex items-center gap-2 text-sm text-slate-600">
-                          <Checkbox 
-                            checked={field.required} 
-                            onCheckedChange={(value) => setPlanningFields((prev) => prev.map((entry, currentIndex) => currentIndex === index ? { ...entry, required: Boolean(value) } : entry))} 
-                          />
-                          Req
-                        </label>
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="sm"
-                          className="border-slate-200 h-10 px-2" 
-                          onClick={() => setPlanningFields((prev) => prev.length === 1 ? [createEmptyCheckpointField()] : prev.filter((_, currentIndex) => currentIndex !== index))}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      className="w-full border-dashed border-slate-300 bg-transparent text-slate-500 hover:border-slate-400 hover:bg-slate-50" 
-                      onClick={() => setPlanningFields((prev) => [...prev, createEmptyCheckpointField()])}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Field to Planning Step
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button className="bg-slate-900 hover:bg-slate-800" onClick={handleSavePrompts}>
-                    Save All Changes
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold h-8"
+                    onClick={() => openReviewDialog("setup", true)}
+                  >
+                    Approve Setup
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-rose-200 text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-semibold h-8"
+                    onClick={() => openReviewDialog("setup", false)}
+                  >
+                    Reject Setup
                   </Button>
                 </div>
               </div>
-            </details>
+            )}
 
-            {/* Step-based project view (same as team member view) */}
-            <ProjectStepFlow
-              projectDetail={projectDetail}
-              userEmail={currentUserEmail}
-              onSaveIdentity={async (name, teamImageUrl) => {
-                await updateProjectIdentityMut({
-                  projectId: projectDetail.projectId,
-                  userEmail: currentUserEmail,
-                  name,
-                  teamImageUrl,
-                });
-                toast.success("Project identity updated.");
-              }}
-              renderTimelineItem={renderTimelineCard}
-              onOpenComposer={() => openComposer("post")}
-              onReview={(stage, approve) => openReviewDialog(stage, approve)}
-            />
-          </Card>
+            {/* 3-Tab Content Panes */}
+            <div className="p-4 md:p-6 bg-slate-50/40">
+              {activeTab === "profile" && (
+                <ProjectProfilePanel
+                  projectDetail={projectDetail}
+                  userEmail={currentUserEmail}
+                />
+              )}
+              {activeTab === "post" && (
+                <ProjectPostPanel
+                  projectDetail={projectDetail}
+                  userEmail={currentUserEmail}
+                />
+              )}
+              {activeTab === "report" && (
+                <ProjectReportGenerator
+                  projectId={projectDetail.projectId}
+                  userEmail={currentUserEmail}
+                  projectDetail={projectDetail}
+                />
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -919,192 +925,59 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
         <DialogContent className="border-slate-200 bg-white sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-black">
-              {reviewAction?.approve ? "Approve" : "Reject"}{" "}
-              {reviewAction?.stage === "setup" ? "Team Setup" : reviewAction?.stage === "box" ? "Project Box" : "Project Plan"}
+              {reviewAction?.approve ? "Approve Team Setup" : "Reject Team Setup"}
             </DialogTitle>
           </DialogHeader>
 
           {projectDetail && (
             <div className="space-y-5 py-2">
+              <div className="space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Team Submission — Team Setup</p>
 
-              {/* ── Setup content ── */}
-              {reviewAction?.stage === "setup" && (
-                <div className="space-y-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Team Submission — Team Setup</p>
-
-                  {/* Team image */}
-                  {projectDetail.teamImageUrl && (
-                    <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Team Image</p>
-                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                        <ImageWithLightbox src={projectDetail.teamImageUrl} alt="Team" className="w-full h-auto max-h-[260px] object-contain" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Member profiles */}
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Member Profiles</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {projectDetail.members.map((m) => (
-                        <div key={m.userEmail} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex items-center gap-3 mb-2">
-                            {m.profileImageUrl ? (
-                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full border border-slate-200">
-                                <ImageWithLightbox src={m.profileImageUrl} alt={m.userName} className="h-12 w-12 object-cover" />
-                              </div>
-                            ) : (
-                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500 text-xs font-bold">
-                                {m.userName.charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-semibold text-slate-900">{m.userName}</p>
-                              <p className="text-xs text-slate-500">{m.userRole}</p>
-                            </div>
-                          </div>
-                          {m.projectNote ? (
-                            <p className="text-sm text-slate-600">{m.projectNote}</p>
-                          ) : (
-                            <p className="text-xs text-amber-600 italic">No note added</p>
-                          )}
-                          {!m.profileImageUrl && (
-                            <p className="text-xs text-red-500 italic mt-1">Profile image missing</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Box content ── */}
-              {reviewAction?.stage === "box" && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Team Submission — Project Box</p>
-                  {projectDetail.boxImageUrl ? (
+                {/* Team image */}
+                {projectDetail.teamImageUrl && (
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Team Image</p>
                     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                      <ImageWithLightbox src={projectDetail.boxImageUrl} alt="Project box" className="w-full h-auto max-h-[360px] object-contain" />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-slate-500 italic">No box image submitted.</p>
-                  )}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Submitted</p>
-                      <p className="mt-1 font-medium text-slate-700">{formatDateTime(projectDetail.boxSubmittedAt)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Members</p>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {projectDetail.members.map((m) => (
-                          <span key={m.userEmail} className="text-xs font-medium text-slate-700">{m.userName}</span>
-                        ))}
-                      </div>
+                      <ImageWithLightbox src={projectDetail.teamImageUrl} alt="Team" className="w-full h-auto max-h-[260px] object-contain" />
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* ── Plan content with dynamic responses ── */}
-              {reviewAction?.stage === "plan" && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Team Submission — Project Plan</p>
-                    <span className="text-xs text-slate-500">Submitted {formatDateOnly(projectDetail.planSubmittedAt)}</span>
-                  </div>
-
-                  {(projectDetail.planningResponses?.length ? (
-                    /* Render dynamic responses */
-                    projectDetail.planningResponses.map((res) => (
-                      <div key={res.fieldId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{res.label}</p>
-                        
-                        <div className="text-sm text-slate-700">
-                          {res.multiValues && res.multiValues.length > 0 ? (
-                            <div className="space-y-2">
-                              {res.fieldType === "image_links" ? (
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  {res.multiValues.map((img, i) => (
-                                    <div key={i} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                                      <ImageWithLightbox src={img} alt={`${res.label} ${i+1}`} className="w-full h-32 object-cover" />
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : res.fieldType === "video_links" ? (
-                                <div className="space-y-2">
-                                  {res.multiValues.map((vid, i) => (
-                                    <iframe key={i} src={normalizeVideoUrl(vid)} className="aspect-video w-full rounded-xl border border-slate-200" allowFullScreen />
-                                  ))}
-                                </div>
-                              ) : (
-                                <ul className="list-disc pl-4 space-y-1">
-                                  {res.multiValues.map((v, i) => (
-                                    <li key={i}>{v}</li>
-                                  ))}
-                                </ul>
-                              )}
+                {/* Member profiles */}
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Member Profiles</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {projectDetail.members.map((m) => (
+                      <div key={m.userEmail} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex items-center gap-3 mb-2">
+                          {m.profileImageUrl ? (
+                            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full border border-slate-200">
+                              <ImageWithLightbox src={m.profileImageUrl} alt={m.userName} className="h-12 w-12 object-cover" />
                             </div>
                           ) : (
-                            <p className="whitespace-pre-line">{res.singleValue || "No response provided"}</p>
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500 text-xs font-bold">
+                              {m.userName.charAt(0).toUpperCase()}
+                            </div>
                           )}
+                          <div>
+                            <p className="font-semibold text-slate-900">{m.userName}</p>
+                            <p className="text-xs text-slate-500">{m.userRole}</p>
+                          </div>
                         </div>
-
-                        <div className="pt-2 border-t border-slate-200/60">
-                          <Textarea
-                            value={planQuestionComments[res.fieldId] ?? ""}
-                            onChange={(e) => setPlanQuestionComments((prev) => ({ ...prev, [res.fieldId]: e.target.value }))}
-                            placeholder={`Comment on "${res.label}"… (optional)`}
-                            className="min-h-[50px] border-blue-100 bg-white text-xs placeholder:text-slate-400"
-                          />
-                        </div>
+                        {m.projectNote ? (
+                          <p className="text-sm text-slate-600">{m.projectNote}</p>
+                        ) : (
+                          <p className="text-xs text-amber-600 italic">No note added</p>
+                        )}
+                        {!m.profileImageUrl && (
+                          <p className="text-xs text-red-500 italic mt-1">Profile image missing</p>
+                        )}
                       </div>
-                    ))
-                  ) : (
-                    /* Fallback to legacy fields */
-                    <>
-                      {([
-                        { key: "completedBehavior", label: projectDetail.questionConfig?.completedBehaviorPrompt || "Completed Behavior", value: projectDetail.completedBehavior },
-                        { key: "materialsRequired", label: projectDetail.questionConfig?.materialsRequiredPrompt || "Materials Required", value: projectDetail.materialsRequired },
-                        { key: "initialPlans", label: projectDetail.questionConfig?.initialPlansPrompt || "Initial Plans", value: projectDetail.initialPlans },
-                        { key: "firstSteps", label: projectDetail.questionConfig?.firstStepsPrompt || "First Steps", value: projectDetail.firstSteps },
-                      ] as { key: string; label: string; value: string | undefined }[]).filter((q) => q.value).map((q) => (
-                        <div key={q.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{q.label}</p>
-                          <p className="text-sm text-slate-700 whitespace-pre-line">{q.value}</p>
-                          <div className="pt-1">
-                            <Textarea
-                              value={planQuestionComments[q.key] ?? ""}
-                              onChange={(e) => setPlanQuestionComments((prev) => ({ ...prev, [q.key]: e.target.value }))}
-                              placeholder={`Comment on "${q.label}"… (optional)`}
-                              className="min-h-[60px] border-blue-200 bg-white text-sm"
-                            />
-                          </div>
-                        </div>
-                      ))}
-
-                      {projectDetail.sketchImages && projectDetail.sketchImages.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Sketch Images</p>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {projectDetail.sketchImages.filter(Boolean).map((img, i) => (
-                              <div key={i} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                                <ImageWithLightbox src={img} alt={`Sketch ${i + 1}`} className="w-full h-auto max-h-[250px] object-contain" />
-                              </div>
-                            ))}
-                          </div>
-                          <Textarea
-                            value={planQuestionComments["sketchImages"] ?? ""}
-                            onChange={(e) => setPlanQuestionComments((prev) => ({ ...prev, sketchImages: e.target.value }))}
-                            placeholder="Comment on the sketch images… (optional)"
-                            className="min-h-[50px] border-blue-200 bg-white text-sm"
-                          />
-                        </div>
-                      )}
-                    </>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              )}
+              </div>
 
               {/* Admin overall comment */}
               <div className="space-y-2">
@@ -1130,7 +1003,7 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
             </Button>
             {reviewAction?.approve ? (
               <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirmReview}>
-                Confirm Approval
+                Confirm Approval (Activate Project)
               </Button>
             ) : (
               <Button
@@ -1146,113 +1019,333 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
         </DialogContent>
       </Dialog>
 
+      {/* ── 3-Step Project Creation Wizard ── */}
       <Dialog
         open={createDialogOpen}
         onOpenChange={(open) => {
           setCreateDialogOpen(open);
           if (!open) {
             setEditingProjectId(undefined);
+            setWizardStep(1);
           }
         }}
       >
-        <DialogContent className="border-slate-200 bg-white sm:max-w-2xl">
+        <DialogContent className="border-slate-200 bg-white sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProjectId ? "Edit Project Group" : "Create Project Group"}</DialogTitle>
+            <DialogTitle className="text-xl font-black">
+              {editingProjectId ? "Edit Project Group" : "Create New Project"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="Project name" className="border-slate-200 bg-slate-50" />
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search approved users or team members" className="border-slate-200 bg-slate-50 pl-9" />
-            </div>
 
-            <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Step 3 — Planning Form Builder</p>
-                <Badge variant="outline" className="border-slate-300 text-slate-400">Custom Questions</Badge>
-              </div>
-              <div className="space-y-3">
-                {planningFields.map((field, index) => (
-                  <div key={`admin-planning-field-${index}`} className="grid gap-3 md:grid-cols-[1.2fr_0.9fr_auto_auto]">
-                    <Input 
-                      value={field.label} 
-                      onChange={(event) => setPlanningFields((prev) => prev.map((entry, currentIndex) => currentIndex === index ? { ...entry, label: event.target.value } : entry))} 
-                      placeholder="Field label (e.g. Prototype Video)" 
-                      className="border-slate-200 bg-white" 
-                    />
-                    <Select 
-                      value={field.fieldType} 
-                      onValueChange={(value) => setPlanningFields((prev) => prev.map((entry, currentIndex) => currentIndex === index ? { ...entry, fieldType: value as CheckpointFieldType } : entry))}
-                    >
-                      <SelectTrigger className="border-slate-200 bg-white">
-                        <SelectValue placeholder="Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="short_text">Short text</SelectItem>
-                        <SelectItem value="long_text">Long text</SelectItem>
-                        <SelectItem value="number">Number</SelectItem>
-                        <SelectItem value="date">Date</SelectItem>
-                        <SelectItem value="link">Single link</SelectItem>
-                        <SelectItem value="image_links">Image links</SelectItem>
-                        <SelectItem value="video_links">Video links</SelectItem>
-                        <SelectItem value="labeled_links">Labeled links</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <label className="flex items-center gap-2 text-sm text-slate-600">
-                      <Checkbox 
-                        checked={field.required} 
-                        onCheckedChange={(value) => setPlanningFields((prev) => prev.map((entry, currentIndex) => currentIndex === index ? { ...entry, required: Boolean(value) } : entry))} 
-                      />
-                      Req
-                    </label>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm"
-                      className="border-slate-200 h-10 px-2" 
-                      onClick={() => setPlanningFields((prev) => prev.length === 1 ? [createEmptyCheckpointField()] : prev.filter((_, currentIndex) => currentIndex !== index))}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full border-dashed border-slate-300 bg-transparent text-slate-500 hover:border-slate-400 hover:bg-slate-50" 
-                  onClick={() => setPlanningFields((prev) => [...prev, createEmptyCheckpointField()])}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Custom Question
-                </Button>
-              </div>
-            </div>
-
-            <div className="max-h-[300px] space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              {filteredUsers.map((entry) => (
-                <label key={entry.email} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                  <div className="flex items-center gap-3">
-                    <Checkbox checked={selectedEmails.includes(entry.email)} onCheckedChange={() => toggleMember(entry.email)} />
-                    <div>
-                      <p className="font-medium text-slate-900">{entry.name}</p>
-                      <p className="text-xs text-slate-500">{entry.email}</p>
+          {/* Step indicator */}
+          {!editingProjectId && (
+            <div className="wizard-step-indicator">
+              {[{ n: 1, label: "Identity" }, { n: 2, label: "Members" }, { n: 3, label: "Planning" }].map((s, i) => (
+                <>
+                  <div key={s.n} className="wizard-step-dot">
+                    <div className={`wizard-step-circle ${
+                      s.n < wizardStep ? "wizard-step-circle-done" :
+                      s.n === wizardStep ? "wizard-step-circle-current" :
+                      "wizard-step-circle-future"
+                    }`}>
+                      {s.n < wizardStep ? <Check className="h-4 w-4" /> : s.n}
                     </div>
+                    <span className={`wizard-step-label ${
+                      s.n < wizardStep ? "wizard-step-label-done" :
+                      s.n === wizardStep ? "wizard-step-label-current" :
+                      "wizard-step-label-future"
+                    }`}>{s.label}</span>
                   </div>
-                  <Badge variant="outline" className="border-slate-200 text-slate-600">
-                    {entry.role}
-                  </Badge>
-                </label>
+                  {i < 2 && (
+                    <div className={`wizard-connector ${s.n < wizardStep ? "wizard-connector-done" : "wizard-connector-future"}`} />
+                  )}
+                </>
               ))}
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="border-slate-200" onClick={() => setCreateDialogOpen(false)}>
-              Cancel
+          )}
+
+          {/* ── Edit Mode: Tabs for Info & Members ── */}
+          {editingProjectId ? (
+            <div className="space-y-4 py-2">
+              <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setEditTab("info")}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                    editTab === "info" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <FolderKanban className="inline-block mr-1.5 h-3.5 w-3.5" />
+                  Project Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditTab("members")}
+                  className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                    editTab === "members" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Users className="inline-block mr-1.5 h-3.5 w-3.5" />
+                  Project Members ({selectedEmails.length})
+                </button>
+              </div>
+
+              {editTab === "info" && (
+                <div className="wizard-panel space-y-4 py-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">Project Name *</label>
+                    <Input
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      placeholder="e.g. Smart Greenhouse System"
+                      className="border-slate-200 bg-slate-50 text-base font-semibold h-12 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">Cover / Team Image URL</label>
+                    <Input
+                      value={wizardCoverImageUrl}
+                      onChange={(e) => setWizardCoverImageUrl(e.target.value)}
+                      placeholder="https://... (Drive or direct image URL)"
+                      className="border-slate-200 bg-slate-50 rounded-xl"
+                    />
+                  </div>
+                  <div className="wizard-cover-preview">
+                    {wizardCoverImageUrl.trim() ? (
+                      <img
+                        src={normalizeImageUrl(wizardCoverImageUrl.trim())}
+                        alt="Cover preview"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-slate-400">
+                        <FolderKanban className="h-8 w-8" />
+                        <span className="text-xs">Cover image preview</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {editTab === "members" && (
+                <div className="wizard-panel space-y-4 py-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">Search & Select Members</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} placeholder="Search by name or email..." className="border-slate-200 bg-slate-50 pl-9 rounded-xl" />
+                    </div>
+                  </div>
+
+                  {selectedEmails.length > 0 && (
+                    <div className="wizard-selected-strip">
+                      {selectedEmails.map((email) => {
+                        const u = (users ?? []).find((x) => x.email === email);
+                        if (!u) return null;
+                        return (
+                          <div key={email} className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+                            <span className="h-5 w-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">{u.name.charAt(0)}</span>
+                            {u.name}
+                            <button type="button" onClick={() => toggleMember(email)} className="text-slate-400 hover:text-red-500 transition-colors">×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="max-h-[280px] space-y-2 overflow-y-auto">
+                    {filteredUsers.map((entry) => (
+                      <div
+                        key={entry.email}
+                        className={`wizard-member-row ${selectedEmails.includes(entry.email) ? "selected" : ""}`}
+                        onClick={() => toggleMember(entry.email)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                            selectedEmails.includes(entry.email) ? "bg-indigo-500 text-white" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {selectedEmails.includes(entry.email) ? <Check className="h-4 w-4" /> : entry.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{entry.name}</p>
+                            <p className="text-xs text-slate-500">{entry.email}</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="border-slate-200 text-xs">{entry.role}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400">{selectedEmails.length} member{selectedEmails.length !== 1 ? "s" : ""} selected for this project</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* ── Step 1: Identity ── */}
+              {wizardStep === 1 && (
+                <div className="wizard-panel space-y-4 py-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">Project Name *</label>
+                    <Input
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      placeholder="e.g. Smart Greenhouse System"
+                      className="border-slate-200 bg-slate-50 text-base font-semibold h-12 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">Cover / Team Image URL (optional)</label>
+                    <Input
+                      value={wizardCoverImageUrl}
+                      onChange={(e) => setWizardCoverImageUrl(e.target.value)}
+                      placeholder="https://... (Drive or direct image URL)"
+                      className="border-slate-200 bg-slate-50 rounded-xl"
+                    />
+                  </div>
+                  {/* Live preview */}
+                  <div className="wizard-cover-preview">
+                    {wizardCoverImageUrl.trim() ? (
+                      <img
+                        src={normalizeImageUrl(wizardCoverImageUrl.trim())}
+                        alt="Cover preview"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-slate-400">
+                        <FolderKanban className="h-8 w-8" />
+                        <span className="text-xs">Cover image preview</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
+                    <strong>Workflow overview:</strong> After creation, team members complete Team Setup. Once approved by an admin, the project immediately becomes Active for timeline posting, item tracking, and checkpoints.
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 2: Members ── */}
+              {wizardStep === 2 && (
+                <div className="wizard-panel space-y-4 py-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">Search Members</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} placeholder="Name or email" className="border-slate-200 bg-slate-50 pl-9 rounded-xl" />
+                    </div>
+                  </div>
+
+                  {/* Selected preview strip */}
+                  {selectedEmails.length > 0 && (
+                    <div className="wizard-selected-strip">
+                      {selectedEmails.map((email) => {
+                        const u = (users ?? []).find((x) => x.email === email);
+                        if (!u) return null;
+                        return (
+                          <div key={email} className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+                            <span className="h-5 w-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">{u.name.charAt(0)}</span>
+                            {u.name}
+                            <button type="button" onClick={() => toggleMember(email)} className="text-slate-400 hover:text-red-500 transition-colors">×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="max-h-[280px] space-y-2 overflow-y-auto">
+                    {filteredUsers.map((entry) => (
+                      <div
+                        key={entry.email}
+                        className={`wizard-member-row ${selectedEmails.includes(entry.email) ? "selected" : ""}`}
+                        onClick={() => toggleMember(entry.email)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                            selectedEmails.includes(entry.email) ? "bg-indigo-500 text-white" : "bg-slate-100 text-slate-600"
+                          }`}>
+                            {selectedEmails.includes(entry.email) ? <Check className="h-4 w-4" /> : entry.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{entry.name}</p>
+                            <p className="text-xs text-slate-500">{entry.email}</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="border-slate-200 text-xs">{entry.role}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400">{selectedEmails.length} member{selectedEmails.length !== 1 ? "s" : ""} selected</p>
+                </div>
+              )}
+
+              {/* ── Step 3: Planning form builder ── */}
+              {wizardStep === 3 && (
+                <div className="wizard-panel space-y-4 py-2">
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-700">
+                    <strong>Planning Step Questions</strong> — These questions will be shown to team members during the Planning stage. Leave empty to use defaults.
+                  </div>
+                  <div className="space-y-3">
+                    {planningFields.map((field, index) => (
+                      <div key={`wizard-planning-field-${index}`} className="wizard-field-row">
+                        <Input
+                          value={field.label}
+                          onChange={(e) => setPlanningFields((prev) => prev.map((entry, i) => i === index ? { ...entry, label: e.target.value } : entry))}
+                          placeholder="Question / field label"
+                          className="border-slate-200 bg-white text-sm rounded-lg h-9"
+                        />
+                        <Select value={field.fieldType} onValueChange={(v) => setPlanningFields((prev) => prev.map((entry, i) => i === index ? { ...entry, fieldType: v as CheckpointFieldType } : entry))}>
+                          <SelectTrigger className="border-slate-200 bg-white rounded-lg h-9 text-xs">
+                            <SelectValue placeholder="Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="short_text">Short text</SelectItem>
+                            <SelectItem value="long_text">Long text</SelectItem>
+                            <SelectItem value="number">Number</SelectItem>
+                            <SelectItem value="date">Date</SelectItem>
+                            <SelectItem value="link">Link</SelectItem>
+                            <SelectItem value="image_links">Image links</SelectItem>
+                            <SelectItem value="video_links">Video links</SelectItem>
+                            <SelectItem value="labeled_links">Labeled links</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                          <Checkbox checked={field.required} onCheckedChange={(v) => setPlanningFields((prev) => prev.map((entry, i) => i === index ? { ...entry, required: Boolean(v) } : entry))} />
+                          Req
+                        </label>
+                        <Button type="button" variant="ghost" size="sm" className="h-9 w-9 p-0 text-slate-400 hover:text-red-500"
+                          onClick={() => setPlanningFields((prev) => prev.length === 1 ? [createEmptyCheckpointField()] : prev.filter((_, i) => i !== index))}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" className="w-full border-dashed border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-xl"
+                      onClick={() => setPlanningFields((prev) => [...prev, createEmptyCheckpointField()])}>
+                      <Plus className="mr-2 h-4 w-4" /> Add Question
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Footer navigation */}
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button variant="outline" className="border-slate-200" onClick={() => {
+              if (wizardStep > 1 && !editingProjectId) setWizardStep((s) => s - 1);
+              else { setCreateDialogOpen(false); setEditingProjectId(undefined); setWizardStep(1); }
+            }}>
+              {wizardStep > 1 && !editingProjectId ? <><ChevronLeft className="mr-1 h-4 w-4" /> Back</> : "Cancel"}
             </Button>
-            <Button className="bg-slate-900 hover:bg-slate-800" onClick={handleCreateProject}>
-              {editingProjectId ? "Save Project" : "Create Project"}
-            </Button>
+            {(wizardStep < 3 && !editingProjectId) ? (
+              <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setWizardStep((s) => s + 1)} disabled={wizardStep === 1 && !projectName.trim()}>
+                Next <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            ) : (
+              <Button className="bg-slate-900 hover:bg-slate-800" onClick={handleCreateProject}>
+                {editingProjectId ? "Save Changes" : "Create Project"}
+              </Button>
+            )}
           </DialogFooter>
+
         </DialogContent>
       </Dialog>
 
@@ -1414,6 +1507,17 @@ export default function AdminProjectsTab({ currentUserEmail }: AdminProjectsTabP
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TimelinePostComposerDialog
+        open={timelinePostComposerOpen}
+        onOpenChange={setTimelinePostComposerOpen}
+        projectId={selectedProjectId}
+        userEmail={currentUserEmail}
+        editingPost={editingTimelinePost}
+        canModerate={true}
+        canPostMedia={true}
+      />
     </section>
   );
 }
+
