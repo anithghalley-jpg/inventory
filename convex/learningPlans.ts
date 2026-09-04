@@ -1057,4 +1057,121 @@ export const getLearningReport = query({
   },
 });
 
+export const getUserApprovedStripes = query({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (!args.userEmail) return [];
+    const emailLower = args.userEmail.trim().toLowerCase();
+    const user = await ctx.db.query("users").withIndex("by_email", q => q.eq("email", args.userEmail)).first();
+    const allPlans = await ctx.db.query("learningPlans").collect();
+
+    const approvedStripes: any[] = [];
+    for (const plan of allPlans) {
+      // Current edition
+      const curUsers = plan.registeredUsers || [];
+      const userInCur = curUsers.find(
+        u => u.email.toLowerCase() === emailLower && u.submissionStatus === "APPROVED"
+      );
+      if (userInCur) {
+        const custom = (user?.stripeCustomizations || []).find((s: any) => s.planId === plan._id || s.planId === plan.planId);
+        approvedStripes.push({
+          planId: plan._id,
+          title: plan.title,
+          edition: plan.edition || 1,
+          char: custom?.char || plan.title.charAt(0).toUpperCase(),
+          customColor: custom?.color,
+          tags: plan.tags || [],
+          approvedAt: userInCur.submittedAt || plan.updatedAt,
+        });
+      }
+
+      // Past editions
+      const pastEds = plan.pastEditions || [];
+      for (const ed of pastEds) {
+        const userInPast = (ed.registeredUsers || []).find(
+          (u: any) => u.email.toLowerCase() === emailLower && u.submissionStatus === "APPROVED"
+        );
+        if (userInPast) {
+          const customKey = `${plan._id}_ed${ed.editionNumber}`;
+          const custom = (user?.stripeCustomizations || []).find((s: any) => s.planId === customKey || s.planId === plan._id);
+          approvedStripes.push({
+            planId: customKey,
+            rawPlanId: plan._id,
+            title: `${plan.title} (Ed. ${ed.editionNumber})`,
+            edition: ed.editionNumber,
+            char: custom?.char || plan.title.charAt(0).toUpperCase(),
+            customColor: custom?.color,
+            tags: plan.tags || [],
+            approvedAt: userInPast.submittedAt || ed.completedAt || plan.updatedAt,
+          });
+        }
+      }
+    }
+
+    return approvedStripes.sort((a, b) => (a.approvedAt || 0) - (b.approvedAt || 0));
+  },
+});
+
+export const getAllUsersApprovedStripes = query({
+  args: {},
+  handler: async (ctx) => {
+    const allUsers = await ctx.db.query("users").collect();
+    const allPlans = await ctx.db.query("learningPlans").collect();
+
+    const userStripesMap: Record<string, any[]> = {};
+    for (const u of allUsers) {
+      userStripesMap[u.email.toLowerCase()] = [];
+    }
+
+    for (const plan of allPlans) {
+      // Current edition
+      for (const u of (plan.registeredUsers || [])) {
+        if (u.submissionStatus === "APPROVED") {
+          const email = u.email.toLowerCase();
+          if (!userStripesMap[email]) userStripesMap[email] = [];
+          const userDoc = allUsers.find(x => x.email.toLowerCase() === email);
+          const custom = (userDoc?.stripeCustomizations || []).find((s: any) => s.planId === plan._id || s.planId === plan.planId);
+          userStripesMap[email].push({
+            planId: plan._id,
+            title: plan.title,
+            edition: plan.edition || 1,
+            char: custom?.char || plan.title.charAt(0).toUpperCase(),
+            customColor: custom?.color,
+            tags: plan.tags || [],
+            approvedAt: u.submittedAt || plan.updatedAt,
+          });
+        }
+      }
+
+      // Past editions
+      for (const ed of (plan.pastEditions || [])) {
+        for (const u of (ed.registeredUsers || [])) {
+          if (u.submissionStatus === "APPROVED") {
+            const email = u.email.toLowerCase();
+            if (!userStripesMap[email]) userStripesMap[email] = [];
+            const userDoc = allUsers.find(x => x.email.toLowerCase() === email);
+            const customKey = `${plan._id}_ed${ed.editionNumber}`;
+            const custom = (userDoc?.stripeCustomizations || []).find((s: any) => s.planId === customKey || s.planId === plan._id);
+            userStripesMap[email].push({
+              planId: customKey,
+              rawPlanId: plan._id,
+              title: `${plan.title} (Ed. ${ed.editionNumber})`,
+              edition: ed.editionNumber,
+              char: custom?.char || plan.title.charAt(0).toUpperCase(),
+              customColor: custom?.color,
+              tags: plan.tags || [],
+              approvedAt: u.submittedAt || ed.completedAt || plan.updatedAt,
+            });
+          }
+        }
+      }
+    }
+
+    return userStripesMap;
+  },
+});
+
+
 

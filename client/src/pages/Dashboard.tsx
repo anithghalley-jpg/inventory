@@ -19,6 +19,7 @@ import DashboardLanding from '@/components/DashboardLanding';
 import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
 import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
+import MakerStripesRack from '@/components/MakerStripesRack';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -280,6 +281,10 @@ export default function Dashboard() {
   const registeredLearnings = useQuery(api.learningPlans.getMyRegisteredLearnings, {
     userEmail: user?.email || "",
   }) || [];
+  const userApprovedStripes = useQuery(api.learningPlans.getUserApprovedStripes, {
+    userEmail: user?.email || "",
+  }) || [];
+  const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
   const postponeRegistration = useMutation(api.learningPlans.postponeRegistration);
   const withdrawRegistration = useMutation(api.learningPlans.withdrawRegistration);
   const [selectedExperience, setSelectedExperience] = useState<any>(null);
@@ -772,8 +777,17 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Center: 3D Army Badges */}
-          <div className="hidden md:flex flex-1 justify-center">
+          {/* Center: Maker Stripes & Badges */}
+          <div className="hidden md:flex flex-1 justify-center items-center gap-4">
+            {userApprovedStripes && userApprovedStripes.length > 0 && (
+              <MakerStripesRack
+                stripes={userApprovedStripes}
+                size="md"
+                editable={true}
+                userEmail={user?.email}
+                userName={user?.name}
+              />
+            )}
             {user?.tags && user.tags.length > 0 && (
               <div className="flex items-center gap-3">
                 <TooltipProvider>
@@ -1540,22 +1554,35 @@ export default function Dashboard() {
                                   </div>
                                   <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Student'}</p>
 
-                                  {/* Badges - One Horizontal Line */}
-                                  {u.tags && u.tags.length > 0 && (
-                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                      {sortUserTags(u.tags).map((tag: string, idx: number) => {
-                                        const style = getTagStyle(tag);
-                                        return (
-                                          <span
-                                            key={idx}
-                                            className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                          >
-                                            {tag}
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
+                                  {/* Maker Stripes & Badges */}
+                                  {(() => {
+                                    const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+                                    const hasTags = u.tags && u.tags.length > 0;
+                                    if (uStripes.length === 0 && !hasTags) return null;
+
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                        {uStripes.length > 0 && (
+                                          <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
+                                        )}
+                                        {hasTags && (
+                                          <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
+                                            {sortUserTags(u.tags).map((tag: string, idx: number) => {
+                                              const style = getTagStyle(tag);
+                                              return (
+                                                <span
+                                                  key={idx}
+                                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                >
+                                                  {tag}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </Card>
@@ -1608,22 +1635,35 @@ export default function Dashboard() {
                                   </div>
                                   <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Student'}</p>
 
-                                  {/* Badges - One Horizontal Line */}
-                                  {u.tags && u.tags.length > 0 && (
-                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                      {sortUserTags(u.tags).map((tag: string, idx: number) => {
-                                        const style = getTagStyle(tag);
-                                        return (
-                                          <span
-                                            key={idx}
-                                            className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                          >
-                                            {tag}
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
+                                  {/* Maker Stripes & Badges */}
+                                  {(() => {
+                                    const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+                                    const hasTags = u.tags && u.tags.length > 0;
+                                    if (uStripes.length === 0 && !hasTags) return null;
+
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                        {uStripes.length > 0 && (
+                                          <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
+                                        )}
+                                        {hasTags && (
+                                          <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
+                                            {sortUserTags(u.tags).map((tag: string, idx: number) => {
+                                              const style = getTagStyle(tag);
+                                              return (
+                                                <span
+                                                  key={idx}
+                                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                >
+                                                  {tag}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </Card>

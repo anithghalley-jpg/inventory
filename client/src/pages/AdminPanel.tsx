@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
 import AdminLearningReportsTab from '@/components/AdminLearningReportsTab';
+import MakerStripesRack from '@/components/MakerStripesRack';
 
 /**
  * Design: Modern Minimalist - Admin Panel
@@ -151,6 +152,10 @@ export default function AdminPanel() {
   const convexProjectAssignments = useQuery(api.projects.getAssignmentsOverview);
   const convexSettings = useQuery(api.settings.getAdmin);
   const convexMachines = useQuery(api.machines.getAll);
+  const userApprovedStripes = useQuery(api.learningPlans.getUserApprovedStripes, {
+    userEmail: user?.email || "",
+  }) || [];
+  const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
   const registerMachineMut = useMutation(api.machines.register);
   const unregisterMachineMut = useMutation(api.machines.unregister);
   const deleteMachineLog = useMutation(api.machines.deleteLog);
@@ -1423,6 +1428,19 @@ export default function AdminPanel() {
             </div>
           </div>
 
+          {/* Center: Maker Stripes */}
+          {userApprovedStripes && userApprovedStripes.length > 0 && (
+            <div className="hidden md:flex items-center">
+              <MakerStripesRack
+                stripes={userApprovedStripes}
+                size="md"
+                editable={true}
+                userEmail={user?.email}
+                userName={user?.name}
+              />
+            </div>
+          )}
+
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium text-foreground">{user?.name}</p>
@@ -1573,22 +1591,35 @@ export default function AdminPanel() {
                       </span>
                     </div>
 
-                    {/* Tags (Compact) */}
-                    {u.tags && u.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {u.tags.map((tag, idx) => {
-                          const style = getTagStyle(tag);
-                          return (
-                            <span
-                              key={idx}
-                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-tight border shadow-sm ${style.color}`}
-                            >
-                              {tag}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {/* Maker Stripes & Tags */}
+                    {(() => {
+                      const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+                      const hasTags = u.tags && u.tags.length > 0;
+                      if (uStripes.length === 0 && !hasTags) return null;
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          {uStripes.length > 0 && (
+                            <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
+                          )}
+                          {hasTags && (
+                            <div className="flex flex-wrap gap-1">
+                              {(u.tags || []).map((tag, idx) => {
+                                const style = getTagStyle(tag);
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-tight border shadow-sm ${style.color}`}
+                                  >
+                                    {tag}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Loans (Expanded) */}
                     <div className="mt-auto pt-2 border-t border-border/40">

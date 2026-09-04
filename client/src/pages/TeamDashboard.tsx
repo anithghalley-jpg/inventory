@@ -18,6 +18,7 @@ import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
 import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import MyPlansTab from '@/components/MyPlansTab';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
+import MakerStripesRack from '@/components/MakerStripesRack';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
@@ -466,6 +467,10 @@ export default function TeamDashboard() {
     const attendedLearnings = useQuery(api.learningPlans.getMyAttendedLearnings, {
         userEmail: user?.email || "",
     }) || [];
+    const userApprovedStripes = useQuery(api.learningPlans.getUserApprovedStripes, {
+        userEmail: user?.email || "",
+    }) || [];
+    const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
     const [selectedExperience, setSelectedExperience] = useState<any>(null);
     const [showCertificateModal, setShowCertificateModal] = useState(false);
     const [submissionUrlInput, setSubmissionUrlInput] = useState("");
@@ -938,43 +943,54 @@ export default function TeamDashboard() {
                         </div>
                     </div>
 
-                    {/* Center: 3D Army Badges */}
-                    {user?.tags && user.tags.length > 0 && (
-                        <div className="hidden md:flex items-center gap-3 mx-4">
-                            <TooltipProvider>
-                                {user.tags.map((tag, idx) => {
-                                    const style = getTagStyle(tag);
-                                    const dynamic = getDynamicGlow(user.email || '');
-                                    return (
-                                        <Tooltip key={idx}>
-                                            <TooltipTrigger asChild>
-                                                <span
-                                                    style={{
-                                                        '--dynamic-glow': dynamic.glow,
-                                                        '--dynamic-border': dynamic.border
-                                                    } as React.CSSProperties}
-                                                    className={`
-                                                        inline-flex items-center px-2.5 py-1 rounded
-                                                        text-[9px] font-black uppercase tracking-tighter
-                                                        ${style.color}
-                                                        border-b-[3px] border-r-[2px] border-black
-                                                        hover:translate-y-[-1px] hover:translate-x-[-0.5px] 
-                                                        active:translate-y-[1px] active:translate-x-[0.5px] active:border-b-[1px] active:border-r-[0.5px]
-                                                        transition-all cursor-help select-none shadow-[0_4px_10px_var(--dynamic-glow)]
-                                                    `}
-                                                >
-                                                    {tag}
-                                                </span>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                                <p className="font-bold text-xs uppercase">Authorized: {tag}</p>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    );
-                                })}
-                            </TooltipProvider>
-                        </div>
-                    )}
+                    {/* Center: Maker Stripes & Badges */}
+                    <div className="hidden md:flex flex-1 justify-center items-center gap-4 mx-4">
+                        {userApprovedStripes && userApprovedStripes.length > 0 && (
+                            <MakerStripesRack
+                                stripes={userApprovedStripes}
+                                size="md"
+                                editable={true}
+                                userEmail={user?.email}
+                                userName={user?.name}
+                            />
+                        )}
+                        {user?.tags && user.tags.length > 0 && (
+                            <div className="flex items-center gap-3">
+                                <TooltipProvider>
+                                    {user.tags.map((tag, idx) => {
+                                        const style = getTagStyle(tag);
+                                        const dynamic = getDynamicGlow(user.email || '');
+                                        return (
+                                            <Tooltip key={idx}>
+                                                <TooltipTrigger asChild>
+                                                    <span
+                                                        style={{
+                                                            '--dynamic-glow': dynamic.glow,
+                                                            '--dynamic-border': dynamic.border
+                                                        } as React.CSSProperties}
+                                                        className={`
+                                                            inline-flex items-center px-2.5 py-1 rounded
+                                                            text-[9px] font-black uppercase tracking-tighter
+                                                            ${style.color}
+                                                            border-b-[3px] border-r-[2px] border-black
+                                                            hover:translate-y-[-1px] hover:translate-x-[-0.5px] 
+                                                            active:translate-y-[1px] active:translate-x-[0.5px] active:border-b-[1px] active:border-r-[0.5px]
+                                                            transition-all cursor-help select-none shadow-[0_4px_10px_var(--dynamic-glow)]
+                                                        `}
+                                                    >
+                                                        {tag}
+                                                    </span>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <p className="font-bold text-xs uppercase">Authorized: {tag}</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        );
+                                    })}
+                                </TooltipProvider>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-3 bg-slate-100/50 px-3 py-1.5 rounded-full border border-border/50">
@@ -1428,22 +1444,35 @@ export default function TeamDashboard() {
                                                                 </div>
                                                                 <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Student'}</p>
 
-                                                                {/* Badges - One Horizontal Line */}
-                                                                {u.tags && u.tags.length > 0 && (
-                                                                    <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                                                        {sortUserTags(u.tags).map((tag, idx) => {
-                                                                            const style = getTagStyle(tag);
-                                                                            return (
-                                                                                <span
-                                                                                    key={idx}
-                                                                                    className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                                                >
-                                                                                    {tag}
-                                                                                </span>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                )}
+                                                                {/* Maker Stripes & Badges */}
+                                                                {(() => {
+                                                                    const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+                                                                    const hasTags = u.tags && u.tags.length > 0;
+                                                                    if (uStripes.length === 0 && !hasTags) return null;
+
+                                                                    return (
+                                                                        <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                                                            {uStripes.length > 0 && (
+                                                                                <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
+                                                                            )}
+                                                                            {hasTags && (
+                                                                                <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
+                                                                                    {sortUserTags(u.tags).map((tag, idx) => {
+                                                                                        const style = getTagStyle(tag);
+                                                                                        return (
+                                                                                            <span
+                                                                                                key={idx}
+                                                                                                className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                                                            >
+                                                                                                {tag}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </div>
                                                     </Card>
@@ -1504,22 +1533,35 @@ export default function TeamDashboard() {
                                                                     </div>
                                                                     <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Faculty / Team Member</p>
 
-                                                                    {/* Badges - One Horizontal Line */}
-                                                                    {u.tags && u.tags.length > 0 && (
-                                                                        <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                                                            {sortUserTags(u.tags).map((tag, idx) => {
-                                                                                const style = getTagStyle(tag);
-                                                                                return (
-                                                                                    <span
-                                                                                        key={idx}
-                                                                                        className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                                                    >
-                                                                                        {tag}
-                                                                                    </span>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    )}
+                                                                    {/* Maker Stripes & Badges */}
+                                                                    {(() => {
+                                                                        const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+                                                                        const hasTags = u.tags && u.tags.length > 0;
+                                                                        if (uStripes.length === 0 && !hasTags) return null;
+
+                                                                        return (
+                                                                            <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                                                                {uStripes.length > 0 && (
+                                                                                    <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
+                                                                                )}
+                                                                                {hasTags && (
+                                                                                    <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
+                                                                                        {sortUserTags(u.tags).map((tag, idx) => {
+                                                                                            const style = getTagStyle(tag);
+                                                                                            return (
+                                                                                                <span
+                                                                                                    key={idx}
+                                                                                                    className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                                                                >
+                                                                                                    {tag}
+                                                                                                </span>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                         </Card>
@@ -1580,22 +1622,35 @@ export default function TeamDashboard() {
                                                                     </div>
                                                                     <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Student</p>
 
-                                                                    {/* Badges - One Horizontal Line */}
-                                                                    {u.tags && u.tags.length > 0 && (
-                                                                        <div className="flex flex-nowrap gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-                                                                            {sortUserTags(u.tags).map((tag, idx) => {
-                                                                                const style = getTagStyle(tag);
-                                                                                return (
-                                                                                    <span
-                                                                                        key={idx}
-                                                                                        className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                                                    >
-                                                                                        {tag}
-                                                                                    </span>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    )}
+                                                                    {/* Maker Stripes & Badges */}
+                                                                    {(() => {
+                                                                        const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+                                                                        const hasTags = u.tags && u.tags.length > 0;
+                                                                        if (uStripes.length === 0 && !hasTags) return null;
+
+                                                                        return (
+                                                                            <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                                                                {uStripes.length > 0 && (
+                                                                                    <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
+                                                                                )}
+                                                                                {hasTags && (
+                                                                                    <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
+                                                                                        {sortUserTags(u.tags).map((tag, idx) => {
+                                                                                            const style = getTagStyle(tag);
+                                                                                            return (
+                                                                                                <span
+                                                                                                    key={idx}
+                                                                                                    className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
+                                                                                                >
+                                                                                                    {tag}
+                                                                                                </span>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                         </Card>

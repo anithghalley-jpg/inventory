@@ -33,6 +33,11 @@ export default defineSchema({
     tags: v.array(v.string()),
     note: v.optional(v.string()),
     customTheme: v.optional(v.string()),
+    stripeCustomizations: v.optional(v.array(v.object({
+      planId: v.string(),
+      char: v.string(),
+      color: v.optional(v.string()),
+    }))),
   }).index("by_email", ["email"]),
   
   requests: defineTable({

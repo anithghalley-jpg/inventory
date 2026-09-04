@@ -379,3 +379,23 @@ export const resetAllScreenTime = mutation({
   },
 });
 
+export const updateStripeCustomizations = mutation({
+  args: {
+    email: v.string(),
+    stripes: v.array(v.object({
+      planId: v.string(),
+      char: v.string(),
+      color: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.query("users").withIndex("by_email", q => q.eq("email", args.email)).first();
+    if (!user) throw new Error("User not found");
+
+    await ctx.db.patch(user._id, {
+      stripeCustomizations: args.stripes,
+    });
+    return { success: true };
+  },
+});
+
