@@ -23,17 +23,24 @@ import {
   ChevronLeft,
   ClipboardList,
   Download,
+  Eye,
   FileText,
   FolderKanban,
+  Globe,
   LayoutGrid,
+  Lock,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   Plus,
+  Search,
   Send,
+  SlidersHorizontal,
   Sparkles,
   Star,
   UserRound,
+  Users,
 } from "lucide-react";
 import {
   createEmptyCheckpointField,
@@ -46,6 +53,8 @@ import {
   getStatusBgClass,
   getStatusPillClass,
   getPostTypeStyle,
+  getProjectLifecycleCategory,
+  getLifecycleBadgeInfo,
   isRecentActivity,
   MediaList,
   normalizeImageUrl,
@@ -55,8 +64,6 @@ import {
   ProjectAvatar,
   RelativeTime,
   ImageWithLightbox,
-  KANBAN_COLUMNS,
-  getKanbanColumn,
   getProjectProgress,
   InteractiveTimelinePostCard,
   TimelinePostComposerDialog,
@@ -64,11 +71,11 @@ import {
   type ProjectCardRecord,
   type ProjectDetailRecord,
   type TimelinePostKind,
+  type ProjectLifecycleCategory,
 } from "@/components/projects/projectShared";
 import ProjectProfilePanel from "./projects/ProjectProfilePanel";
 import ProjectPostPanel from "./projects/ProjectPostPanel";
 import ProjectReportGenerator from "./projects/ProjectReportGenerator";
-
 
 interface ProjectsWorkspaceProps {
   workspace?: { projects: ProjectCardRecord[] };
@@ -81,94 +88,91 @@ function fieldUsesMultipleLines(fieldType: CheckpointFieldType) {
   return fieldType === "image_links" || fieldType === "video_links" || fieldType === "labeled_links";
 }
 
-function TimelineMarker({ createdAt, mobile = false }: { createdAt: string; mobile?: boolean }) {
-  if (mobile) {
-    return (
-      <div className="mb-3 flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-slate-400 md:hidden">
-        <CalendarDays className="h-3.5 w-3.5" />
-        <span>{formatDateOnly(createdAt)}</span>
-        <span>{formatDateTime(createdAt).split(", ").slice(1).join(", ")}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="hidden h-full flex-col items-center md:flex">
-      <div className="rounded-full border border-slate-200 bg-white px-3 py-2 text-center shadow-sm">
-        <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">{formatDateOnly(createdAt)}</p>
-        <p className="mt-1 text-xs font-semibold text-slate-700">
-          {formatDateTime(createdAt).split(", ").slice(1).join(", ")}
-        </p>
-      </div>
-      <div className="mt-3 h-4 w-4 rounded-full border-4 border-white bg-slate-900 shadow-sm" />
-    </div>
-  );
-}
-
 function ProjectCardTile({
   project,
   onOpen,
   onStar,
   onComment,
   selected = false,
+  isMyProject = false,
 }: {
   project: ProjectCardRecord;
   onOpen: () => void;
   onStar: () => void;
-  onComment: () => void;
+  onComment?: () => void;
   selected?: boolean;
+  isMyProject?: boolean;
 }) {
   const previewImage = project.teamImageUrl ?? project.boxImageUrl ?? "";
   const { percent } = getProjectProgress(project.status);
   const accentClass = getStatusAccentClass(project.status);
   const bgClass = getStatusBgClass(project.status);
-  const pillClass = getStatusPillClass(project.status);
+  const lifecycle = getLifecycleBadgeInfo(project.status);
   const hasRecentActivity = isRecentActivity(project.lastActivityAt);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`project-card-premium w-full text-left ${bgClass} ${selected ? "selected" : ""}`}
+      className={`project-card-premium group w-full text-left transition-all duration-300 ${bgClass} ${selected ? "selected" : ""}`}
     >
       {/* Accent strip */}
       <div className={`project-card-accent ${accentClass}`} />
 
-      {/* Cover image */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-slate-100 shadow-sm mb-3">
+      {/* Cover image container with floating badges */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-slate-100 shadow-sm mb-3.5">
         {previewImage ? (
           <img
             src={normalizeImageUrl(previewImage)}
             alt={project.name}
-            className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="h-44 w-full object-cover transition-transform duration-500 group-hover:scale-105"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="flex h-40 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50">
-            <FolderKanban className="h-10 w-10 text-slate-300" />
+          <div className="flex h-44 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50">
+            <FolderKanban className="h-12 w-12 text-slate-300" />
           </div>
         )}
+
+        {/* Floating status & membership tags */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1.5 pointer-events-none">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold shadow-xs backdrop-blur-md border ${lifecycle.badgeClass} bg-white/90`}>
+            <span className={`h-2 w-2 rounded-full shrink-0 ${lifecycle.dotClass}`} />
+            <span>{lifecycle.label}</span>
+          </span>
+
+          {isMyProject ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-xs backdrop-blur-md bg-indigo-600/95 text-white border border-indigo-400/40">
+              <UserRound className="h-3 w-3" />
+              My Project
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold shadow-xs backdrop-blur-md bg-slate-900/80 text-slate-200 border border-slate-700/50">
+              <FileText className="h-3 w-3" />
+              Report
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Name + progress ring row */}
       <div className="flex items-start justify-between gap-2 mb-2 pl-1">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-black text-slate-900 leading-snug">{project.name}</h3>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-black text-slate-900 leading-snug group-hover:text-indigo-600 transition-colors">
+            {project.name}
+          </h3>
           <div className="flex items-center gap-1.5 mt-0.5">
             {hasRecentActivity && <span className="project-activity-pulse" />}
             <RelativeTime value={project.lastActivityAt || project.updatedAt} />
+            <span className="text-slate-300">•</span>
+            <span className="text-[11px] text-slate-500 font-medium">{lifecycle.detailLabel}</span>
           </div>
         </div>
         <ProgressRing percent={percent} size={44} strokeWidth={4} />
       </div>
 
-      {/* Status pill */}
-      <div className="pl-1 mb-3">
-        <span className={pillClass}>{getStatusLabel(project.status)}</span>
-      </div>
-
-      {/* Members + actions */}
-      <div className="flex items-center justify-between pl-1">
+      {/* Members stack + actions */}
+      <div className="flex items-center justify-between pl-1 pt-2 border-t border-slate-100 mt-2">
         <div className="project-avatar-stack">
           {project.members.slice(0, 5).map((member) => (
             <ProjectAvatar
@@ -184,21 +188,38 @@ function ProjectCardTile({
             </div>
           )}
         </div>
+
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             className="project-card-meta-chip text-amber-500 hover:bg-amber-50 transition-colors"
-            onClick={(e) => { e.stopPropagation(); onStar(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onStar();
+            }}
           >
             <Star className="h-3 w-3 fill-current" /> {project.likeCount}
           </button>
-          <button
-            type="button"
-            className="project-card-meta-chip text-blue-500 hover:bg-blue-50 transition-colors"
-            onClick={(e) => { e.stopPropagation(); onComment(); }}
-          >
-            <MessageSquare className="h-3 w-3" />
-          </button>
+          
+          {isMyProject && onComment && (
+            <button
+              type="button"
+              className="project-card-meta-chip text-blue-500 hover:bg-blue-50 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onComment();
+              }}
+              title="Post update"
+            >
+              <MessageSquare className="h-3 w-3" />
+            </button>
+          )}
+
+          {!isMyProject && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 group-hover:text-indigo-600 transition-colors pl-1">
+              <Eye className="h-3.5 w-3.5" /> View
+            </span>
+          )}
         </div>
       </div>
     </button>
@@ -209,8 +230,8 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
   const projects = workspace?.projects ?? [];
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState<"ALL" | ProjectLifecycleCategory>("ALL");
   const [activeTab, setActiveTab] = useState<"profile" | "post" | "report">("profile");
-  const [leftRailCollapsed, setLeftRailCollapsed] = useState(true);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [identityDialogOpen, setIdentityDialogOpen] = useState(false);
   const [composerDialogOpen, setComposerDialogOpen] = useState(false);
@@ -272,41 +293,70 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
     }
   };
 
-  const openPostComposer = () => {
-    setEditingTimelinePost(null);
-    setTimelinePostComposerOpen(true);
-  };
+  // Determine if the viewer is a member of the selected project
+  const isSelectedProjectMember = useMemo(() => {
+    if (!projectDetail || !userEmail) return false;
+    return Boolean(
+      projectDetail.permissions.isMember ||
+      projectDetail.members.some((m) => m.userEmail.toLowerCase() === userEmail.toLowerCase())
+    );
+  }, [projectDetail, userEmail]);
 
+  // When a non-member opens another project, ensure activeTab is locked to 'report'
+  useEffect(() => {
+    if (projectDetail && !isSelectedProjectMember && activeTab !== "report") {
+      setActiveTab("report");
+    }
+  }, [projectDetail, isSelectedProjectMember, activeTab]);
 
+  // Filter projects by search query and lifecycle filter
   const filteredProjects = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return projects;
     return projects.filter((project) => {
-      const memberMatch = project.members.some((member) =>
-        `${member.userName} ${member.userEmail}`.toLowerCase().includes(needle),
-      );
-      return project.name.toLowerCase().includes(needle) || memberMatch;
-    });
-  }, [projects, searchQuery]);
+      const matchesSearch = !needle ||
+        project.name.toLowerCase().includes(needle) ||
+        project.members.some((member) =>
+          `${member.userName} ${member.userEmail}`.toLowerCase().includes(needle),
+        );
 
-  const groupedProjects = useMemo(() => {
-    const groups = {
-      TEAM_SETUP: [] as ProjectCardRecord[],
-      BOX: [] as ProjectCardRecord[],
-      PLAN: [] as ProjectCardRecord[],
-      ACTIVE: [] as ProjectCardRecord[],
-      COMPLETED: [] as ProjectCardRecord[],
-    };
-    
-    filteredProjects.forEach((p) => {
-      if (p.status === "DRAFT" || p.status.includes("SETUP")) groups.TEAM_SETUP.push(p);
-      else if (p.status.includes("BOX")) groups.BOX.push(p);
-      else if (p.status.includes("PLAN")) groups.PLAN.push(p);
-      else if (p.status === "COMPLETED") groups.COMPLETED.push(p);
-      else groups.ACTIVE.push(p);
+      const category = getProjectLifecycleCategory(project.status);
+      const matchesCategory = lifecycleFilter === "ALL" || category === lifecycleFilter;
+
+      return matchesSearch && matchesCategory;
     });
-    return groups;
-  }, [filteredProjects]);
+  }, [projects, searchQuery, lifecycleFilter]);
+
+  // Split into "My Projects" and "Other Projects"
+  const { myProjects, otherProjects } = useMemo(() => {
+    const my: ProjectCardRecord[] = [];
+    const other: ProjectCardRecord[] = [];
+    const normalizedUserEmail = userEmail?.trim().toLowerCase() || "";
+
+    filteredProjects.forEach((project) => {
+      const isMember = Boolean(
+        project.viewerIsMember ||
+        (normalizedUserEmail && project.members.some((m) => m.userEmail.trim().toLowerCase() === normalizedUserEmail))
+      );
+
+      if (isMember) {
+        my.push(project);
+      } else {
+        other.push(project);
+      }
+    });
+
+    return { myProjects: my, otherProjects: other };
+  }, [filteredProjects, userEmail]);
+
+  // Global counts across all projects for the filter badges
+  const categoryCounts = useMemo(() => {
+    const counts = { ALL: projects.length, SETUP: 0, ACTIVE: 0, ARCHIVE: 0 };
+    projects.forEach((p) => {
+      const cat = getProjectLifecycleCategory(p.status);
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [projects]);
 
   useEffect(() => {
     if (selectedProjectId && !projects.some((project) => project.projectId === selectedProjectId)) {
@@ -317,20 +367,23 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
 
   useEffect(() => {
     if (!projectDetail || !userEmail) return;
-    const membership = projectDetail.members.find((member) => member.userEmail === userEmail);
+    const membership = projectDetail.members.find(
+      (member) => member.userEmail.toLowerCase() === userEmail.toLowerCase()
+    );
     setProfileImageUrl(membership?.profileImageUrl ?? "");
     setProjectNote(membership?.projectNote ?? "");
     setProjectNameDraft(projectDetail.name);
     setTeamImageDraft(projectDetail.teamImageUrl ?? "");
   }, [projectDetail, userEmail]);
 
-  const selectedCard = useMemo(
-    () => projects.find((project) => project.projectId === selectedProjectId),
-    [projects, selectedProjectId],
-  );
-
-  const openProject = (projectId: string) => {
+  const openProject = (projectId: string, isMember: boolean) => {
     setSelectedProjectId(projectId);
+    // If opening another's project, default to report view
+    if (!isMember) {
+      setActiveTab("report");
+    } else {
+      setActiveTab("profile");
+    }
   };
 
   const openComposer = (projectId: string, mode: "post" | "checkpoint" = "post") => {
@@ -422,32 +475,6 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
     setComposerDialogOpen(false);
   };
 
-  const handleSubmitCheckpointResponse = async (checkpointId: string) => {
-    if (!projectDetail || !userEmail) return;
-
-    const values = Object.entries(responseValues[checkpointId] ?? {}).map(([fieldId, value]) => {
-      const fieldDef = (projectDetail.timeline.find(item => item.itemType === 'checkpoint' && item.id === checkpointId) as any)?.fields?.find((f: any) => f.fieldId === fieldId);
-      return {
-        fieldId,
-        label: fieldDef?.label || "Unknown Field",
-        fieldType: fieldDef?.fieldType || "short_text",
-        singleValue: value.singleValue.trim() || undefined,
-        multiValues: value.multiValueText
-          .split("\n")
-          .map((entry) => entry.trim())
-          .filter(Boolean),
-      };
-    });
-
-    await submitCheckpointResponseMut({
-      userEmail,
-      projectId: projectDetail.projectId,
-      checkpointId,
-      values,
-    });
-    toast.success("Checkpoint response submitted.");
-  };
-
   const handleToggleLike = async (projectId: string) => {
     if (!userEmail) return;
     await toggleProjectLikeMut({
@@ -455,212 +482,6 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
       projectId,
     });
   };
-
-  const renderTimelineCard = (item: ProjectDetailRecord["timeline"][number]) => {
-    if (!projectDetail) return null;
-
-    if (item.itemType === "system") {
-      return (
-        <Card className="rounded-[1.5rem] border-slate-200 bg-white p-5 shadow-none">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">{item.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
-            </div>
-            <Badge className={getStatusBadgeClass(item.status)}>{item.status}</Badge>
-          </div>
-
-          {item.stage === "team_setup" ? (
-            <div className="mt-4 flex items-center gap-3">
-              <ProjectAvatar
-                imageUrl={String(item.details.teamImageUrl || "")}
-                label={String(item.details.projectName || projectDetail.name)}
-                className="h-16 w-16"
-              />
-              <div className="space-y-1 text-sm text-slate-600">
-                <p className="font-semibold text-slate-900">{String(item.details.projectName || projectDetail.name)}</p>
-                <p>{projectDetail.members.length} members in this project group.</p>
-              </div>
-            </div>
-          ) : null}
-
-        </Card>
-      );
-    }
-
-    if (item.itemType === "checkpoint") {
-      return (
-        <Card className="rounded-[1.5rem] border-slate-200 bg-white p-5 shadow-none">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">{item.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
-            </div>
-            <Badge className={getStatusBadgeClass(item.status)}>{item.status}</Badge>
-          </div>
-
-          <div className="mt-4 flex items-center gap-3 text-sm text-slate-500">
-            <ProjectAvatar imageUrl="" label={item.createdByName} className="h-10 w-10" />
-            <div>
-              <p className="font-semibold text-slate-900">{item.createdByName}</p>
-              <p>{item.createdByRole}</p>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {item.fields.map((field) => {
-              const currentValue = responseValues[item.id]?.[field.fieldId] ?? {
-                singleValue: "",
-                multiValueText: "",
-              };
-              const multiLine = fieldUsesMultipleLines(field.fieldType);
-
-              return (
-                <div key={field.fieldId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-2 flex items-center gap-2">
-                    <p className="font-semibold text-slate-900">{field.label}</p>
-                    {field.required ? (
-                      <Badge variant="outline" className="border-slate-200 text-slate-600">
-                        Required
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <p className="mb-3 text-xs uppercase tracking-[0.22em] text-slate-400">
-                    {field.fieldType.replace(/_/g, " ")}
-                  </p>
-                  {projectDetail.permissions.canRespondToCheckpoint ? (
-                    multiLine ? (
-                      <Textarea
-                        value={currentValue.multiValueText}
-                        onChange={(event) =>
-                          setResponseValues((prev) => ({
-                            ...prev,
-                            [item.id]: {
-                              ...(prev[item.id] ?? {}),
-                              [field.fieldId]: {
-                                ...currentValue,
-                                multiValueText: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        placeholder="Add one entry per line"
-                        className="min-h-[110px] border-slate-200 bg-white"
-                      />
-                    ) : field.fieldType === "long_text" ? (
-                      <Textarea
-                        value={currentValue.singleValue}
-                        onChange={(event) =>
-                          setResponseValues((prev) => ({
-                            ...prev,
-                            [item.id]: {
-                              ...(prev[item.id] ?? {}),
-                              [field.fieldId]: {
-                                ...currentValue,
-                                singleValue: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className="min-h-[110px] border-slate-200 bg-white"
-                      />
-                    ) : (
-                      <Input
-                        type={
-                          field.fieldType === "number"
-                            ? "number"
-                            : field.fieldType === "date"
-                              ? "date"
-                              : "text"
-                        }
-                        value={currentValue.singleValue}
-                        onChange={(event) =>
-                          setResponseValues((prev) => ({
-                            ...prev,
-                            [item.id]: {
-                              ...(prev[item.id] ?? {}),
-                              [field.fieldId]: {
-                                ...currentValue,
-                                singleValue: event.target.value,
-                              },
-                            },
-                          }))
-                        }
-                        className="border-slate-200 bg-white"
-                      />
-                    )
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-
-          {projectDetail.permissions.canRespondToCheckpoint ? (
-            <div className="mt-4 flex justify-end">
-              <Button className="bg-slate-900 hover:bg-slate-800" onClick={() => handleSubmitCheckpointResponse(item.id)}>
-                Submit Checkpoint Response
-              </Button>
-            </div>
-          ) : null}
-
-          {item.responses.length > 0 ? (
-            <div className="mt-5 space-y-3">
-              <h4 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">Responses</h4>
-              {item.responses.map((response) => (
-                <div key={response.responseId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center gap-3">
-                    <ProjectAvatar imageUrl="" label={response.submittedByName} className="h-10 w-10" />
-                    <div>
-                      <p className="font-semibold text-slate-900">{response.submittedByName}</p>
-                      <p className="text-xs text-slate-500">
-                        {response.submittedByRole} • {formatDateTime(response.updatedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {response.values.map((value) => (
-                      <div key={`${response.responseId}-${value.fieldId}`}>
-                        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">{value.label}</p>
-                        <div className="mt-2 text-sm text-slate-700">
-                          {value.multiValues && value.multiValues.length > 0 ? (
-                            <div className="space-y-1">
-                              {value.multiValues.map((entry, index) => (
-                                <p key={`${entry}-${index}`}>{entry}</p>
-                              ))}
-                            </div>
-                          ) : (
-                            <p>{value.singleValue || "No response"}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </Card>
-      );
-    }
-
-    if (item.itemType === "post") {
-      return (
-        <InteractiveTimelinePostCard
-          key={item.id}
-          post={item}
-          projectDetail={projectDetail}
-          currentUserEmail={userEmail ?? ""}
-          currentUserRole={projectDetail.members.find((m) => m.userEmail === userEmail)?.userRole}
-          onEditPost={handleEditTimelinePost}
-          onDeletePost={handleDeleteTimelinePost}
-        />
-      );
-    }
-
-
-    return null;
-  };
-
 
   if (!projects.length) {
     return (
@@ -671,8 +492,7 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
           </div>
           <h2 className="text-2xl font-black tracking-tight text-slate-900">Projects</h2>
           <p className="text-sm leading-6 text-slate-600">
-            No visible projects are available right now. Once a project group exists, the project cards
-            and timeline workspace will appear here.
+            No visible projects are available right now. Once a project group is created, it will appear here.
           </p>
         </div>
       </Card>
@@ -683,133 +503,320 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
     <section className="space-y-6">
       {!selectedProjectId || !projectDetail ? (
         <div className="space-y-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Projects</p>
-              <h2 className="text-4xl font-black tracking-tight text-slate-900">Project Board</h2>
-              <p className="text-sm leading-6 text-slate-500 max-w-lg">
-                Manage all project stages visually. Click any card to expand the project timeline and details.
+          {/* Header with Search and Lifecycle Filter Chips */}
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between pb-2 border-b border-slate-100">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-[0.28em] text-emerald-600 font-extrabold">Projects Workspace</span>
+                <span className="text-slate-300">•</span>
+                <span className="text-xs font-semibold text-slate-500">{projects.length} Total Projects</span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900">Project Directory</h2>
+              <p className="text-sm leading-6 text-slate-500 max-w-xl">
+                Track and manage your team assignments, or explore ongoing and archived projects across the lab.
               </p>
             </div>
 
-            <div className="w-full lg:max-w-sm">
-              <Input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search project name or member"
-                className="h-12 border-slate-200 bg-white shadow-sm rounded-2xl px-5 text-sm"
-              />
+            {/* Search Input */}
+            <div className="w-full lg:max-w-md space-y-3">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search project by name or team member..."
+                  className="h-12 border-slate-200 bg-white shadow-xs rounded-2xl pl-11 pr-5 text-sm"
+                />
+              </div>
+
+              {/* Category Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setLifecycleFilter("ALL")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                    lifecycleFilter === "ALL"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
+                  }`}
+                >
+                  All ({categoryCounts.ALL})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLifecycleFilter("SETUP")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                    lifecycleFilter === "SETUP"
+                      ? "bg-amber-500 text-white shadow-xs"
+                      : "bg-amber-50 text-amber-800 border border-amber-200/60 hover:bg-amber-100/70"
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  Setup ({categoryCounts.SETUP})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLifecycleFilter("ACTIVE")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                    lifecycleFilter === "ACTIVE"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "bg-emerald-50 text-emerald-800 border border-emerald-200/60 hover:bg-emerald-100/70"
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Active ({categoryCounts.ACTIVE})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLifecycleFilter("ARCHIVE")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                    lifecycleFilter === "ARCHIVE"
+                      ? "bg-slate-700 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200/80"
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                  Archive ({categoryCounts.ARCHIVE})
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 pb-4 items-start">
-            {KANBAN_COLUMNS.map((col) => {
-              const colProjects = filteredProjects.filter((p) => getKanbanColumn(p.status) === col.key);
-              return (
-                <div
-                  key={col.key}
-                  className={`project-kanban-column project-kanban-col-${col.key} flex flex-col gap-3`}
-                >
-                  <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200/70">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} />
-                      <h3 className={`font-bold text-sm tracking-wide ${col.textColor}`}>{col.label}</h3>
-                    </div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${col.textColor} bg-white/80 border-current/30`}>
-                      {colProjects.length}
-                    </span>
-                  </div>
-
-                  {colProjects.length === 0 ? (
-                    <div className="flex-1 rounded-xl border-2 border-dashed border-slate-200/60 flex items-center justify-center p-6 text-center text-slate-400 text-xs bg-white/40">
-                      No projects
-                    </div>
-                  ) : (
-                    colProjects.map((project) => (
-                      <ProjectCardTile
-                        key={project.projectId}
-                        project={project}
-                        onOpen={() => openProject(project.projectId)}
-                        onStar={() => handleToggleLike(project.projectId)}
-                        onComment={() => openComposer(project.projectId, "post")}
-                        selected={selectedProjectId === project.projectId}
-                      />
-                    ))
-                  )}
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          {/* SECTION 1: MY PROJECTS (Top)                                        */}
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                  <UserRound className="h-5 w-5" />
                 </div>
-              );
-            })}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black tracking-tight text-slate-900">My Projects</h3>
+                    <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200/80 font-bold px-2 py-0.5 text-xs">
+                      {myProjects.length}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Projects where you are an active team member with full profile, timeline, and report access.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {myProjects.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center space-y-2">
+                <FolderKanban className="h-8 w-8 text-slate-300 mx-auto" />
+                <p className="text-sm font-semibold text-slate-700">
+                  {searchQuery || lifecycleFilter !== "ALL"
+                    ? "No personal projects match your search/filter criteria."
+                    : "You are not assigned to any project groups yet."}
+                </p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  {searchQuery || lifecycleFilter !== "ALL"
+                    ? "Try clearing the search query or selecting a different status filter."
+                    : "Once an admin adds you to a project group, it will appear right here at the top of your workspace."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {myProjects.map((project) => (
+                  <ProjectCardTile
+                    key={project.projectId}
+                    project={project}
+                    isMyProject={true}
+                    onOpen={() => openProject(project.projectId, true)}
+                    onStar={() => handleToggleLike(project.projectId)}
+                    onComment={() => openComposer(project.projectId, "post")}
+                    selected={selectedProjectId === project.projectId}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          {/* SECTION 2: OTHER PROJECTS (Bottom)                                  */}
+          {/* ═══════════════════════════════════════════════════════════════════ */}
+          <div className="space-y-4 pt-4">
+            <div className="flex items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center text-white shadow-sm">
+                  <Globe className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black tracking-tight text-slate-900">Other Projects</h3>
+                    <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200 font-bold px-2 py-0.5 text-xs">
+                      {otherProjects.length}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Projects created and managed by other makers. Click any card to inspect their official project report.
+                  </p>
+                </div>
+              </div>
+
+              <div className="hidden sm:flex items-center gap-1 text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/80">
+                <FileText className="h-3.5 w-3.5 text-slate-400" />
+                <span>Read-Only Report View</span>
+              </div>
+            </div>
+
+            {otherProjects.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center space-y-2">
+                <Users className="h-8 w-8 text-slate-300 mx-auto" />
+                <p className="text-sm font-semibold text-slate-700">No other projects found.</p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  {searchQuery || lifecycleFilter !== "ALL"
+                    ? "Try adjusting your filters or search keywords."
+                    : "Projects from other teams will appear here for you to explore."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {otherProjects.map((project) => (
+                  <ProjectCardTile
+                    key={project.projectId}
+                    project={project}
+                    isMyProject={false}
+                    onOpen={() => openProject(project.projectId, false)}
+                    onStar={() => handleToggleLike(project.projectId)}
+                    selected={selectedProjectId === project.projectId}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : (
+        /* ═════════════════════════════════════════════════════════════════════ */
+        /* PROJECT DETAIL VIEW                                                  */
+        /* ═════════════════════════════════════════════════════════════════════ */
         <div className="space-y-6">
           <div className="neumorph-card overflow-hidden bg-white">
-             {/* Header with Project Title & Neumorphic 3-Tab Navigator (Sticky Top) */}
-             <div className="sticky top-0 z-20 border-b border-slate-200/90 bg-white/95 px-6 py-4 backdrop-blur shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-               <div className="flex items-center gap-3 min-w-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedProjectId("")}
-                    className="neumorph-btn h-9 text-xs font-semibold text-slate-700 rounded-xl shrink-0"
-                  >
-                    <ChevronLeft className="mr-1 h-4 w-4" />
-                    Back
-                  </Button>
-                  <div className="min-w-0">
-                    <h2 className="text-xl font-black text-slate-900 truncate tracking-tight">{projectDetail.name}</h2>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={getStatusPillClass(projectDetail.status)}>{getStatusLabel(projectDetail.status)}</span>
-                    </div>
+            {/* Sticky Header with Title & Navigation Controls */}
+            <div className="sticky top-0 z-20 border-b border-slate-200/90 bg-white/95 px-6 py-4 backdrop-blur shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedProjectId("")}
+                  className="neumorph-btn h-9 text-xs font-semibold text-slate-700 rounded-xl shrink-0"
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Back
+                </Button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-slate-900 truncate tracking-tight">
+                      {projectDetail.name}
+                    </h2>
+                    {isSelectedProjectMember ? (
+                      <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px] font-bold shrink-0">
+                        Team Member
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-semibold shrink-0">
+                        Report View
+                      </Badge>
+                    )}
                   </div>
-               </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={getStatusPillClass(projectDetail.status)}>
+                      {getStatusLabel(projectDetail.status)}
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-xs text-slate-500">
+                      {projectDetail.members.length} member{projectDetail.members.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-               {/* Neumorphic 3-Tab Group */}
-               <div className="neumorph-tab-group shrink-0 self-start md:self-auto">
-                 <button
-                   type="button"
-                   className={`neumorph-tab-item ${activeTab === 'profile' ? 'active' : ''}`}
-                   onClick={() => setActiveTab('profile')}
-                 >
-                   <FolderKanban className="h-4 w-4" />
-                   Project Profile
-                 </button>
-                 <button
-                   type="button"
-                   className={`neumorph-tab-item ${activeTab === 'post' ? 'active' : ''}`}
-                   onClick={() => setActiveTab('post')}
-                 >
-                   <Edit3 className="h-4 w-4" />
-                   Project Post
-                 </button>
-                 <button
-                   type="button"
-                   className={`neumorph-tab-item ${activeTab === 'report' ? 'active' : ''}`}
-                   onClick={() => setActiveTab('report')}
-                 >
-                   <FileText className="h-4 w-4" />
-                   Project Report
-                 </button>
-               </div>
-             </div>
+              {/* Navigation: 3-Tab Navigator for Team Members vs Single Indicator for Non-Members */}
+              {isSelectedProjectMember ? (
+                <div className="neumorph-tab-group shrink-0 self-start md:self-auto">
+                  <button
+                    type="button"
+                    className={`neumorph-tab-item ${activeTab === "profile" ? "active" : ""}`}
+                    onClick={() => setActiveTab("profile")}
+                  >
+                    <FolderKanban className="h-4 w-4" />
+                    Project Profile
+                  </button>
+                  <button
+                    type="button"
+                    className={`neumorph-tab-item ${activeTab === "post" ? "active" : ""}`}
+                    onClick={() => setActiveTab("post")}
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    Project Post
+                  </button>
+                  <button
+                    type="button"
+                    className={`neumorph-tab-item ${activeTab === "report" ? "active" : ""}`}
+                    onClick={() => setActiveTab("report")}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Project Report
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 shrink-0 self-start md:self-auto">
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold shadow-2xs">
+                    <FileText className="h-3.5 w-3.5 text-slate-500" />
+                    Official Project Report
+                  </span>
+                </div>
+              )}
+            </div>
 
-             {/* Tab Content Panes */}
-             <div className="p-4 md:p-6 bg-slate-50/40">
-                {activeTab === 'profile' && (
-                  <ProjectProfilePanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
-                )}
-                {activeTab === 'post' && (
-                  <ProjectPostPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
-                )}
-                {activeTab === 'report' && (
-                  <ProjectReportGenerator projectId={projectDetail.projectId} userEmail={userEmail ?? ""} projectDetail={projectDetail} />
-                )}
-             </div>
+            {/* Non-Member Banner Notice */}
+            {!isSelectedProjectMember && (
+              <div className="bg-amber-50/70 border-b border-amber-200/70 px-6 py-2.5 flex items-center justify-between text-xs text-amber-800">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>
+                    You are viewing a project created by another team. Non-members have read-only access to the synthesized project report.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Tab Content Panes */}
+            <div className="p-4 md:p-6 bg-slate-50/40">
+              {isSelectedProjectMember ? (
+                <>
+                  {activeTab === "profile" && (
+                    <ProjectProfilePanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
+                  )}
+                  {activeTab === "post" && (
+                    <ProjectPostPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
+                  )}
+                  {activeTab === "report" && (
+                    <ProjectReportGenerator
+                      projectId={projectDetail.projectId}
+                      userEmail={userEmail ?? ""}
+                      projectDetail={projectDetail}
+                    />
+                  )}
+                </>
+              ) : (
+                /* Non-members exclusively see the Project Report */
+                <ProjectReportGenerator
+                  projectId={projectDetail.projectId}
+                  userEmail={userEmail ?? ""}
+                  projectDetail={projectDetail}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
 
-
+      {/* ── Dialogs for Members ── */}
       <Dialog open={composerDialogOpen} onOpenChange={setComposerDialogOpen}>
         <DialogContent className="border-slate-200 bg-white sm:max-w-3xl">
           <DialogHeader>
@@ -1215,4 +1222,3 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
     </section>
   );
 }
-

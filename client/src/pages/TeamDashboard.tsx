@@ -17,10 +17,11 @@ import { MachineTurnNotification } from '@/components/MachineTurnNotification';
 import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
 import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import MyPlansTab from '@/components/MyPlansTab';
+import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Clock
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Clock, Image as ImageIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -466,6 +467,7 @@ export default function TeamDashboard() {
         userEmail: user?.email || "",
     }) || [];
     const [selectedExperience, setSelectedExperience] = useState<any>(null);
+    const [showCertificateModal, setShowCertificateModal] = useState(false);
     const [submissionUrlInput, setSubmissionUrlInput] = useState("");
     const submitLearningProof = useMutation(api.learningPlans.submitLearningProof);
     const projectWorkspace = useQuery(api.projects.getMemberWorkspace, {
@@ -1919,6 +1921,8 @@ export default function TeamDashboard() {
                                         (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
                                     );
 
+                                    const isApproved = myRecord?.submissionStatus === "APPROVED";
+
                                     return (
                                         <Card
                                             key={plan._id}
@@ -1940,18 +1944,18 @@ export default function TeamDashboard() {
                                                         <CheckCircle2 className="w-3 h-3 text-white" />
                                                         Verified Attendance
                                                     </div>
-                                                    {myRecord?.submissionStatus === "APPROVED" && (
-                                                        <div className="absolute top-3 left-3 bg-amber-400 text-slate-950 text-[10px] font-extrabold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 border border-amber-300">
+                                                    {isApproved && (
+                                                        <div className="absolute top-3 left-3 bg-amber-400 text-slate-950 text-[10px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1.5 border border-amber-300 animate-in fade-in zoom-in duration-300">
                                                             <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
-                                                            Mastered Experience ⭐
+                                                            Session Completed • Mastered ⭐
                                                         </div>
                                                     )}
-                                                    {myRecord?.submissionStatus === "REJECTED" && (
+                                                    {!isApproved && myRecord?.submissionStatus === "REJECTED" && (
                                                         <div className="absolute top-3 left-3 bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
                                                             Follow-up Needed ❌
                                                         </div>
                                                     )}
-                                                    {myRecord?.submissionStatus === "PENDING" && (
+                                                    {!isApproved && myRecord?.submissionStatus === "PENDING" && (
                                                         <div className="absolute top-3 left-3 bg-amber-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
                                                             Pending Review ⏳
                                                         </div>
@@ -1963,18 +1967,18 @@ export default function TeamDashboard() {
                                                         <CheckCircle2 className="w-3 h-3 text-white" />
                                                         Verified Attendance
                                                     </div>
-                                                    {myRecord?.submissionStatus === "APPROVED" && (
-                                                        <div className="absolute top-3 left-3 z-10 bg-amber-400 text-slate-950 text-[10px] font-extrabold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 border border-amber-300">
+                                                    {isApproved && (
+                                                        <div className="absolute top-3 left-3 z-10 bg-amber-400 text-slate-950 text-[10px] font-black px-3 py-1 rounded-full shadow-lg flex items-center gap-1.5 border border-amber-300 animate-in fade-in zoom-in duration-300">
                                                             <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
-                                                            Mastered Experience ⭐
+                                                            Session Completed • Mastered ⭐
                                                         </div>
                                                     )}
-                                                    {myRecord?.submissionStatus === "REJECTED" && (
+                                                    {!isApproved && myRecord?.submissionStatus === "REJECTED" && (
                                                         <div className="absolute top-3 left-3 z-10 bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
                                                             Follow-up Needed ❌
                                                         </div>
                                                     )}
-                                                    {myRecord?.submissionStatus === "PENDING" && (
+                                                    {!isApproved && myRecord?.submissionStatus === "PENDING" && (
                                                         <div className="absolute top-3 left-3 z-10 bg-amber-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow flex items-center gap-1">
                                                             Pending Review ⏳
                                                         </div>
@@ -2032,20 +2036,52 @@ export default function TeamDashboard() {
                     {/* Learning Experience Details Modal */}
                     <Dialog open={!!selectedExperience} onOpenChange={(open) => !open && setSelectedExperience(null)}>
                         <DialogContent className="max-w-4xl lg:max-w-5xl max-h-[92vh] overflow-y-auto p-6 md:p-8">
-                            <DialogHeader>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                        Verified Attendance
-                                    </span>
-                                    {selectedExperience?.status === "COMPLETED" && (
-                                        <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
-                                            Completed Session
-                                        </span>
-                                    )}
-                                </div>
-                                <DialogTitle className="text-2xl font-bold text-slate-900 pt-1">{selectedExperience?.title}</DialogTitle>
-                            </DialogHeader>
+                            {(() => {
+                                const myRecord = selectedExperience?.registeredUsers?.find(
+                                    (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                ) || (selectedExperience?.pastEditions || []).flatMap((e: any) => e.registeredUsers || []).find(
+                                    (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                );
+                                const isApproved = myRecord?.submissionStatus === "APPROVED";
+                                const isCompleted = selectedExperience?.status === "COMPLETED" || isApproved;
+
+                                return (
+                                    <DialogHeader>
+                                        <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-xs">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                    Verified Attendance
+                                                </span>
+                                                {isCompleted && (
+                                                    <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-xs">
+                                                        <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                                                        Session Completed
+                                                    </span>
+                                                )}
+                                                {isApproved && (
+                                                    <span className="px-3 py-1 bg-amber-400 text-slate-950 border border-amber-300 text-xs font-black uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-xs">
+                                                        <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+                                                        Mastered & Approved ⭐
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {isApproved && (
+                                                <Button
+                                                    size="sm"
+                                                    type="button"
+                                                    onClick={() => setShowCertificateModal(true)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3.5 rounded-xl shadow-xs gap-1.5 cursor-pointer ml-auto"
+                                                >
+                                                    <Printer className="w-3.5 h-3.5" />
+                                                    <span>Export Certification</span>
+                                                </Button>
+                                            )}
+                                        </div>
+                                        <DialogTitle className="text-2xl font-bold text-slate-900 pt-1">{selectedExperience?.title}</DialogTitle>
+                                    </DialogHeader>
+                                );
+                            })()}
 
                             {selectedExperience && (
                                 <div className="space-y-6 py-2">
@@ -2074,6 +2110,8 @@ export default function TeamDashboard() {
                                     {(() => {
                                         const myRecord = selectedExperience.registeredUsers?.find(
                                             (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                        ) || (selectedExperience.pastEditions || []).flatMap((e: any) => e.registeredUsers || []).find(
+                                            (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
                                         );
 
                                         if (!myRecord) return null;
@@ -2092,7 +2130,7 @@ export default function TeamDashboard() {
                                                     {isApproved && (
                                                         <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-amber-400 text-slate-950 border border-amber-300 flex items-center gap-1 shadow">
                                                             <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
-                                                            Mastered Experience ⭐
+                                                            Session Completed & Mastered ⭐
                                                         </span>
                                                     )}
                                                     {isRejected && (
@@ -2115,11 +2153,33 @@ export default function TeamDashboard() {
                                                 ) : (
                                                     <>
                                                         {isApproved && (
-                                                            <div className="text-xs space-y-1.5 bg-emerald-50/80 p-3 rounded-lg border border-emerald-200 text-emerald-900">
-                                                                <p className="font-semibold">Your completion proof has been reviewed & approved by the session leader!</p>
+                                                            <div className="text-xs space-y-2.5 bg-emerald-50/90 p-4 rounded-2xl border border-emerald-300 text-emerald-950 shadow-xs">
+                                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                                    <div className="flex items-center gap-2 font-black text-emerald-800 text-sm">
+                                                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                                                        <span>Session Marked as Completed & Approved! 🎉</span>
+                                                                    </div>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        type="button"
+                                                                        onClick={() => setShowCertificateModal(true)}
+                                                                        className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs h-8 px-3.5 rounded-xl shadow-xs gap-1.5 cursor-pointer"
+                                                                    >
+                                                                        <Printer className="w-3.5 h-3.5" />
+                                                                        <span>Download Certification PDF</span>
+                                                                    </Button>
+                                                                </div>
+                                                                <p className="font-medium text-emerald-900 leading-relaxed">
+                                                                    Your completion proof has been reviewed & approved by the session curator. This learning experience is officially verified and completed!
+                                                                </p>
+                                                                {myRecord.feedbackNote && (
+                                                                    <p className="italic bg-white/90 p-2.5 rounded-lg border border-emerald-200 text-emerald-800 font-medium">
+                                                                        Curator Feedback: "{myRecord.feedbackNote}"
+                                                                    </p>
+                                                                )}
                                                                 {myRecord.submissionUrl && (
-                                                                    <p className="flex items-center gap-1">
-                                                                        <span>Submitted Link:</span>
+                                                                    <p className="flex items-center gap-1.5 pt-1">
+                                                                        <span className="font-bold text-slate-700">Verified Deliverable:</span>
                                                                         <a href={myRecord.submissionUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold underline truncate max-w-sm">
                                                                             {myRecord.submissionUrl}
                                                                         </a>
@@ -2216,23 +2276,96 @@ export default function TeamDashboard() {
                                         </div>
                                     </div>
 
-                                    {selectedExperience.imageUrls && selectedExperience.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
-                                        <div>
-                                            <h4 className="font-semibold text-slate-900 mb-2 text-sm">Session Gallery & Visuals</h4>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                {selectedExperience.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).map((url: string, idx: number) => (
-                                                    <div key={idx} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video flex items-center justify-center">
-                                                        <img
-                                                            src={getOptimizedImageUrl(url)}
-                                                            alt=""
-                                                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
-                                                            referrerPolicy="no-referrer"
-                                                        />
-                                                    </div>
-                                                ))}
+                                    {/* ── Official Group Photo, Gallery & Visuals (Side-by-Side Unified Grid) ── */}
+                                    {(() => {
+                                        const attendedEdNum = selectedExperience.attendedEdition || selectedExperience.edition || 1;
+                                        const attendedPastEd = (selectedExperience.pastEditions || []).find((e: any) => e.editionNumber === attendedEdNum);
+                                        
+                                        const myEditionGroupImg = selectedExperience.attendedEdition && attendedPastEd
+                                            ? attendedPastEd.groupImageUrl
+                                            : selectedExperience.groupImageUrl || attendedPastEd?.groupImageUrl;
+                                        
+                                        const myEditionGroupLink = selectedExperience.attendedEdition && attendedPastEd
+                                            ? attendedPastEd.groupImageLink
+                                            : selectedExperience.groupImageLink || attendedPastEd?.groupImageLink;
+                                            
+                                        const myEditionGroupCaption = selectedExperience.attendedEdition && attendedPastEd
+                                            ? attendedPastEd.groupImageCaption
+                                            : selectedExperience.groupImageCaption || attendedPastEd?.groupImageCaption;
+
+                                        const validImages = (selectedExperience.imageUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
+
+                                        if (!myEditionGroupImg && validImages.length === 0) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <div className="space-y-3">
+                                                <h4 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+                                                    <ImageIcon className="w-4 h-4 text-purple-600" />
+                                                    Session Gallery & Visuals
+                                                </h4>
+
+                                                {/* Unified Side-by-Side Gallery Grid */}
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    {/* Official Group Photo Card */}
+                                                    {myEditionGroupImg && (
+                                                        <div className="bg-gradient-to-br from-purple-50/90 via-slate-50 to-indigo-50/70 p-3 rounded-2xl border border-purple-200/90 shadow-xs flex flex-col justify-between space-y-2.5">
+                                                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                                                <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                                                                    📸 Edition {attendedEdNum} Group Photo
+                                                                </span>
+                                                                {myEditionGroupLink && (
+                                                                    <a
+                                                                        href={myEditionGroupLink}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-[11px] font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-purple-200 shadow-2xs cursor-pointer"
+                                                                    >
+                                                                        <span>Album</span>
+                                                                        <ExternalLink className="w-3 h-3" />
+                                                                    </a>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="rounded-xl overflow-hidden border border-purple-200/80 bg-slate-900 flex items-center justify-center aspect-video relative group shadow-2xs">
+                                                                <img
+                                                                    src={getOptimizedImageUrl(myEditionGroupImg)}
+                                                                    alt={`Edition ${attendedEdNum} Group`}
+                                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                                    referrerPolicy="no-referrer"
+                                                                />
+                                                                <div className="absolute top-2 left-2 bg-purple-900/80 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-300/30">
+                                                                    Official Cohort Photo
+                                                                </div>
+                                                            </div>
+
+                                                            {myEditionGroupCaption && (
+                                                                <p className="text-[11px] text-slate-600 italic text-center font-medium line-clamp-2 px-1">
+                                                                    "{myEditionGroupCaption}"
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Workshop Visuals / Photos on the other side */}
+                                                    {validImages.map((url: string, idx: number) => (
+                                                        <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video flex items-center justify-center relative group shadow-xs">
+                                                            <img
+                                                                src={getOptimizedImageUrl(url)}
+                                                                alt="Workshop Visual"
+                                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                                referrerPolicy="no-referrer"
+                                                            />
+                                                            <div className="absolute top-2 left-2 bg-slate-900/70 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-full border border-white/20">
+                                                                Workshop Visual #{idx + 1}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
 
                                     {selectedExperience.videoUrls && selectedExperience.videoUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
                                         <div>
@@ -2269,6 +2402,23 @@ export default function TeamDashboard() {
                             )}
                         </DialogContent>
                     </Dialog>
+
+                    {/* Learning Completion Certificate / Evidence PDF Report Modal */}
+                    {selectedExperience && (
+                        <LearningReportPdfModal
+                            isOpen={showCertificateModal}
+                            onClose={() => setShowCertificateModal(false)}
+                            plan={selectedExperience}
+                            user={user}
+                            myRecord={
+                                selectedExperience.registeredUsers?.find(
+                                    (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                ) || (selectedExperience.pastEditions || []).flatMap((e: any) => e.registeredUsers || []).find(
+                                    (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
+                                )
+                            }
+                        />
+                    )}
                 </Tabs>
                 <MachineTurnNotification scriptUrl={SCRIPT_URL} />
             </main>

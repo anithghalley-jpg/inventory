@@ -142,6 +142,9 @@ export const updatePlan = mutation({
         date: existing.date,
         time: existing.time,
         location: existing.location,
+        groupImageUrl: existing.groupImageUrl,
+        groupImageLink: existing.groupImageLink,
+        groupImageCaption: existing.groupImageCaption,
         registeredUsers: existing.registeredUsers || [],
         completedAt: now,
       };
@@ -150,6 +153,9 @@ export const updatePlan = mutation({
       patchObj.completedEditionsCount = Math.max(existing.completedEditionsCount || 0, currentEdition);
       patchObj.pastEditions = [...pastEditions, archivedEdition];
       patchObj.registeredUsers = []; // Fresh registration list for new edition
+      patchObj.groupImageUrl = undefined;
+      patchObj.groupImageLink = undefined;
+      patchObj.groupImageCaption = undefined;
       patchObj.status = "PUBLISHED";
     } else if (updates.status === "PUBLISHED" && isExpired) {
       patchObj.status = "COMPLETED";
@@ -729,6 +735,9 @@ export const completeSessionWithTags = mutation({
     planId: v.id("learningPlans"),
     awardTag: v.string(),
     scriptUrl: v.string(),
+    groupImageUrl: v.optional(v.string()),
+    groupImageLink: v.optional(v.string()),
+    groupImageCaption: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const plan = await ctx.db.get(args.planId);
@@ -780,17 +789,270 @@ export const completeSessionWithTags = mutation({
     const currentEdition = plan.edition || 1;
     const completedEditionsCount = Math.max(plan.completedEditionsCount || 0, currentEdition);
 
-    await ctx.db.patch(args.planId, {
+    const patchPayload: any = {
       status: "COMPLETED",
       completedEditionsCount,
       awardedTag: tagToAward,
       updatedAt: Date.now(),
-    });
+    };
+
+    if (args.groupImageUrl !== undefined) {
+      patchPayload.groupImageUrl = args.groupImageUrl?.trim() || undefined;
+    }
+    if (args.groupImageLink !== undefined) {
+      patchPayload.groupImageLink = args.groupImageLink?.trim() || undefined;
+    }
+    if (args.groupImageCaption !== undefined) {
+      patchPayload.groupImageCaption = args.groupImageCaption?.trim() || undefined;
+    }
+
+    await ctx.db.patch(args.planId, patchPayload);
 
     return {
       success: true,
       message: `Session completed! Mastery tag "${tagToAward}" awarded to ${awardedCount} member(s)! 🎉`,
       awardedCount,
+    };
+  },
+});
+
+export const updateEditionMedia = mutation({
+  args: {
+    planId: v.id("learningPlans"),
+    editionNumber: v.number(),
+    groupImageUrl: v.optional(v.string()),
+    groupImageLink: v.optional(v.string()),
+    groupImageCaption: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get(args.planId);
+    if (!plan) throw new Error("Plan not found");
+
+    const currentEditionNum = plan.edition || 1;
+    const cleanImg = args.groupImageUrl?.trim() || undefined;
+    const cleanLink = args.groupImageLink?.trim() || undefined;
+    const cleanCaption = args.groupImageCaption?.trim() || undefined;
+
+    if (args.editionNumber === currentEditionNum) {
+      await ctx.db.patch(args.planId, {
+        groupImageUrl: cleanImg,
+        groupImageLink: cleanLink,
+        groupImageCaption: cleanCaption,
+        updatedAt: Date.now(),
+      });
+    } else {
+      const pastEditions = (plan.pastEditions || []).map((ed: any) => {
+        if (ed.editionNumber === args.editionNumber) {
+          return {
+            ...ed,
+            groupImageUrl: cleanImg,
+            groupImageLink: cleanLink,
+            groupImageCaption: cleanCaption,
+          };
+        }
+        return ed;
+      });
+      await ctx.db.patch(args.planId, {
+        pastEditions,
+        updatedAt: Date.now(),
+      });
+    }
+    return { success: true, message: `Edition ${args.editionNumber} group photo and links updated successfully!` };
+  },
+});
+
+export const getAllPlans = query({
+  args: {},
+  handler: async (ctx) => {
+    const allPlans = await ctx.db.query("learningPlans").collect();
+    return allPlans.sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
+
+export const getLearningReport = query({
+  args: {},
+  handler: async (ctx) => {
+    const allPlans = await ctx.db.query("learningPlans").collect();
+    const sortedPlans = allPlans.sort((a, b) => b.createdAt - a.createdAt);
+
+    let draftCount = 0;
+    let publishedCount = 0;
+    let completedCount = 0;
+    let totalEditions = 0;
+    let totalRegistrations = 0;
+    let totalAttended = 0;
+    let totalSubmissions = 0;
+    let totalApprovedSubmissions = 0;
+    let totalPendingSubmissions = 0;
+    let totalRejectedSubmissions = 0;
+
+    const uniqueAttendeesMap = new Map<string, {
+      name: string;
+      email: string;
+      totalRegistered: number;
+      totalAttended: number;
+      totalSubmissions: number;
+      totalApproved: number;
+      plans: Array<{
+        planId: string;
+        planTitle: string;
+        editionNumber: number;
+        attended: boolean;
+        submissionUrl?: string;
+        submissionStatus?: "PENDING" | "APPROVED" | "REJECTED";
+        submittedAt?: number;
+      }>;
+    }>();
+
+    const enrichedPlans = sortedPlans.map((plan) => {
+      const isExpired = isDateTimeExpired(plan.date, plan.time);
+      const isCompleted = plan.status === "COMPLETED" || (plan.status === "PUBLISHED" && isExpired);
+
+      if (plan.status === "DRAFT") {
+        draftCount++;
+      } else if (isCompleted) {
+        completedCount++;
+      } else {
+        publishedCount++;
+      }
+
+      const pastEditions = plan.pastEditions || [];
+      const planEditionsCount = pastEditions.length + 1;
+      totalEditions += planEditionsCount;
+
+      const currentUsers = plan.registeredUsers || [];
+      let planRegistrations = currentUsers.length;
+      let planAttended = 0;
+      let planSubmissions = 0;
+      let planApproved = 0;
+      let planPending = 0;
+      let planRejected = 0;
+
+      // Process current edition users
+      currentUsers.forEach((u) => {
+        if (u.attended) planAttended++;
+        if (u.submissionUrl) {
+          planSubmissions++;
+          if (u.submissionStatus === "APPROVED") planApproved++;
+          else if (u.submissionStatus === "REJECTED") planRejected++;
+          else planPending++;
+        }
+
+        const emailKey = u.email.toLowerCase();
+        if (!uniqueAttendeesMap.has(emailKey)) {
+          uniqueAttendeesMap.set(emailKey, {
+            name: u.name,
+            email: u.email,
+            totalRegistered: 0,
+            totalAttended: 0,
+            totalSubmissions: 0,
+            totalApproved: 0,
+            plans: [],
+          });
+        }
+        const attendeeRecord = uniqueAttendeesMap.get(emailKey)!;
+        attendeeRecord.totalRegistered++;
+        if (u.attended) attendeeRecord.totalAttended++;
+        if (u.submissionUrl) attendeeRecord.totalSubmissions++;
+        if (u.submissionStatus === "APPROVED") attendeeRecord.totalApproved++;
+        attendeeRecord.plans.push({
+          planId: plan._id,
+          planTitle: plan.title,
+          editionNumber: plan.edition || 1,
+          attended: Boolean(u.attended),
+          submissionUrl: u.submissionUrl,
+          submissionStatus: u.submissionStatus,
+          submittedAt: u.submittedAt,
+        });
+      });
+
+      // Process past editions users
+      pastEditions.forEach((ed: any) => {
+        const edUsers = ed.registeredUsers || [];
+        planRegistrations += edUsers.length;
+        edUsers.forEach((u: any) => {
+          if (u.attended) planAttended++;
+          if (u.submissionUrl) {
+            planSubmissions++;
+            if (u.submissionStatus === "APPROVED") planApproved++;
+            else if (u.submissionStatus === "REJECTED") planRejected++;
+            else planPending++;
+          }
+
+          const emailKey = u.email.toLowerCase();
+          if (!uniqueAttendeesMap.has(emailKey)) {
+            uniqueAttendeesMap.set(emailKey, {
+              name: u.name,
+              email: u.email,
+              totalRegistered: 0,
+              totalAttended: 0,
+              totalSubmissions: 0,
+              totalApproved: 0,
+              plans: [],
+            });
+          }
+          const attendeeRecord = uniqueAttendeesMap.get(emailKey)!;
+          attendeeRecord.totalRegistered++;
+          if (u.attended) attendeeRecord.totalAttended++;
+          if (u.submissionUrl) attendeeRecord.totalSubmissions++;
+          if (u.submissionStatus === "APPROVED") attendeeRecord.totalApproved++;
+          attendeeRecord.plans.push({
+            planId: plan._id,
+            planTitle: plan.title,
+            editionNumber: ed.editionNumber,
+            attended: Boolean(u.attended),
+            submissionUrl: u.submissionUrl,
+            submissionStatus: u.submissionStatus,
+            submittedAt: u.submittedAt,
+          });
+        });
+      });
+
+      totalRegistrations += planRegistrations;
+      totalAttended += planAttended;
+      totalSubmissions += planSubmissions;
+      totalApprovedSubmissions += planApproved;
+      totalPendingSubmissions += planPending;
+      totalRejectedSubmissions += planRejected;
+
+      return {
+        ...plan,
+        isEffectivelyCompleted: isCompleted,
+        metrics: {
+          registrationsCount: planRegistrations,
+          attendedCount: planAttended,
+          submissionsCount: planSubmissions,
+          approvedSubmissionsCount: planApproved,
+          pendingSubmissionsCount: planPending,
+          rejectedSubmissionsCount: planRejected,
+          editionsCount: planEditionsCount,
+        },
+      };
+    });
+
+    const uniqueAttendees = Array.from(uniqueAttendeesMap.values()).sort(
+      (a, b) => b.totalApproved - a.totalApproved || b.totalAttended - a.totalAttended
+    );
+
+    return {
+      summary: {
+        totalPlans: allPlans.length,
+        draftCount,
+        publishedCount,
+        completedCount,
+        totalEditions,
+        totalRegistrations,
+        totalAttended,
+        totalSubmissions,
+        totalApprovedSubmissions,
+        totalPendingSubmissions,
+        totalRejectedSubmissions,
+        uniqueAttendeesCount: uniqueAttendees.length,
+        approvalRate: totalSubmissions > 0 ? Math.round((totalApprovedSubmissions / totalSubmissions) * 100) : 0,
+        attendanceRate: totalRegistrations > 0 ? Math.round((totalAttended / totalRegistrations) * 100) : 0,
+      },
+      plans: enrichedPlans,
+      attendees: uniqueAttendees,
     };
   },
 });

@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { motion } from "framer-motion";
 
-import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2, Users, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Star, History } from "lucide-react";
+import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2, Users, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Star, History, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -212,6 +212,48 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
       )}
 
       {/* ── Active Edition Content ── */}
+      {(() => {
+        const edGroupImg = isViewingPast ? (activePastEdition as any)?.groupImageUrl : plan.groupImageUrl;
+        const edGroupLink = isViewingPast ? (activePastEdition as any)?.groupImageLink : plan.groupImageLink;
+        const edGroupCaption = isViewingPast ? (activePastEdition as any)?.groupImageCaption : plan.groupImageCaption;
+
+        if (!edGroupImg) return null;
+
+        return (
+          <div className="mb-4 p-3.5 bg-white rounded-2xl border border-purple-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-16 h-12 rounded-xl overflow-hidden bg-slate-100 border border-purple-200 shadow-2xs shrink-0">
+                <img
+                  src={getOptimizedImageUrl(edGroupImg)}
+                  alt="Group"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                  📸 Official Edition {isViewingPast ? pastEditionNum : (plan.edition || 1)} Group Photo
+                </span>
+                <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                  {edGroupCaption || "Group completion memories & showcase"}
+                </p>
+              </div>
+            </div>
+            {edGroupLink && (
+              <a
+                href={edGroupLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <span>Showcase / Album</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+          </div>
+        );
+      })()}
+
       {isEditionCompleted ? (
         <div>
           {/* Completed Session View: Attended vs Absent vs Waiting List */}
@@ -264,23 +306,33 @@ function PlanParticipantsPanel({ plan }: { plan: any }) {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
-                  {attendedUsers.map((u: any, idx: number) => (
-                    <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-3 shadow-xs hover:border-emerald-200 transition-colors">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-200">
-                          {u.name ? u.name.charAt(0).toUpperCase() : '?'}
+                  {attendedUsers.map((u: any, idx: number) => {
+                    const isSubmissionApproved = u.submissionStatus === "APPROVED";
+                    return (
+                      <div key={idx} className={`p-3 rounded-xl border flex items-center justify-between gap-3 shadow-xs transition-colors ${isSubmissionApproved ? 'bg-amber-50/50 border-amber-300' : 'bg-white border-slate-200 hover:border-emerald-200'}`}>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 border ${isSubmissionApproved ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-200'}`}>
+                            {u.name ? u.name.charAt(0).toUpperCase() : '?'}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs text-slate-900 truncate">{u.name}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{u.email}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-xs text-slate-900 truncate">{u.name}</p>
-                          <p className="text-[11px] text-slate-500 truncate">{u.email}</p>
-                        </div>
+                        {isSubmissionApproved ? (
+                          <span className="shrink-0 bg-amber-400 text-slate-950 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                            <Star className="w-3 h-3 fill-slate-950" />
+                            Approved ⭐
+                          </span>
+                        ) : (
+                          <span className="shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Attended
+                          </span>
+                        )}
                       </div>
-                      <span className="shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Attended
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -653,13 +705,17 @@ export default function Learning() {
               const hasImage = validImages.length > 0;
               const hasVideo = validVideos.length > 0;
 
-              const isRegistered = Boolean(
-                user?.email &&
-                plan.registeredUsers?.some((u: { email: string }) => u.email.toLowerCase() === user.email?.toLowerCase())
+              const myRecord = plan.registeredUsers?.find(
+                (u: { email: string }) => u.email.toLowerCase() === user?.email?.toLowerCase()
+              ) || (plan.pastEditions || []).flatMap((e: any) => e.registeredUsers || []).find(
+                (u: any) => u.email.toLowerCase() === user?.email?.toLowerCase()
               );
 
+              const isMySubmissionApproved = Boolean(myRecord?.attended && myRecord?.submissionStatus === "APPROVED");
+              const isRegistered = Boolean(user?.email && myRecord);
+
               const isExpired = isDateTimeExpired(plan.date, plan.time);
-              const isCompleted = plan.status === "COMPLETED" || (plan.status === "PUBLISHED" && isExpired);
+              const isCompleted = plan.status === "COMPLETED" || (plan.status === "PUBLISHED" && isExpired) || isMySubmissionApproved;
 
               const registered = plan.registeredUsers || [];
               const attendedUsers = registered.filter((u: any) => u.attended === true);
@@ -676,7 +732,12 @@ export default function Learning() {
 
                 return (
                   <div className="relative w-full">
-                    {isCompleted ? (
+                    {isMySubmissionApproved ? (
+                      <div className="absolute top-3 right-3 z-20 bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 backdrop-blur-md ring-1 ring-amber-300 animate-in fade-in zoom-in duration-300">
+                        <Star className="w-4 h-4 fill-slate-950 text-slate-950" />
+                        <span>Completed • Mastered ⭐</span>
+                      </div>
+                    ) : isCompleted ? (
                       <div className="absolute top-3 right-3 z-20 bg-purple-700/90 text-white font-bold text-xs px-3.5 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 backdrop-blur-md ring-1 ring-white/30 animate-in fade-in zoom-in duration-300">
                         <CheckCircle2 className="w-4 h-4 text-purple-200" />
                         <span>Completed Session</span>
@@ -748,18 +809,22 @@ export default function Learning() {
                               <span>{pastEditions.length} Past Session{pastEditions.length === 1 ? '' : 's'} ({totalPastAttendees} Attended)</span>
                             </button>
                           )}
-                          {isCompleted && (
+                          {isMySubmissionApproved ? (
+                            <span className="px-3 py-1 bg-amber-400 text-slate-950 border border-amber-300 text-xs font-black uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
+                              <Star className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+                              Completed • Approved ⭐
+                            </span>
+                          ) : isCompleted ? (
                             <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
                               <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
                               Completed
                             </span>
-                          )}
-                          {!isCompleted && isRegistered && (
+                          ) : isRegistered ? (
                             <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5 shadow-sm">
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                               Registered
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         <h2 className="text-3xl md:text-4xl font-display font-bold text-slate-900 leading-tight">
                           {plan.title}
@@ -894,7 +959,17 @@ export default function Learning() {
                               Docs
                             </a>
                           )}
-                          {isCompleted ? (
+                          {isMySubmissionApproved ? (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
+                              className="text-slate-950 font-black text-xs flex items-center bg-amber-400 hover:bg-amber-500 border border-amber-300 px-3 py-1.5 rounded-full shadow-sm transition-colors cursor-pointer"
+                            >
+                              <Star className="w-3.5 h-3.5 mr-1 fill-slate-950 text-slate-950" />
+                              Completed ⭐
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
+                            </button>
+                          ) : isCompleted ? (
                             <button
                               type="button"
                               onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}

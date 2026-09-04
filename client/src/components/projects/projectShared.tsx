@@ -157,6 +157,48 @@ export function getStatusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
+export type ProjectLifecycleCategory = "SETUP" | "ACTIVE" | "ARCHIVE";
+
+export function getProjectLifecycleCategory(status: string): ProjectLifecycleCategory {
+  if (status === "ACTIVE") return "ACTIVE";
+  if (status === "COMPLETED" || status === "ARCHIVED") return "ARCHIVE";
+  return "SETUP";
+}
+
+export function getLifecycleBadgeInfo(status: string) {
+  const cat = getProjectLifecycleCategory(status);
+  switch (cat) {
+    case "ACTIVE":
+      return {
+        category: "ACTIVE" as const,
+        label: "Active",
+        detailLabel: getStatusLabel(status),
+        badgeClass: "bg-emerald-500/10 text-emerald-700 border-emerald-300 font-bold",
+        dotClass: "bg-emerald-500 animate-pulse",
+        accentColor: "emerald",
+      };
+    case "ARCHIVE":
+      return {
+        category: "ARCHIVE" as const,
+        label: status === "COMPLETED" ? "Completed" : "Archive",
+        detailLabel: getStatusLabel(status),
+        badgeClass: "bg-slate-500/10 text-slate-700 border-slate-300 font-bold",
+        dotClass: "bg-slate-400",
+        accentColor: "slate",
+      };
+    case "SETUP":
+    default:
+      return {
+        category: "SETUP" as const,
+        label: "Setup",
+        detailLabel: getStatusLabel(status),
+        badgeClass: "bg-amber-500/10 text-amber-800 border-amber-300 font-bold",
+        dotClass: "bg-amber-500",
+        accentColor: "amber",
+      };
+  }
+}
+
 // Status → accent group: "setup" | "active" | "complete" | "archived"
 export function getStatusAccentGroup(status: string): "setup" | "active" | "complete" | "archived" {
   if (status === "ACTIVE") return "active";

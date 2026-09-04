@@ -6,10 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
+import AdminLearningReportsTab from '@/components/AdminLearningReportsTab';
 
 /**
  * Design: Modern Minimalist - Admin Panel
@@ -1445,7 +1446,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="users" className="space-y-20" onValueChange={(tab) => { if (tab === 'settings') fetchSyncStatus(); }}>
-          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-6xl grid-cols-9' : 'max-w-3xl grid-cols-6'} bg-muted`}>
+          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-7xl grid-cols-10' : 'max-w-3xl grid-cols-6'} bg-muted`}>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -1484,6 +1485,12 @@ export default function AdminPanel() {
               <TabsTrigger value="projects" className="flex items-center gap-2">
                 <FolderKanban className="w-4 h-4" />
                 <span className="hidden sm:inline">Projects</span>
+              </TabsTrigger>
+            )}
+            {user?.role === 'ADMIN' && (
+              <TabsTrigger value="learning-reports" className="flex items-center gap-2">
+                <GraduationCap className="w-4 h-4 text-emerald-600" />
+                <span className="hidden sm:inline">Learning Reports</span>
               </TabsTrigger>
             )}
             {user?.role === 'ADMIN' && (
@@ -2507,10 +2514,17 @@ export default function AdminPanel() {
 
           </TabsContent>
 
-          {/* TAB 4: LAPTOP MONITOR */}
+          {/* PROJECTS TAB */}
           {user?.role === 'ADMIN' && (
             <TabsContent value="projects" className="space-y-6">
               <AdminProjectsTab currentUserEmail={user?.email || ''} />
+            </TabsContent>
+          )}
+
+          {/* LEARNING REPORTS TAB */}
+          {user?.role === 'ADMIN' && (
+            <TabsContent value="learning-reports" className="space-y-6">
+              <AdminLearningReportsTab />
             </TabsContent>
           )}
 

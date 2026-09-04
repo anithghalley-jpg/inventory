@@ -29,6 +29,7 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const setPlanStatus = useMutation(api.learningPlans.setPlanStatus);
   const reviewLearningSubmission = useMutation(api.learningPlans.reviewLearningSubmission);
   const completeSessionWithTags = useMutation(api.learningPlans.completeSessionWithTags);
+  const updateEditionMedia = useMutation(api.learningPlans.updateEditionMedia);
   const addParticipantManual = useMutation(api.learningPlans.addParticipantManual);
   const deletePastEdition = useMutation(api.learningPlans.deletePastEdition);
 
@@ -36,6 +37,16 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const [currentPlan, setCurrentPlan] = useState<any>(null);
   const [showAwardTagModal, setShowAwardTagModal] = useState(false);
   const [awardTagInput, setAwardTagInput] = useState("");
+  const [awardGroupImgInput, setAwardGroupImgInput] = useState("");
+  const [awardGroupLinkInput, setAwardGroupLinkInput] = useState("");
+  const [awardGroupCaptionInput, setAwardGroupCaptionInput] = useState("");
+
+  const [showEditionMediaModal, setShowEditionMediaModal] = useState(false);
+  const [targetEditionNumForMedia, setTargetEditionNumForMedia] = useState<number>(1);
+  const [editionGroupImgInput, setEditionGroupImgInput] = useState("");
+  const [editionGroupLinkInput, setEditionGroupLinkInput] = useState("");
+  const [editionGroupCaptionInput, setEditionGroupCaptionInput] = useState("");
+  const [isSavingMedia, setIsSavingMedia] = useState(false);
 
   // Form State
   const [title, setTitle] = useState("");
@@ -55,7 +66,7 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
 
   const [viewPlan, setViewPlan] = useState<any>(null);
   const [viewPlanEditionTab, setViewPlanEditionTab] = useState<string>("current");
-  const [participantSubTab, setParticipantSubTab] = useState<"all" | "confirmed" | "standby" | "attended" | "absent">("all");
+  const [participantSubTab, setParticipantSubTab] = useState<"all" | "confirmed" | "standby" | "attended" | "absent" | "approved">("all");
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
 
   // Manual Add Participant Modal State
@@ -197,6 +208,13 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
             const editionNum = plan.edition || 1;
             const completedEditions = plan.completedEditionsCount || (plan.status === 'COMPLETED' ? 1 : 0);
 
+            const currentRegistered = plan.registeredUsers || [];
+            const pastEditions = plan.pastEditions || [];
+            const allPastUsers = pastEditions.flatMap((e: any) => e.registeredUsers || []);
+            const allUsersCombined = [...currentRegistered, ...allPastUsers];
+            const totalApprovedSubmissions = allUsersCombined.filter((u: any) => u.attended && u.submissionStatus === "APPROVED").length;
+            const totalAttendedCount = allUsersCombined.filter((u: any) => u.attended).length;
+
             return (
               <Card key={plan._id} onClick={() => setViewPlan(plan)} className="overflow-hidden flex flex-col hover:shadow-md transition-all border-slate-200 cursor-pointer">
                 {plan.imageUrls && plan.imageUrls.filter((u: string) => typeof u === "string" && u.trim().length > 5).length > 0 && (
@@ -208,15 +226,35 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                         {completedEditions} Star{completedEditions === 1 ? '' : 's'} Completed
                       </div>
                     )}
+                    {totalApprovedSubmissions > 0 && (
+                      <div className="absolute bottom-2 right-2 bg-emerald-700/90 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow backdrop-blur flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-300" />
+                        {totalApprovedSubmissions} Approved
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="p-4 flex flex-col flex-1">
                   <div className="flex items-start justify-between mb-2 gap-2">
                     <div>
                       <h3 className="font-bold text-lg text-slate-900 line-clamp-1">{plan.title}</h3>
-                      <span className="text-[10px] font-extrabold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full inline-block mt-0.5">
-                        Edition {editionNum}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="text-[10px] font-extrabold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full inline-block">
+                          Edition {editionNum}
+                        </span>
+                        {totalApprovedSubmissions > 0 && (
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                            {totalApprovedSubmissions} Approved
+                          </span>
+                        )}
+                        {totalAttendedCount > 0 && (
+                          <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Users className="w-3 h-3 text-slate-500" />
+                            {totalAttendedCount} Attended
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${plan.status === 'COMPLETED' ? 'bg-purple-100 text-purple-700 border border-purple-200' : plan.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -695,6 +733,8 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                       ? standbyUsers
                       : participantSubTab === "attended"
                       ? attendedUsers
+                      : participantSubTab === "approved"
+                      ? approvedUsers
                       : absentUsers;
 
                   if (participantSearchQuery.trim()) {
@@ -722,13 +762,124 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Waiting List</span>
                           <span className="text-base font-black text-amber-800">{standbyUsers.length}</span>
                         </div>
-                        <div className="neumorph-inset p-3 rounded-xl bg-slate-50/60 flex flex-col justify-center">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Proofs Approved</span>
-                          <span className="text-base font-black text-indigo-800">
-                            {approvedUsers.length} <span className="text-xs font-semibold text-slate-400">/ {attendedWithSubmissions.length}</span>
+                        <div 
+                          onClick={() => setParticipantSubTab("approved")}
+                          className={`neumorph-inset p-3 rounded-xl flex flex-col justify-center cursor-pointer transition-all ${
+                            participantSubTab === "approved" ? "bg-amber-100/80 ring-2 ring-amber-400" : "bg-slate-50/60 hover:bg-amber-50/50"
+                          }`}
+                        >
+                          <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                            <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                            Approved Submissions
+                          </span>
+                          <span className="text-base font-black text-amber-950">
+                            {approvedUsers.length} <span className="text-xs font-semibold text-slate-500">/ {attendedWithSubmissions.length}</span>
                           </span>
                         </div>
                       </div>
+
+                      {/* ── Edition Group Photo & Showcase Card (Curator Memories) ── */}
+                      {(() => {
+                        const currentEditionGroupImg = isViewingPast ? (activePast?.groupImageUrl || "") : (viewPlan.groupImageUrl || "");
+                        const currentEditionGroupLink = isViewingPast ? (activePast?.groupImageLink || "") : (viewPlan.groupImageLink || "");
+                        const currentEditionGroupCaption = isViewingPast ? (activePast?.groupImageCaption || "") : (viewPlan.groupImageCaption || "");
+
+                        return (
+                          <div className="p-3.5 bg-gradient-to-r from-purple-50/80 via-indigo-50/70 to-blue-50/80 rounded-2xl border border-purple-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {currentEditionGroupImg ? (
+                                <div className="w-16 h-12 rounded-xl overflow-hidden bg-slate-100 border border-purple-300 shadow-xs shrink-0 relative group">
+                                  <img
+                                    src={getOptimizedImageUrl(currentEditionGroupImg)}
+                                    alt="Group"
+                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200">
+                                  <ImageIcon className="w-5 h-5 text-purple-600" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                                    📸 Edition {activeEditionNumber} Group Photo & Recap
+                                  </span>
+                                  {currentEditionGroupImg ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      Photo Attached ✓
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                                      No group photo yet
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                                  {currentEditionGroupCaption || (currentEditionGroupImg ? "Official group photo added" : "Add official group photo, album or recap link to show on participant dashboards")}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                              {currentEditionGroupLink && (
+                                <a
+                                  href={currentEditionGroupLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-white/80 hover:bg-white text-purple-700 border border-purple-200 shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  <span className="hidden xs:inline">Showcase Link</span>
+                                </a>
+                              )}
+                              <Button
+                                size="sm"
+                                type="button"
+                                onClick={() => {
+                                  setTargetEditionNumForMedia(activeEditionNumber);
+                                  setEditionGroupImgInput(currentEditionGroupImg);
+                                  setEditionGroupLinkInput(currentEditionGroupLink);
+                                  setEditionGroupCaptionInput(currentEditionGroupCaption);
+                                  setShowEditionMediaModal(true);
+                                }}
+                                className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs h-8 px-3 rounded-xl shadow-xs gap-1.5 cursor-pointer"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                                <span>{currentEditionGroupImg ? "Edit Group Photo" : "+ Add Group Photo & Link"}</span>
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Approved Students Showcase Banner (When approved students exist) */}
+                      {approvedUsers.length > 0 && participantSubTab !== "approved" && (
+                        <div className="p-3 bg-gradient-to-r from-amber-50 via-emerald-50 to-teal-50 rounded-2xl border border-amber-200/80 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 shadow-xs">
+                              <Star className="w-4 h-4 fill-slate-950" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-slate-900 truncate">
+                                {approvedUsers.length} Participant{approvedUsers.length === 1 ? '' : 's'} with Approved Submissions
+                              </p>
+                              <p className="text-[11px] text-slate-600 truncate">
+                                {approvedUsers.map((u: any) => u.name).join(", ")}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            type="button"
+                            onClick={() => setParticipantSubTab("approved")}
+                            className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs h-7 px-3 rounded-xl shrink-0 shadow-xs"
+                          >
+                            View Approved ({approvedUsers.length})
+                          </Button>
+                        </div>
+                      )}
 
                       {/* Toolbar Row: Action Buttons & Subtabs */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
@@ -747,6 +898,19 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                           </button>
                           <button
                             type="button"
+                            onClick={() => setParticipantSubTab("approved")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                              participantSubTab === "approved"
+                                ? "bg-amber-500 text-slate-950 shadow-xs font-black ring-1 ring-amber-400"
+                                : "bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-300"
+                            }`}
+                          >
+                            <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                            <span>Approved</span>
+                            <span className="font-extrabold text-[10px]">({approvedUsers.length})</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setParticipantSubTab("confirmed")}
                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
                               participantSubTab === "confirmed"
@@ -759,18 +923,6 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setParticipantSubTab("standby")}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
-                              participantSubTab === "standby"
-                                ? "bg-amber-700 text-white shadow-xs font-bold"
-                                : "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200"
-                            }`}
-                          >
-                            <span>Waiting</span>
-                            <span className="font-extrabold text-[10px]">({standbyUsers.length})</span>
-                          </button>
-                          <button
-                            type="button"
                             onClick={() => setParticipantSubTab("attended")}
                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
                               participantSubTab === "attended"
@@ -780,6 +932,18 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                           >
                             <span>Attended</span>
                             <span className="font-extrabold text-[10px]">({attendedUsers.length})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setParticipantSubTab("standby")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                              participantSubTab === "standby"
+                                ? "bg-amber-700 text-white shadow-xs font-bold"
+                                : "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200"
+                            }`}
+                          >
+                            <span>Waiting</span>
+                            <span className="font-extrabold text-[10px]">({standbyUsers.length})</span>
                           </button>
                           <button
                             type="button"
@@ -867,10 +1031,16 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                             const isConfirmedSpot = originalIndex >= 0 && originalIndex < maxCap;
                             const isStandbySpot = originalIndex >= maxCap;
 
+                            const isApprovedStudent = u.attended && u.submissionStatus === "APPROVED";
+
                             return (
                               <div
                                 key={i}
-                                className="neumorph-inset p-3.5 rounded-2xl bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 border border-slate-200/80 transition-all hover:bg-slate-50/70"
+                                className={`neumorph-inset p-3.5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 border transition-all ${
+                                  isApprovedStudent
+                                    ? "bg-amber-50/50 border-amber-300/90 shadow-xs ring-1 ring-amber-200/70"
+                                    : "bg-white border-slate-200/80 hover:bg-slate-50/70"
+                                }`}
                               >
                                 {/* Left: User Info & Submission Link */}
                                 <div className="min-w-0 flex-1 space-y-1.5">
@@ -899,10 +1069,10 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                       </span>
                                     )}
 
-                                    {u.attended && u.submissionStatus === "APPROVED" && (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
-                                        <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
-                                        Approved ⭐
+                                    {isApprovedStudent && (
+                                      <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 border border-amber-300 flex items-center gap-1 shadow-xs">
+                                        <Star className="w-3 h-3 fill-slate-950 text-slate-950" />
+                                        Submission Approved ⭐
                                       </span>
                                     )}
                                     {u.attended && u.submissionStatus === "REJECTED" && (
@@ -1382,6 +1552,43 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                 </div>
               </div>
             )}
+
+            <div className="pt-2 border-t border-slate-100 space-y-3">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-purple-600" />
+                Optional: Add Edition Group Photo & Showcase Link
+              </span>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-600">Group Photo URL or Google Drive Link</Label>
+                <Input
+                  placeholder="https://drive.google.com/file/d/... or image URL"
+                  value={awardGroupImgInput}
+                  onChange={(e) => setAwardGroupImgInput(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-600">Showcase / Album / Project Link</Label>
+                <Input
+                  placeholder="https://photos.google.com/... or blog/recap link"
+                  value={awardGroupLinkInput}
+                  onChange={(e) => setAwardGroupLinkInput(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-slate-600">Photo Caption / Memory Quote</Label>
+                <Input
+                  placeholder="e.g. Edition 1 Cohort Completion!"
+                  value={awardGroupCaptionInput}
+                  onChange={(e) => setAwardGroupCaptionInput(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="flex gap-2">
@@ -1399,6 +1606,9 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                     planId: viewPlan._id,
                     awardTag: awardTagInput.trim(),
                     scriptUrl: SCRIPT_URL,
+                    groupImageUrl: awardGroupImgInput.trim() || undefined,
+                    groupImageLink: awardGroupLinkInput.trim() || undefined,
+                    groupImageCaption: awardGroupCaptionInput.trim() || undefined,
                   });
                   toast.success(res.message);
                   setShowAwardTagModal(false);
@@ -1406,6 +1616,9 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                     ...p,
                     status: "COMPLETED",
                     awardedTag: awardTagInput.trim(),
+                    groupImageUrl: awardGroupImgInput.trim() || p.groupImageUrl,
+                    groupImageLink: awardGroupLinkInput.trim() || p.groupImageLink,
+                    groupImageCaption: awardGroupCaptionInput.trim() || p.groupImageCaption,
                   }));
                 } catch (e: any) {
                   toast.error(e.message || "Failed to complete session with tag");
@@ -1414,6 +1627,123 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
               className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold flex-1"
             >
               Award Tag & Finalize 🎉
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edition Group Photo & Link Modal */}
+      <Dialog open={showEditionMediaModal} onOpenChange={setShowEditionMediaModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+              <ImageIcon className="w-5 h-5 text-purple-600" />
+              Edition {targetEditionNumForMedia} Group Photo & Showcase
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-slate-600">
+              Attach the group photo taken during or after this edition and an optional showcase link (e.g. Google Drive folder, Google Photos album, project recap). This will be displayed on all participant learning cards under <strong>Session Gallery & Visuals</strong>.
+            </p>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Group Photo URL or Google Drive Link</Label>
+              <Input
+                placeholder="https://drive.google.com/file/d/... or image URL"
+                value={editionGroupImgInput}
+                onChange={(e) => setEditionGroupImgInput(e.target.value)}
+                className="text-xs font-mono"
+              />
+            </div>
+
+            {editionGroupImgInput.trim().length > 5 && (
+              <div className="p-2 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center max-h-48">
+                <img
+                  src={getOptimizedImageUrl(editionGroupImgInput.trim())}
+                  alt="Preview"
+                  className="max-h-40 object-contain rounded-lg shadow-2xs"
+                  referrerPolicy="no-referrer"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 font-medium">Group Photo Preview</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Photo Caption / Memory Note (Optional)</Label>
+              <Input
+                placeholder="e.g. Edition 1 Graduating Cohort - 12 makers completed!"
+                value={editionGroupCaptionInput}
+                onChange={(e) => setEditionGroupCaptionInput(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Showcase / Album / Recap Link (Optional)</Label>
+              <Input
+                placeholder="https://photos.google.com/... or https://github.com/... or blog"
+                value={editionGroupLinkInput}
+                onChange={(e) => setEditionGroupLinkInput(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="ghost" onClick={() => setShowEditionMediaModal(false)} className="flex-1 text-xs">
+              Cancel
+            </Button>
+            <Button
+              disabled={isSavingMedia}
+              onClick={async () => {
+                setIsSavingMedia(true);
+                try {
+                  const res = await updateEditionMedia({
+                    planId: viewPlan._id,
+                    editionNumber: targetEditionNumForMedia,
+                    groupImageUrl: editionGroupImgInput.trim() || undefined,
+                    groupImageLink: editionGroupLinkInput.trim() || undefined,
+                    groupImageCaption: editionGroupCaptionInput.trim() || undefined,
+                  });
+
+                  const cleanImg = editionGroupImgInput.trim() || undefined;
+                  const cleanLink = editionGroupLinkInput.trim() || undefined;
+                  const cleanCap = editionGroupCaptionInput.trim() || undefined;
+
+                  setViewPlan((prev: any) => {
+                    if (!prev) return prev;
+                    const curEd = prev.edition || 1;
+                    if (targetEditionNumForMedia === curEd) {
+                      return {
+                        ...prev,
+                        groupImageUrl: cleanImg,
+                        groupImageLink: cleanLink,
+                        groupImageCaption: cleanCap,
+                      };
+                    } else {
+                      return {
+                        ...prev,
+                        pastEditions: (prev.pastEditions || []).map((pe: any) =>
+                          pe.editionNumber === targetEditionNumForMedia
+                            ? { ...pe, groupImageUrl: cleanImg, groupImageLink: cleanLink, groupImageCaption: cleanCap }
+                            : pe
+                        ),
+                      };
+                    }
+                  });
+
+                  toast.success(res.message || "Group media updated!");
+                  setShowEditionMediaModal(false);
+                } catch (err: any) {
+                  toast.error(err.message || "Failed to update group media");
+                } finally {
+                  setIsSavingMedia(false);
+                }
+              }}
+              className="bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex-1 shadow-sm"
+            >
+              {isSavingMedia ? "Saving..." : "Save Group Media ✓"}
             </Button>
           </DialogFooter>
         </DialogContent>
