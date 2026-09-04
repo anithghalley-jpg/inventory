@@ -189,7 +189,7 @@ export default function LearningReportPdfModal({
 
             {/* Inner Certificate Container with Decorative Border */}
             <div className="m-4 sm:m-6 p-6 sm:p-7 border-2 border-slate-200/90 rounded-xl relative flex flex-col justify-between space-y-4 bg-gradient-to-b from-white via-slate-50/20 to-white">
-              
+
               {/* Subtle Watermark Seal in Background */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.035] select-none z-0">
                 <svg className="w-[420px] h-[420px] text-emerald-950" viewBox="0 0 200 200" fill="currentColor">
@@ -205,7 +205,7 @@ export default function LearningReportPdfModal({
 
               {/* Top Section */}
               <div className="relative z-10 space-y-4">
-                
+
                 {/* Header: Institution Insignia & Verification ID */}
                 <div className="flex items-start justify-between border-b-2 border-slate-100 pb-3.5">
                   <div className="flex items-center gap-3">
@@ -242,7 +242,7 @@ export default function LearningReportPdfModal({
                     Verified Learner: <span className="font-semibold text-slate-700">{user?.email || "Student Account"}</span>
                   </p>
                   <p className="text-xs text-slate-600 max-w-xl mx-auto pt-1 leading-relaxed">
-                    has actively attended, satisfied all hands-on curriculum requirements, and successfully achieved completed status for:
+                    has actively participated, fulfilled all requirements, and successfully completed the following session:
                   </p>
                 </div>
 
@@ -250,7 +250,7 @@ export default function LearningReportPdfModal({
                 <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-slate-950 px-2.5 py-0.5 rounded-full">
-                      Edition {editionNum} Mastery Workshop
+                      Edition {editionNum} Workshop
                     </span>
                     <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-600/40">
                       <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
@@ -363,7 +363,7 @@ export default function LearningReportPdfModal({
 
               {/* Bottom Sign-off Footer: Curator (Left), Issued Date (Center), Admin (Right) */}
               <div className="pt-4 border-t-2 border-slate-100 grid grid-cols-3 gap-3 items-end relative z-10">
-                
+
                 {/* Left: Curator Signature Block */}
                 <div className="space-y-1.5 text-left">
                   <div className="min-h-7 flex items-end">
