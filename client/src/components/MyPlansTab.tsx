@@ -1147,6 +1147,7 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                             const res = await reviewLearningSubmission({
                                               planId: viewPlan._id,
                                               userEmail: u.email,
+                                              editionNumber: isViewingPast ? pastNum : (viewPlan.edition || 1),
                                               status: "APPROVED"
                                             });
                                             toast.success(res.message);
@@ -1198,6 +1199,7 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                             const res = await reviewLearningSubmission({
                                               planId: viewPlan._id,
                                               userEmail: u.email,
+                                              editionNumber: isViewingPast ? pastNum : (viewPlan.edition || 1),
                                               status: "REJECTED",
                                               feedbackNote
                                             });

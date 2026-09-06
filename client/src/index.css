@@ -1470,3 +1470,29 @@
   box-shadow: 3px 5px 14px rgba(15, 23, 42, 0.05), -3px -3px 10px rgba(255, 255, 255, 0.95);
 }
 
+@keyframes cardShimmer {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  50%, 100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+.doc-shine-sweep {
+  animation: cardShimmer 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes docPulseBorder {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.35), 0 0 32px rgba(16, 185, 129, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(56, 189, 248, 0.6), 0 0 45px rgba(16, 185, 129, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.95);
+  }
+}
+
+.doc-shine-card {
+  animation: docPulseBorder 3.5s ease-in-out infinite;
+}
+

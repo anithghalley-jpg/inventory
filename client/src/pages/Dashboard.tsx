@@ -20,6 +20,7 @@ import ProjectAssignmentDialog from '@/components/ProjectAssignmentDialog';
 import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import MakerStripesRack from '@/components/MakerStripesRack';
+import MakerUserCard from '@/components/MakerUserCard';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -357,32 +358,62 @@ export default function Dashboard() {
     // Data is now fetched reactively via Convex useQuery
   }, [isAuthenticated]);
 
-  // Community Search & Filter Logic
+  // Community Search & Filter Logic:
+  // 1. Access tags: directly from user database (u.tags)
+  // 2. Session tags: the character/word/emoji earned per approved session submission
+  const getUserAccessTags = React.useCallback((u: any) => {
+    return Array.isArray(u.tags) ? u.tags : [];
+  }, []);
+
+  const getUserSessionTags = React.useCallback((u: any) => {
+    const userStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+    return userStripes
+      .map((s: any) => (s.char || s.title?.charAt(0)?.toUpperCase() || '').trim())
+      .filter(Boolean);
+  }, [allUsersApprovedStripes]);
+
+  const getUserEffectiveTags = React.useCallback((u: any) => {
+    const accessTags = getUserAccessTags(u);
+    const sessionTags = getUserSessionTags(u);
+    return Array.from(new Set<string>([...accessTags, ...sessionTags]));
+  }, [getUserAccessTags, getUserSessionTags]);
+
+  const isFabUser = React.useCallback((u: any) => {
+    const accessTags = getUserAccessTags(u);
+    const sessionStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+    const hasFatag = accessTags.some((t: string) => t.toLowerCase().startsWith("fa 20"));
+    const totalCount = accessTags.length + sessionStripes.length;
+    return hasFatag || totalCount >= 4;
+  }, [allUsersApprovedStripes, getUserAccessTags]);
+
   const availableTags = useMemo(() => {
     const tags = new Set<string>();
     allUsers.forEach(u => {
-      if (u.tags && Array.isArray(u.tags)) {
-        u.tags.forEach((t: string) => tags.add(t));
-      }
+      const uTags = getUserEffectiveTags(u);
+      uTags.forEach((t: string) => tags.add(t));
     });
     return Array.from(tags).sort();
-  }, [allUsers]);
+  }, [allUsers, getUserEffectiveTags]);
 
   const filteredCommunityUsers = useMemo(() => {
-    let result = allUsers.filter(u => {
-      const matchesSearch = !communitySearchQuery ||
-        u.name?.toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(communitySearchQuery.toLowerCase());
+    return allUsers
+      .filter(u => {
+        const matchesSearch = !communitySearchQuery ||
+          (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
+          (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
 
-      const matchesCategory = selectedCommunityTag === 'all' ||
-        (u.tags || []).some((t: string) => t === selectedCommunityTag);
+        const uTags = getUserEffectiveTags(u);
+        const matchesCategory = selectedCommunityTag === 'all' || uTags.includes(selectedCommunityTag);
 
-      return matchesSearch && matchesCategory;
-    });
-
-    // Randomize order on each refresh/memoization
-    return result.sort(() => Math.random() - 0.5);
-  }, [allUsers, communitySearchQuery, selectedCommunityTag]);
+        return matchesSearch && matchesCategory;
+      })
+      .sort((a, b) => {
+        const aCount = getUserEffectiveTags(a).length;
+        const bCount = getUserEffectiveTags(b).length;
+        if (bCount !== aCount) return bCount - aCount; // Users with badges/tags appear on top!
+        return (a.name || "").localeCompare(b.name || "");
+      });
+  }, [allUsers, communitySearchQuery, selectedCommunityTag, getUserEffectiveTags]);
 
   // Track if we're using the fallback (Sheets) or Convex
   const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
@@ -1501,174 +1532,64 @@ export default function Dashboard() {
                   <>
                     {/* FAB SECTION (High Skill / FA Cert) */}
                     {filteredCommunityUsers.filter(isFabUser).length > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
-                        {filteredCommunityUsers.filter(isFabUser).map((u) => {
-                          const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                          const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
-
-                          return (
-                            <Card
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Fab Academy & Master Makers</h3>
+                          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-6 border-b border-slate-100 dark:border-slate-800">
+                          {filteredCommunityUsers.filter(isFabUser).map((u) => (
+                            <MakerUserCard
                               key={u._id || u.id}
-                              style={{
-                                '--user-glow': dynamic.glow,
-                                '--user-hover-glow': dynamic.hoverGlow,
-                                '--user-border': dynamic.border,
-                                '--user-before-border': dynamic.beforeBorder,
-                                '--user-text': dynamic.text,
-                                '--user-badge-bg': dynamic.bg,
-                                '--user-icon': dynamic.icon
-                              } as React.CSSProperties}
-                              className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${hasPageLink
-                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                : "border-slate-200 hover:shadow-md"
-                                }`}
-                              onClick={() => {
-                                if (hasPageLink) {
-                                  window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                }
-                              }}
-                            >
-                              <div className="flex items-start gap-3 relative z-10">
-                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                                  <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-start">
-                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
-                                      <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                      {(u.role === 'ADMIN' || u.role === 'TEAM') && (
-                                        <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
-                                      )}
-                                    </div>
-                                    {/* Circular FAB Tag */}
-                                    <div
-                                      className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
-                                      style={{
-                                        backgroundColor: 'var(--user-badge-bg)',
-                                        color: 'var(--user-text)',
-                                        borderColor: 'var(--user-border)'
-                                      }}
-                                    >
-                                      FAB
-                                    </div>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Student'}</p>
-
-                                  {/* Maker Stripes & Badges */}
-                                  {(() => {
-                                    const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-                                    const hasTags = u.tags && u.tags.length > 0;
-                                    if (uStripes.length === 0 && !hasTags) return null;
-
-                                    return (
-                                      <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                                        {uStripes.length > 0 && (
-                                          <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
-                                        )}
-                                        {hasTags && (
-                                          <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
-                                            {sortUserTags(u.tags).map((tag: string, idx: number) => {
-                                              const style = getTagStyle(tag);
-                                              return (
-                                                <span
-                                                  key={idx}
-                                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                >
-                                                  {tag}
-                                                </span>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            </Card>
-                          );
-                        })}
+                              user={u}
+                              accessTags={getUserAccessTags(u)}
+                              isFab={true}
+                              stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {/* STANDARD SECTION */}
-                    {filteredCommunityUsers.filter(u => !isFabUser(u)).length > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
-                        {filteredCommunityUsers.filter(u => !isFabUser(u)).map((u) => {
-                          const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                          const dynamic = getDynamicGlow(u.email || u._id || u.email || "");
-
-                          return (
-                            <Card
+                    {/* CERTIFIED SKILL MAKERS (Users with badges/tags earned directly or via approved sessions) */}
+                    {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length > 0).length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Certified Makers & Badge Holders</h3>
+                          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-6 border-b border-slate-100 dark:border-slate-800">
+                          {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length > 0).map((u) => (
+                            <MakerUserCard
                               key={u._id || u.id}
-                              style={{
-                                '--user-glow': dynamic.glow,
-                                '--user-hover-glow': dynamic.hoverGlow,
-                                '--user-border': dynamic.border,
-                                '--user-before-border': dynamic.beforeBorder,
-                                '--user-text': dynamic.text,
-                                '--user-badge-bg': dynamic.bg,
-                                '--user-icon': dynamic.icon
-                              } as React.CSSProperties}
-                              className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                : "border-slate-200 hover:shadow-md"
-                                }`}
-                              onClick={() => {
-                                if (hasPageLink) {
-                                  window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                }
-                              }}
-                            >
-                              <div className="flex items-start gap-3 relative z-10">
-                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200">
-                                  <UsersIcon className="h-5 w-5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#94a3b8' }} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-start">
-                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
-                                      <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                      {(u.role === 'ADMIN' || u.role === 'TEAM') && (
-                                        <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
-                                      )}
-                                    </div>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team' : 'Student'}</p>
+                              user={u}
+                              accessTags={getUserAccessTags(u)}
+                              isFab={false}
+                              stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-                                  {/* Maker Stripes & Badges */}
-                                  {(() => {
-                                    const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-                                    const hasTags = u.tags && u.tags.length > 0;
-                                    if (uStripes.length === 0 && !hasTags) return null;
-
-                                    return (
-                                      <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                                        {uStripes.length > 0 && (
-                                          <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
-                                        )}
-                                        {hasTags && (
-                                          <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
-                                            {sortUserTags(u.tags).map((tag: string, idx: number) => {
-                                              const style = getTagStyle(tag);
-                                              return (
-                                                <span
-                                                  key={idx}
-                                                  className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                >
-                                                  {tag}
-                                                </span>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            </Card>
-                          );
-                        })}
+                    {/* OTHER COMMUNITY MEMBERS */}
+                    {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length === 0).length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Community Members</h3>
+                          <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
+                          {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length === 0).map((u) => (
+                            <MakerUserCard
+                              key={u._id || u.id}
+                              user={u}
+                              accessTags={getUserAccessTags(u)}
+                              isFab={false}
+                              stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
                   </>
@@ -2161,7 +2082,8 @@ export default function Dashboard() {
                                         const res = await submitLearningProof({
                                           planId: selectedExperience._id,
                                           userEmail: user?.email || "",
-                                          submissionUrl: submissionUrlInput
+                                          submissionUrl: submissionUrlInput,
+                                          editionNumber: selectedExperience?.attendedEdition || selectedExperience?.edition,
                                         });
                                         toast.success(res.message);
                                         setSubmissionUrlInput("");

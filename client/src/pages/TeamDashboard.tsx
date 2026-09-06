@@ -19,6 +19,7 @@ import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import MyPlansTab from '@/components/MyPlansTab';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import MakerStripesRack from '@/components/MakerStripesRack';
+import MakerUserCard from '@/components/MakerUserCard';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
@@ -310,44 +311,87 @@ export default function TeamDashboard() {
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
     const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
 
-    // Machine Logic State
-    const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
-    const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
-    const [fabricationNote, setFabricationNote] = useState('');
+    // Stripes query
+    const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
 
-    // Community Search & Filter Logic
+    // Community Search & Filter Logic:
+    // 1. Access tags: directly from user database (u.tags)
+    // 2. Session tags: the character/word/emoji earned per approved session submission
+    const getUserAccessTags = React.useCallback((u: any) => {
+        return Array.isArray(u.tags) ? u.tags : [];
+    }, []);
+
+    const getUserSessionTags = React.useCallback((u: any) => {
+        const userStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+        return userStripes
+            .map((s: any) => (s.char || s.title?.charAt(0)?.toUpperCase() || '').trim())
+            .filter(Boolean);
+    }, [allUsersApprovedStripes]);
+
+    const getUserEffectiveTags = React.useCallback((u: any) => {
+        const accessTags = getUserAccessTags(u);
+        const sessionTags = getUserSessionTags(u);
+        return Array.from(new Set<string>([...accessTags, ...sessionTags]));
+    }, [getUserAccessTags, getUserSessionTags]);
+
+    const isFabUser = React.useCallback((u: any) => {
+        const accessTags = getUserAccessTags(u);
+        const sessionStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
+        const hasFatag = accessTags.some((t: string) => t.toLowerCase().startsWith("fa 20"));
+        const totalCount = accessTags.length + sessionStripes.length;
+        return hasFatag || totalCount >= 4;
+    }, [allUsersApprovedStripes, getUserAccessTags]);
+
     const availableTags = useMemo(() => {
         const tags = new Set<string>();
         allUsers.forEach(u => {
-            if (u.tags && Array.isArray(u.tags)) {
-                u.tags.forEach((t: string) => tags.add(t));
-            }
+            const uTags = getUserEffectiveTags(u);
+            uTags.forEach((t: string) => tags.add(t));
         });
         return Array.from(tags).sort();
-    }, [allUsers]);
+    }, [allUsers, getUserEffectiveTags]);
 
     const filteredCommunityUsers = useMemo(() => {
-        return allUsers.filter(u => {
-            const matchesSearch = !communitySearchQuery ||
-                (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
-                (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
+        return allUsers
+            .filter(u => {
+                const matchesSearch = !communitySearchQuery ||
+                    (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
+                    (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
 
-            const matchesTag = selectedCommunityTag === 'all' ||
-                (u.tags && u.tags.includes(selectedCommunityTag));
+                const uTags = getUserEffectiveTags(u);
+                const matchesTag = selectedCommunityTag === 'all' || uTags.includes(selectedCommunityTag);
 
-            return matchesSearch && matchesTag;
-        });
-    }, [allUsers, communitySearchQuery, selectedCommunityTag]);
+                return matchesSearch && matchesTag;
+            })
+            .sort((a, b) => {
+                const aCount = getUserEffectiveTags(a).length;
+                const bCount = getUserEffectiveTags(b).length;
+                if (bCount !== aCount) return bCount - aCount; // Users with badges/tags appear on top!
+                return (a.name || "").localeCompare(b.name || "");
+            });
+    }, [allUsers, communitySearchQuery, selectedCommunityTag, getUserEffectiveTags]);
 
     const filteredTeam = useMemo(() =>
         filteredCommunityUsers
             .filter(u => u.role === 'TEAM' || u.role === 'ADMIN')
-            .sort((a, b) => (b.tags?.length || 0) - (a.tags?.length || 0)),
-        [filteredCommunityUsers]);
+            .sort((a, b) => {
+                const aCount = getUserEffectiveTags(a).length;
+                const bCount = getUserEffectiveTags(b).length;
+                if (bCount !== aCount) return bCount - aCount;
+                return (a.name || "").localeCompare(b.name || "");
+            }),
+        [filteredCommunityUsers, getUserEffectiveTags]);
 
     const filteredStudents = useMemo(() =>
-        filteredCommunityUsers.filter(u => u.role === 'USER'),
-        [filteredCommunityUsers]);
+        filteredCommunityUsers
+            .filter(u => u.role !== 'TEAM' && u.role !== 'ADMIN')
+            .sort((a, b) => {
+                const aCount = getUserEffectiveTags(a).length;
+                const bCount = getUserEffectiveTags(b).length;
+                if (bCount !== aCount) return bCount - aCount;
+                return (a.name || "").localeCompare(b.name || "");
+            }),
+        [filteredCommunityUsers, getUserEffectiveTags]);
 
     const filteredOnlineUsers = useMemo(() => {
         return allUsers.filter(u => {
@@ -470,7 +514,9 @@ export default function TeamDashboard() {
     const userApprovedStripes = useQuery(api.learningPlans.getUserApprovedStripes, {
         userEmail: user?.email || "",
     }) || [];
-    const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
+    const [showMachineNoteModal, setShowMachineNoteModal] = useState(false);
+    const [machineToEnd, setMachineToEnd] = useState<string | null>(null);
+    const [fabricationNote, setFabricationNote] = useState('');
     const [selectedExperience, setSelectedExperience] = useState<any>(null);
     const [showCertificateModal, setShowCertificateModal] = useState(false);
     const [submissionUrlInput, setSubmissionUrlInput] = useState("");
@@ -1387,97 +1433,16 @@ export default function TeamDashboard() {
                                 <div className="space-y-10">
                                     {/* GLOBAL FAB SECTION (Priority Members) */}
                                     {filteredCommunityUsers.filter(isFabUser).length > 0 && (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start pb-8 border-b border-slate-100">
-                                            {filteredCommunityUsers.filter(isFabUser).map((u) => {
-                                                const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                                const dynamic = getDynamicGlow(u.email || u._id || u.email || "", u.customTheme);
-
-                                                return (
-                                                    <Card
-                                                        key={u._id || u.id}
-                                                        style={{
-                                                            '--user-glow': dynamic.glow,
-                                                            '--user-hover-glow': dynamic.hoverGlow,
-                                                            '--user-border': dynamic.border,
-                                                            '--user-before-border': dynamic.beforeBorder,
-                                                            '--user-text': dynamic.text,
-                                                            '--user-badge-bg': dynamic.bg,
-                                                            '--user-icon': dynamic.icon
-                                                        } as React.CSSProperties}
-                                                        className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden w-full ${hasPageLink
-                                                            ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                            : "border-slate-200 hover:shadow-md"
-                                                            }`}
-                                                        onClick={() => {
-                                                            if (hasPageLink) {
-                                                                window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                                            }
-                                                        }}
-                                                    >
-                                                        <div className="flex items-start gap-3 relative z-10">
-                                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
-                                                                {u.profileImageUrl ? (
-                                                                    <img src={u.profileImageUrl} alt={u.name} className="h-full w-full object-cover" />
-                                                                ) : (
-                                                                    <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink || u.customTheme ? 'var(--user-icon)' : '#94a3b8' }} />
-                                                                )}
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
-                                                                        <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                                                        {(u.role === 'ADMIN' || u.role === 'TEAM') && (
-                                                                            <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
-                                                                        )}
-                                                                    </div>
-                                                                    {/* Circular FAB Seal */}
-                                                                    <div
-                                                                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-black border shadow-sm"
-                                                                        style={{
-                                                                            backgroundColor: 'var(--user-badge-bg)',
-                                                                            color: 'var(--user-text)',
-                                                                            borderColor: 'var(--user-border)'
-                                                                        }}
-                                                                    >
-                                                                        FAB
-                                                                    </div>
-                                                                </div>
-                                                                <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">{u.role === 'ADMIN' || u.role === 'TEAM' ? 'Faculty / Team Member' : 'Student'}</p>
-
-                                                                {/* Maker Stripes & Badges */}
-                                                                {(() => {
-                                                                    const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-                                                                    const hasTags = u.tags && u.tags.length > 0;
-                                                                    if (uStripes.length === 0 && !hasTags) return null;
-
-                                                                    return (
-                                                                        <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                                                                            {uStripes.length > 0 && (
-                                                                                <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
-                                                                            )}
-                                                                            {hasTags && (
-                                                                                <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
-                                                                                    {sortUserTags(u.tags).map((tag, idx) => {
-                                                                                        const style = getTagStyle(tag);
-                                                                                        return (
-                                                                                            <span
-                                                                                                key={idx}
-                                                                                                className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                                                            >
-                                                                                                {tag}
-                                                                                            </span>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })()}
-                                                            </div>
-                                                        </div>
-                                                    </Card>
-                                                );
-                                            })}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-8 border-b border-slate-100">
+                                            {filteredCommunityUsers.filter(isFabUser).map((u) => (
+                                                <MakerUserCard
+                                                    key={u._id || u.id}
+                                                    user={u}
+                                                    accessTags={getUserAccessTags(u)}
+                                                    isFab={true}
+                                                    stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                                                />
+                                            ))}
                                         </div>
                                     )}
 
@@ -1489,84 +1454,16 @@ export default function TeamDashboard() {
                                                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">The Team</h3>
                                                 <div className="h-px flex-1 bg-slate-200" />
                                             </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
-                                                {filteredTeam.filter(u => !isFabUser(u)).map((u) => {
-                                                    const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "", u.customTheme);
-
-                                                    return (
-                                                        <Card
-                                                            key={u._id || u.id}
-                                                            style={{
-                                                                '--user-glow': dynamic.glow,
-                                                                '--user-hover-glow': dynamic.hoverGlow,
-                                                                '--user-border': dynamic.border,
-                                                                '--user-before-border': dynamic.beforeBorder,
-                                                                '--user-text': dynamic.text,
-                                                                '--user-badge-bg': dynamic.bg,
-                                                                '--user-icon': dynamic.icon
-                                                            } as React.CSSProperties}
-                                                            className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                : "border-slate-200 hover:shadow-md"
-                                                                }`}
-                                                            onClick={() => {
-                                                                if (hasPageLink) {
-                                                                    window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                                                }
-                                                            }}
-                                                        >
-                                                            <div className="flex items-start gap-3 relative z-10">
-                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
-                                                                    {u.profileImageUrl ? (
-                                                                        <img src={u.profileImageUrl} alt={u.name} className="h-full w-full object-cover" />
-                                                                    ) : (
-                                                                        <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink || u.customTheme ? 'var(--user-icon)' : '#94a3b8' }} />
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex justify-between items-start">
-                                                                        <div className="flex items-center gap-2 pr-2 min-w-0 font-display">
-                                                                            <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                                                            <SaluteIcon className="shrink-0 w-3.5 h-3.5" style={{ color: hasPageLink ? 'var(--user-icon)' : '#059669' }} />
-                                                                        </div>
-                                                                    </div>
-                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Faculty / Team Member</p>
-
-                                                                    {/* Maker Stripes & Badges */}
-                                                                    {(() => {
-                                                                        const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-                                                                        const hasTags = u.tags && u.tags.length > 0;
-                                                                        if (uStripes.length === 0 && !hasTags) return null;
-
-                                                                        return (
-                                                                            <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                                                                                {uStripes.length > 0 && (
-                                                                                    <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
-                                                                                )}
-                                                                                {hasTags && (
-                                                                                    <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
-                                                                                        {sortUserTags(u.tags).map((tag, idx) => {
-                                                                                            const style = getTagStyle(tag);
-                                                                                            return (
-                                                                                                <span
-                                                                                                    key={idx}
-                                                                                                    className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                                                                >
-                                                                                                    {tag}
-                                                                                                </span>
-                                                                                            );
-                                                                                        })}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    })()}
-                                                                </div>
-                                                            </div>
-                                                        </Card>
-                                                    );
-                                                })}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
+                                                {filteredTeam.filter(u => !isFabUser(u)).map((u) => (
+                                                    <MakerUserCard
+                                                        key={u._id || u.id}
+                                                        user={u}
+                                                        accessTags={getUserAccessTags(u)}
+                                                        isFab={false}
+                                                        stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                                                    />
+                                                ))}
                                             </div>
                                         </div>
                                     )}
@@ -1579,83 +1476,16 @@ export default function TeamDashboard() {
                                                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Makers & Students</h3>
                                                 <div className="h-px flex-1 bg-slate-200" />
                                             </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
-                                                {filteredStudents.filter(u => !isFabUser(u)).map((u) => {
-                                                    const hasPageLink = Boolean(u.myPageLink && u.myPageLink?.trim() !== "");
-                                                    const dynamic = getDynamicGlow(u.email || u._id || u.email || "", u.customTheme);
-
-                                                    return (
-                                                        <Card
-                                                            key={u._id || u.id}
-                                                            style={{
-                                                                '--user-glow': dynamic.glow,
-                                                                '--user-hover-glow': dynamic.hoverGlow,
-                                                                '--user-border': dynamic.border,
-                                                                '--user-before-border': dynamic.beforeBorder,
-                                                                '--user-text': dynamic.text,
-                                                                '--user-badge-bg': dynamic.bg,
-                                                                '--user-icon': dynamic.icon
-                                                            } as React.CSSProperties}
-                                                            className={`flex flex-col p-4 transition-all bg-white/50 border overflow-hidden max-w-[280px] w-full mx-auto sm:mx-0 ${hasPageLink
-                                                                ? `cursor-pointer border-[var(--user-border)] shadow-[0_0_15px_var(--user-glow)] hover:shadow-[0_0_25px_var(--user-hover-glow)] hover:-translate-y-1 relative before:absolute before:inset-0 before:rounded-xl before:border before:border-[var(--user-before-border)] before:animate-pulse`
-                                                                : "border-slate-200 hover:shadow-md"
-                                                                }`}
-                                                            onClick={() => {
-                                                                if (hasPageLink) {
-                                                                    window.open(u.myPageLink, '_blank', 'noopener,noreferrer');
-                                                                }
-                                                            }}
-                                                        >
-                                                            <div className="flex items-start gap-3 relative z-10">
-                                                                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
-                                                                    {u.profileImageUrl ? (
-                                                                        <img src={u.profileImageUrl} alt={u.name} className="h-full w-full object-cover" />
-                                                                    ) : (
-                                                                        <UsersIcon className={`h-5 w-5`} style={{ color: hasPageLink || u.customTheme ? 'var(--user-icon)' : '#94a3b8' }} />
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex justify-between items-start">
-                                                                        <div className="min-w-0 font-display">
-                                                                            <p className="font-bold text-sm truncate" style={{ color: hasPageLink ? 'var(--user-text)' : 'inherit' }}>{u.name}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mt-0.5">Student</p>
-
-                                                                    {/* Maker Stripes & Badges */}
-                                                                    {(() => {
-                                                                        const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-                                                                        const hasTags = u.tags && u.tags.length > 0;
-                                                                        if (uStripes.length === 0 && !hasTags) return null;
-
-                                                                        return (
-                                                                            <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                                                                                {uStripes.length > 0 && (
-                                                                                    <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
-                                                                                )}
-                                                                                {hasTags && (
-                                                                                    <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5 scrollbar-hide">
-                                                                                        {sortUserTags(u.tags).map((tag, idx) => {
-                                                                                            const style = getTagStyle(tag);
-                                                                                            return (
-                                                                                                <span
-                                                                                                    key={idx}
-                                                                                                    className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] leading-tight font-bold uppercase ${style.color}`}
-                                                                                                >
-                                                                                                    {tag}
-                                                                                                </span>
-                                                                                            );
-                                                                                        })}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    })()}
-                                                                </div>
-                                                            </div>
-                                                        </Card>
-                                                    );
-                                                })}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
+                                                {filteredStudents.filter(u => !isFabUser(u)).map((u) => (
+                                                    <MakerUserCard
+                                                        key={u._id || u.id}
+                                                        user={u}
+                                                        accessTags={getUserAccessTags(u)}
+                                                        isFab={false}
+                                                        stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                                                    />
+                                                ))}
                                             </div>
                                         </div>
                                     )}
@@ -2295,7 +2125,8 @@ export default function TeamDashboard() {
                                                                                 const res = await submitLearningProof({
                                                                                     planId: selectedExperience._id,
                                                                                     userEmail: user?.email || "",
-                                                                                    submissionUrl: submissionUrlInput
+                                                                                    submissionUrl: submissionUrlInput,
+                                                                                    editionNumber: selectedExperience?.attendedEdition || selectedExperience?.edition,
                                                                                 });
                                                                                 toast.success(res.message);
                                                                                 setSubmissionUrlInput("");

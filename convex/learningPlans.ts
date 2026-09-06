@@ -605,52 +605,117 @@ export const submitLearningProof = mutation({
     planId: v.id("learningPlans"),
     userEmail: v.string(),
     submissionUrl: v.string(),
+    editionNumber: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
 
-    const currentUsers = plan.registeredUsers || [];
-    const currentRecord = currentUsers.find((u) => u.email.toLowerCase() === args.userEmail.toLowerCase());
-    
-    // Check in past editions as well
-    const pastRecords = (plan.pastEditions || []).flatMap((ed: any) => ed.registeredUsers || []);
-    const pastRecord = pastRecords.find((u: any) => u.email.toLowerCase() === args.userEmail.toLowerCase());
+    const emailLower = args.userEmail.trim().toLowerCase();
+    const currentEditionNum = plan.edition || 1;
+    const targetEditionNum = args.editionNumber;
 
-    const isAttended = Boolean(currentRecord?.attended || pastRecord?.attended);
-    if (!isAttended) {
+    const currentUsers = plan.registeredUsers || [];
+    const pastEditions = plan.pastEditions || [];
+
+    let updatedCurrentUsers = currentUsers;
+    let updatedPastEditions = pastEditions;
+    let foundAttended = false;
+
+    if (targetEditionNum !== undefined) {
+      if (targetEditionNum === currentEditionNum) {
+        updatedCurrentUsers = currentUsers.map((u) => {
+          if (u.email.toLowerCase() === emailLower && u.attended) {
+            foundAttended = true;
+            return {
+              ...u,
+              submissionUrl: args.submissionUrl.trim(),
+              submissionStatus: "PENDING" as const,
+              submittedAt: Date.now(),
+            };
+          }
+          return u;
+        });
+      } else {
+        updatedPastEditions = pastEditions.map((ed: any) => {
+          if (ed.editionNumber === targetEditionNum) {
+            return {
+              ...ed,
+              registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+                if (u.email.toLowerCase() === emailLower && u.attended) {
+                  foundAttended = true;
+                  return {
+                    ...u,
+                    submissionUrl: args.submissionUrl.trim(),
+                    submissionStatus: "PENDING" as const,
+                    submittedAt: Date.now(),
+                  };
+                }
+                return u;
+              }),
+            };
+          }
+          return ed;
+        });
+      }
+    } else {
+      // If targetEditionNum not provided: first check current edition if user attended, else find latest attended past edition
+      const userInCur = currentUsers.find((u) => u.email.toLowerCase() === emailLower && u.attended);
+      if (userInCur) {
+        updatedCurrentUsers = currentUsers.map((u) => {
+          if (u.email.toLowerCase() === emailLower && u.attended) {
+            foundAttended = true;
+            return {
+              ...u,
+              submissionUrl: args.submissionUrl.trim(),
+              submissionStatus: "PENDING" as const,
+              submittedAt: Date.now(),
+            };
+          }
+          return u;
+        });
+      } else {
+        let matchedEdNum: number | null = null;
+        for (let i = pastEditions.length - 1; i >= 0; i--) {
+          const uInPast = (pastEditions[i].registeredUsers || []).find(
+            (u: any) => u.email.toLowerCase() === emailLower && u.attended
+          );
+          if (uInPast) {
+            matchedEdNum = pastEditions[i].editionNumber;
+            break;
+          }
+        }
+        if (matchedEdNum !== null) {
+          updatedPastEditions = pastEditions.map((ed: any) => {
+            if (ed.editionNumber === matchedEdNum) {
+              return {
+                ...ed,
+                registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+                  if (u.email.toLowerCase() === emailLower && u.attended) {
+                    foundAttended = true;
+                    return {
+                      ...u,
+                      submissionUrl: args.submissionUrl.trim(),
+                      submissionStatus: "PENDING" as const,
+                      submittedAt: Date.now(),
+                    };
+                  }
+                  return u;
+                }),
+              };
+            }
+            return ed;
+          });
+        }
+      }
+    }
+
+    if (!foundAttended) {
       throw new Error("Only participants marked as Attended by the session curator can submit completion links.");
     }
 
-    const updatedUsers = currentUsers.map((u) => {
-      if (u.email.toLowerCase() === args.userEmail.toLowerCase() && u.attended) {
-        return {
-          ...u,
-          submissionUrl: args.submissionUrl.trim(),
-          submissionStatus: "PENDING" as const,
-          submittedAt: Date.now(),
-        };
-      }
-      return u;
-    });
-
-    const updatedPastEditions = (plan.pastEditions || []).map((ed: any) => ({
-      ...ed,
-      registeredUsers: (ed.registeredUsers || []).map((u: any) => {
-        if (u.email.toLowerCase() === args.userEmail.toLowerCase() && u.attended) {
-          return {
-            ...u,
-            submissionUrl: args.submissionUrl.trim(),
-            submissionStatus: "PENDING" as const,
-            submittedAt: Date.now(),
-          };
-        }
-        return u;
-      }),
-    }));
-
     await ctx.db.patch(args.planId, {
-      registeredUsers: updatedUsers,
+      registeredUsers: updatedCurrentUsers,
       pastEditions: updatedPastEditions,
       updatedAt: Date.now(),
     });
@@ -663,6 +728,7 @@ export const reviewLearningSubmission = mutation({
   args: {
     planId: v.id("learningPlans"),
     userEmail: v.string(),
+    editionNumber: v.optional(v.number()),
     status: v.union(v.literal("APPROVED"), v.literal("REJECTED")),
     feedbackNote: v.optional(v.string()),
   },
@@ -670,34 +736,98 @@ export const reviewLearningSubmission = mutation({
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
 
-    const currentUsers = plan.registeredUsers || [];
-    const updatedUsers = currentUsers.map((u) => {
-      if (u.email.toLowerCase() === args.userEmail.toLowerCase()) {
-        return {
-          ...u,
-          submissionStatus: args.status,
-          feedbackNote: args.feedbackNote || "",
-        };
-      }
-      return u;
-    });
+    const emailLower = args.userEmail.trim().toLowerCase();
+    const currentEditionNum = plan.edition || 1;
+    const targetEditionNum = args.editionNumber;
 
-    const updatedPastEditions = (plan.pastEditions || []).map((ed: any) => ({
-      ...ed,
-      registeredUsers: (ed.registeredUsers || []).map((u: any) => {
-        if (u.email.toLowerCase() === args.userEmail.toLowerCase()) {
-          return {
-            ...u,
-            submissionStatus: args.status,
-            feedbackNote: args.feedbackNote || "",
-          };
+    const currentUsers = plan.registeredUsers || [];
+    const pastEditions = plan.pastEditions || [];
+
+    let updatedCurrentUsers = currentUsers;
+    let updatedPastEditions = pastEditions;
+
+    if (targetEditionNum !== undefined) {
+      if (targetEditionNum === currentEditionNum) {
+        updatedCurrentUsers = currentUsers.map((u) => {
+          if (u.email.toLowerCase() === emailLower) {
+            return {
+              ...u,
+              submissionStatus: args.status,
+              feedbackNote: args.feedbackNote || "",
+            };
+          }
+          return u;
+        });
+      } else {
+        updatedPastEditions = pastEditions.map((ed: any) => {
+          if (ed.editionNumber === targetEditionNum) {
+            return {
+              ...ed,
+              registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+                if (u.email.toLowerCase() === emailLower) {
+                  return {
+                    ...u,
+                    submissionStatus: args.status,
+                    feedbackNote: args.feedbackNote || "",
+                  };
+                }
+                return u;
+              }),
+            };
+          }
+          return ed;
+        });
+      }
+    } else {
+      // If targetEditionNum not provided: update current edition if user has submissionUrl, else update specific past edition
+      const hasInCurrent = currentUsers.some((u) => u.email.toLowerCase() === emailLower && Boolean(u.submissionUrl));
+      if (hasInCurrent) {
+        updatedCurrentUsers = currentUsers.map((u) => {
+          if (u.email.toLowerCase() === emailLower) {
+            return {
+              ...u,
+              submissionStatus: args.status,
+              feedbackNote: args.feedbackNote || "",
+            };
+          }
+          return u;
+        });
+      } else {
+        let targetPastEdNum: number | null = null;
+        for (let i = pastEditions.length - 1; i >= 0; i--) {
+          const uInPast = (pastEditions[i].registeredUsers || []).find(
+            (u: any) => u.email.toLowerCase() === emailLower && Boolean(u.submissionUrl)
+          );
+          if (uInPast) {
+            targetPastEdNum = pastEditions[i].editionNumber;
+            break;
+          }
         }
-        return u;
-      }),
-    }));
+        if (targetPastEdNum !== null) {
+          updatedPastEditions = pastEditions.map((ed: any) => {
+            if (ed.editionNumber === targetPastEdNum) {
+              return {
+                ...ed,
+                registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+                  if (u.email.toLowerCase() === emailLower) {
+                    return {
+                      ...u,
+                      submissionStatus: args.status,
+                      feedbackNote: args.feedbackNote || "",
+                    };
+                  }
+                  return u;
+                }),
+              };
+            }
+            return ed;
+          });
+        }
+      }
+    }
 
     await ctx.db.patch(args.planId, {
-      registeredUsers: updatedUsers,
+      registeredUsers: updatedCurrentUsers,
       pastEditions: updatedPastEditions,
       updatedAt: Date.now(),
     });
@@ -1068,43 +1198,55 @@ export const getUserApprovedStripes = query({
     const allPlans = await ctx.db.query("learningPlans").collect();
 
     const approvedStripes: any[] = [];
-    for (const plan of allPlans) {
-      // Current edition
-      const curUsers = plan.registeredUsers || [];
-      const userInCur = curUsers.find(
-        u => u.email.toLowerCase() === emailLower && u.submissionStatus === "APPROVED"
-      );
-      if (userInCur) {
-        const custom = (user?.stripeCustomizations || []).find((s: any) => s.planId === plan._id || s.planId === plan.planId);
-        approvedStripes.push({
-          planId: plan._id,
-          title: plan.title,
-          edition: plan.edition || 1,
-          char: custom?.char || plan.title.charAt(0).toUpperCase(),
-          customColor: custom?.color,
-          tags: plan.tags || [],
-          approvedAt: userInCur.submittedAt || plan.updatedAt,
-        });
-      }
+    const seenEditions = new Set<string>();
 
-      // Past editions
+    for (const plan of allPlans) {
       const pastEds = plan.pastEditions || [];
+
+      // 1. Process Past Editions first
       for (const ed of pastEds) {
         const userInPast = (ed.registeredUsers || []).find(
-          (u: any) => u.email.toLowerCase() === emailLower && u.submissionStatus === "APPROVED"
+          (u: any) => u.email.toLowerCase() === emailLower && u.submissionStatus === "APPROVED" && Boolean(u.submissionUrl)
         );
         if (userInPast) {
           const customKey = `${plan._id}_ed${ed.editionNumber}`;
-          const custom = (user?.stripeCustomizations || []).find((s: any) => s.planId === customKey || s.planId === plan._id);
+          if (!seenEditions.has(customKey)) {
+            seenEditions.add(customKey);
+            const custom = (user?.stripeCustomizations || []).find((s: any) => s.planId === customKey || s.planId === plan._id);
+            approvedStripes.push({
+              planId: customKey,
+              rawPlanId: plan._id,
+              title: `${plan.title}${pastEds.length > 0 ? ` (Ed. ${ed.editionNumber})` : ""}`,
+              edition: ed.editionNumber,
+              char: custom?.char || plan.title.charAt(0).toUpperCase(),
+              sessionTag: custom?.char || plan.title.charAt(0).toUpperCase(),
+              customColor: custom?.color,
+              approvedAt: userInPast.submittedAt || ed.completedAt || plan.updatedAt,
+            });
+          }
+        }
+      }
+
+      // 2. Process Current Edition (only if not already processed in past editions and has verified submission)
+      const currentEditionNum = plan.edition || 1;
+      const currentKey = `${plan._id}_ed${currentEditionNum}`;
+      if (!seenEditions.has(currentKey)) {
+        const curUsers = plan.registeredUsers || [];
+        const userInCur = curUsers.find(
+          u => u.email.toLowerCase() === emailLower && u.submissionStatus === "APPROVED" && Boolean(u.submissionUrl)
+        );
+        if (userInCur) {
+          seenEditions.add(currentKey);
+          const custom = (user?.stripeCustomizations || []).find((s: any) => s.planId === plan._id || s.planId === currentKey || s.planId === plan.planId);
           approvedStripes.push({
-            planId: customKey,
+            planId: currentKey,
             rawPlanId: plan._id,
-            title: `${plan.title} (Ed. ${ed.editionNumber})`,
-            edition: ed.editionNumber,
+            title: `${plan.title}${pastEds.length > 0 ? ` (Ed. ${currentEditionNum})` : ""}`,
+            edition: currentEditionNum,
             char: custom?.char || plan.title.charAt(0).toUpperCase(),
+            sessionTag: custom?.char || plan.title.charAt(0).toUpperCase(),
             customColor: custom?.color,
-            tags: plan.tags || [],
-            approvedAt: userInPast.submittedAt || ed.completedAt || plan.updatedAt,
+            approvedAt: userInCur.submittedAt || plan.updatedAt,
           });
         }
       }
@@ -1126,43 +1268,52 @@ export const getAllUsersApprovedStripes = query({
     }
 
     for (const plan of allPlans) {
-      // Current edition
-      for (const u of (plan.registeredUsers || [])) {
-        if (u.submissionStatus === "APPROVED") {
-          const email = u.email.toLowerCase();
-          if (!userStripesMap[email]) userStripesMap[email] = [];
-          const userDoc = allUsers.find(x => x.email.toLowerCase() === email);
-          const custom = (userDoc?.stripeCustomizations || []).find((s: any) => s.planId === plan._id || s.planId === plan.planId);
-          userStripesMap[email].push({
-            planId: plan._id,
-            title: plan.title,
-            edition: plan.edition || 1,
-            char: custom?.char || plan.title.charAt(0).toUpperCase(),
-            customColor: custom?.color,
-            tags: plan.tags || [],
-            approvedAt: u.submittedAt || plan.updatedAt,
-          });
+      const pastEds = plan.pastEditions || [];
+
+      // 1. Past editions
+      for (const ed of pastEds) {
+        for (const u of (ed.registeredUsers || [])) {
+          if (u.submissionStatus === "APPROVED" && Boolean(u.submissionUrl)) {
+            const email = u.email.toLowerCase();
+            if (!userStripesMap[email]) userStripesMap[email] = [];
+            const customKey = `${plan._id}_ed${ed.editionNumber}`;
+            if (!userStripesMap[email].some(s => s.planId === customKey)) {
+              const userDoc = allUsers.find(x => x.email.toLowerCase() === email);
+              const custom = (userDoc?.stripeCustomizations || []).find((s: any) => s.planId === customKey || s.planId === plan._id);
+              userStripesMap[email].push({
+                planId: customKey,
+                rawPlanId: plan._id,
+                title: `${plan.title}${pastEds.length > 0 ? ` (Ed. ${ed.editionNumber})` : ""}`,
+                edition: ed.editionNumber,
+                char: custom?.char || plan.title.charAt(0).toUpperCase(),
+                sessionTag: custom?.char || plan.title.charAt(0).toUpperCase(),
+                customColor: custom?.color,
+                approvedAt: u.submittedAt || ed.completedAt || plan.updatedAt,
+              });
+            }
+          }
         }
       }
 
-      // Past editions
-      for (const ed of (plan.pastEditions || [])) {
-        for (const u of (ed.registeredUsers || [])) {
-          if (u.submissionStatus === "APPROVED") {
-            const email = u.email.toLowerCase();
-            if (!userStripesMap[email]) userStripesMap[email] = [];
+      // 2. Current edition
+      const currentEditionNum = plan.edition || 1;
+      const currentKey = `${plan._id}_ed${currentEditionNum}`;
+      for (const u of (plan.registeredUsers || [])) {
+        if (u.submissionStatus === "APPROVED" && Boolean(u.submissionUrl)) {
+          const email = u.email.toLowerCase();
+          if (!userStripesMap[email]) userStripesMap[email] = [];
+          if (!userStripesMap[email].some(s => s.planId === currentKey)) {
             const userDoc = allUsers.find(x => x.email.toLowerCase() === email);
-            const customKey = `${plan._id}_ed${ed.editionNumber}`;
-            const custom = (userDoc?.stripeCustomizations || []).find((s: any) => s.planId === customKey || s.planId === plan._id);
+            const custom = (userDoc?.stripeCustomizations || []).find((s: any) => s.planId === plan._id || s.planId === currentKey || s.planId === plan.planId);
             userStripesMap[email].push({
-              planId: customKey,
+              planId: currentKey,
               rawPlanId: plan._id,
-              title: `${plan.title} (Ed. ${ed.editionNumber})`,
-              edition: ed.editionNumber,
+              title: `${plan.title}${pastEds.length > 0 ? ` (Ed. ${currentEditionNum})` : ""}`,
+              edition: currentEditionNum,
               char: custom?.char || plan.title.charAt(0).toUpperCase(),
+              sessionTag: custom?.char || plan.title.charAt(0).toUpperCase(),
               customColor: custom?.color,
-              tags: plan.tags || [],
-              approvedAt: u.submittedAt || ed.completedAt || plan.updatedAt,
+              approvedAt: u.submittedAt || plan.updatedAt,
             });
           }
         }
@@ -1172,6 +1323,3 @@ export const getAllUsersApprovedStripes = query({
     return userStripesMap;
   },
 });
-
-
-

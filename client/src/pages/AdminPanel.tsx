@@ -12,6 +12,7 @@ import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
 import AdminLearningReportsTab from '@/components/AdminLearningReportsTab';
 import MakerStripesRack from '@/components/MakerStripesRack';
+import MakerUserCard from '@/components/MakerUserCard';
 
 /**
  * Design: Modern Minimalist - Admin Panel
@@ -1545,7 +1546,7 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {allUsers
                 .filter((u) => u.status !== 'REJECTED')
                 .filter((u) => {
@@ -1557,92 +1558,13 @@ export default function AdminPanel() {
                   );
                 })
                 .map((u) => (
-                  <Card
+                  <MakerUserCard
                     key={u.id || u.email}
+                    user={u}
+                    stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                    activeLoans={activeLoans.filter((l) => l.userEmail === u.email)}
                     onClick={() => handleOpenEditUser(u)}
-                    className="p-4 hover:shadow-lg transition-all cursor-pointer flex flex-col gap-3 relative overflow-hidden group border-sage-100 hover:border-sage-300"
-                  >
-                    {/* Header: Name + Status */}
-                    <div className="flex justify-between items-start gap-2">
-                      <h3 className="font-bold text-sm text-foreground leading-tight truncate flex-1" title={u.name}>
-                        {u.name || 'Unknown'}
-                      </h3>
-                      <div className="shrink-0">
-                        {u.status === 'APPROVED' && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 uppercase">
-                            Approved
-                          </span>
-                        )}
-                        {u.status === 'PENDING' && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-yellow-100 text-yellow-800 uppercase animate-pulse">
-                            Pending
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Meta: Email + Role */}
-                    <div className="space-y-1">
-                      <p className="text-[11px] text-muted-foreground truncate w-full" title={u.email}>
-                        {u.email}
-                      </p>
-                      <span className="inline-block px-1.5 py-0.5 text-[9px] uppercase font-bold tracking-wider rounded bg-slate-100 text-slate-500">
-                        {u.role || 'USER'}
-                      </span>
-                    </div>
-
-                    {/* Maker Stripes & Tags */}
-                    {(() => {
-                      const uStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-                      const hasTags = u.tags && u.tags.length > 0;
-                      if (uStripes.length === 0 && !hasTags) return null;
-
-                      return (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                          {uStripes.length > 0 && (
-                            <MakerStripesRack stripes={uStripes} size="sm" editable={false} />
-                          )}
-                          {hasTags && (
-                            <div className="flex flex-wrap gap-1">
-                              {(u.tags || []).map((tag, idx) => {
-                                const style = getTagStyle(tag);
-                                return (
-                                  <span
-                                    key={idx}
-                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-tight border shadow-sm ${style.color}`}
-                                  >
-                                    {tag}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Loans (Expanded) */}
-                    <div className="mt-auto pt-2 border-t border-border/40">
-                      {(() => {
-                        const userLoans = activeLoans.filter(l => l.userEmail === u.email);
-                        if (userLoans.length > 0) {
-                          return (
-                            <div className="space-y-1">
-                              {userLoans.map((loan, idx) => (
-                                <div key={idx} className="flex items-center gap-1.5 min-w-0">
-                                  <Package className="w-3 h-3 text-blue-500 shrink-0" />
-                                  <p className="text-[10px] text-blue-700 font-medium truncate flex-1" title={loan.itemName}>
-                                    {loan.itemName} <span className="text-[9px] text-blue-500 opacity-80">x{loan.quantity}</span>
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        }
-                        return <p className="text-[10px] text-muted-foreground italic truncate">No active items</p>;
-                      })()}
-                    </div>
-                  </Card>
+                  />
                 ))}
             </div>
 

@@ -14,6 +14,7 @@ export interface MakerStripe {
   title: string;
   edition?: number;
   char?: string;
+  sessionTag?: string;
   customColor?: string;
   tags?: string[];
   approvedAt?: number;
