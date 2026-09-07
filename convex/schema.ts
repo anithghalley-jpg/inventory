@@ -465,4 +465,15 @@ export default defineSchema({
   })
     .index("by_projectId_and_createdAt", ["projectId", "createdAt"])
     .index("by_historyId", ["historyId"]),
+
+  userLearningReports: defineTable({
+    userEmail: v.string(),
+    userName: v.string(),
+    title: v.string(),
+    content: v.string(),
+    driveFolderId: v.optional(v.string()),
+    driveFolderUrl: v.optional(v.string()),
+    lastSavedAt: v.string(),
+    createdAt: v.string(),
+  }).index("by_userEmail", ["userEmail"]),
 });

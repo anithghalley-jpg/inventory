@@ -235,6 +235,15 @@ function doPost(e) {
       case 'getProjectMediaFiles':
         response = handleGetProjectMediaFiles(data);
         break;
+      case 'createUserReportFolder':
+        response = handleCreateUserReportFolder(data);
+        break;
+      case 'uploadUserReportMedia':
+        response = handleUploadUserReportMedia(data);
+        break;
+      case 'getUserReportMediaFiles':
+        response = handleGetUserReportMediaFiles(data);
+        break;
       case 'getCategories':
         response = handleGetCategories(data);
         break;
@@ -932,6 +941,288 @@ function handleGetProjectMediaFiles(data) {
     };
   } catch (err) {
     console.error("❌ Error retrieving project media files:", err);
+    return {
+      success: false,
+      message: err.toString(),
+      files: []
+    };
+  }
+}
+
+// ===== USER LEARNING REPORT GOOGLE DRIVE FOLDERS & MEDIA UPLOADS =====
+
+/**
+ * Gets or creates the root 'learning_reports' folder alongside the Inventory Spreadsheet.
+ */
+function getOrCreateUserReportsRootFolder() {
+  const parentFolder = getSpreadsheetParentFolder();
+  const folderName = "learning_reports";
+  const existingFolders = parentFolder.getFoldersByName(folderName);
+  let reportsFolder;
+  if (existingFolders.hasNext()) {
+    reportsFolder = existingFolders.next();
+  } else {
+    // Check if capitalized 'Learning Reports' exists
+    const capitalized = parentFolder.getFoldersByName("Learning Reports");
+    if (capitalized.hasNext()) {
+      reportsFolder = capitalized.next();
+    } else {
+      reportsFolder = parentFolder.createFolder(folderName);
+      try {
+        reportsFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) {
+        console.warn("Could not set public sharing on learning_reports root folder:", e);
+      }
+    }
+  }
+  return reportsFolder;
+}
+
+/**
+ * Creates or retrieves a user's dedicated personal folder inside 'learning_reports' on Google Drive.
+ */
+function handleCreateUserReportFolder(data) {
+  try {
+    const rawName = (data.userName || data.name || data.email || "User").trim();
+    if (!rawName) {
+      return { success: false, message: "Missing user name or email" };
+    }
+
+    const reportsRoot = getOrCreateUserReportsRootFolder();
+    const existing = reportsRoot.getFoldersByName(rawName);
+    let userFolder;
+    if (existing.hasNext()) {
+      userFolder = existing.next();
+    } else {
+      userFolder = reportsRoot.createFolder(rawName);
+      try {
+        userFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) {
+        console.warn("Could not set public sharing on user report folder:", e);
+      }
+    }
+
+    const folderId = userFolder.getId();
+    const folderUrl = userFolder.getUrl();
+
+    console.log("📁 User learning report folder ready: " + rawName + " (" + folderId + ")");
+
+    return {
+      success: true,
+      folderId: folderId,
+      folderUrl: folderUrl,
+      folderName: rawName,
+      rootFolderId: reportsRoot.getId(),
+      message: 'Personal Google Drive report folder is ready.'
+    };
+  } catch (err) {
+    console.error("❌ Error creating user report folder:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
+/**
+ * Uploads media / files (images, PDFs, documents, audio, videos) directly to the user's personal Google Drive folder.
+ */
+function handleUploadUserReportMedia(data) {
+  try {
+    const { fileName, fileTitle, mimeType, content, folderId, userName } = data;
+    if (!content) {
+      return { success: false, message: "Missing file/media content" };
+    }
+
+    let targetFolder;
+    if (folderId) {
+      try {
+        targetFolder = DriveApp.getFolderById(folderId);
+      } catch (e) {
+        console.warn("Could not open folderId directly, resolving via user name:", e);
+      }
+    }
+
+    if (!targetFolder) {
+      const nameToUse = (userName || "Personal Media").trim();
+      const reportsRoot = getOrCreateUserReportsRootFolder();
+      const existing = reportsRoot.getFoldersByName(nameToUse);
+      if (existing.hasNext()) {
+        targetFolder = existing.next();
+      } else {
+        targetFolder = reportsRoot.createFolder(nameToUse);
+        try {
+          targetFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        } catch (e) {}
+      }
+    }
+
+    const safeMimeType = mimeType || 'image/png';
+    let rawName = (fileName || fileTitle || "").trim();
+    if (!rawName) {
+      rawName = "report_file_" + Date.now();
+    }
+    let sanitizedBaseName = rawName.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_');
+    if (!/\.[a-zA-Z0-9]{2,5}$/.test(sanitizedBaseName)) {
+      if (safeMimeType.includes('pdf')) sanitizedBaseName += '.pdf';
+      else if (safeMimeType.includes('jpeg')) sanitizedBaseName += '.jpg';
+      else if (safeMimeType.includes('png')) sanitizedBaseName += '.png';
+      else if (safeMimeType.includes('mp4') || safeMimeType.includes('video')) sanitizedBaseName += '.mp4';
+      else sanitizedBaseName += '.png';
+    }
+
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(content),
+      safeMimeType,
+      sanitizedBaseName
+    );
+
+    const file = targetFolder.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {
+      console.warn("Workspace policy blocked file sharing:", e);
+    }
+
+    const fileId = file.getId();
+    const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+    const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w800";
+    const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+    const label = sanitizedBaseName.replace(/\.[^/.]+$/, "");
+
+    let embedType = 'file';
+    let markdownSnippet = "[" + label + "](" + viewUrl + ")";
+
+    if (safeMimeType.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(sanitizedBaseName)) {
+      embedType = 'image';
+      markdownSnippet = "![" + label + "](" + directLink + ")";
+    } else if (safeMimeType.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(sanitizedBaseName)) {
+      embedType = 'video';
+      markdownSnippet = "[▶ Video: " + label + "](" + viewUrl + ")";
+    } else if (safeMimeType.includes('pdf') || /\.(pdf)$/i.test(sanitizedBaseName)) {
+      embedType = 'pdf';
+      markdownSnippet = "[📄 PDF: " + label + "](" + viewUrl + ")";
+    }
+
+    console.log("📸 User report file uploaded successfully: " + sanitizedBaseName + " (" + fileId + ")");
+
+    return {
+      success: true,
+      fileId: fileId,
+      fileName: sanitizedBaseName,
+      label: label,
+      mimeType: safeMimeType,
+      embedType: embedType,
+      viewUrl: viewUrl,
+      thumbnailUrl: directLink,
+      downloadUrl: downloadUrl,
+      markdownSnippet: markdownSnippet,
+      folderId: targetFolder.getId(),
+      folderUrl: targetFolder.getUrl(),
+      message: "File uploaded directly to personal Google Drive report folder"
+    };
+  } catch (err) {
+    console.error("❌ Error uploading user report media:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
+/**
+ * Retrieves all media/files from a user's personal Google Drive report folder.
+ */
+function handleGetUserReportMediaFiles(data) {
+  try {
+    const { folderId, userName } = data;
+    let targetFolder;
+
+    if (folderId) {
+      try {
+        targetFolder = DriveApp.getFolderById(folderId);
+      } catch (e) {
+        console.warn("Could not open folderId directly, falling back to name search:", e);
+      }
+    }
+
+    if (!targetFolder) {
+      const nameToUse = (userName || "").trim();
+      if (!nameToUse) {
+        return { success: false, message: "Missing user name or folder ID", files: [] };
+      }
+      const reportsRoot = getOrCreateUserReportsRootFolder();
+      const existing = reportsRoot.getFoldersByName(nameToUse);
+      if (existing.hasNext()) {
+        targetFolder = existing.next();
+      } else {
+        return {
+          success: true,
+          folderId: "",
+          folderUrl: "",
+          files: [],
+          message: "User report folder has not been created yet."
+        };
+      }
+    }
+
+    const filesList = [];
+    const filesIterator = targetFolder.getFiles();
+
+    while (filesIterator.hasNext()) {
+      const file = filesIterator.next();
+      const mime = file.getMimeType();
+      const fileId = file.getId();
+      const name = file.getName();
+      const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w800";
+      const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+      const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+      const cleanLabel = name.replace(/\.[^/.]+$/, "");
+
+      let embedType = 'file';
+      let markdownSnippet = "[" + cleanLabel + "](" + viewUrl + ")";
+
+      if (mime.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(name)) {
+        embedType = 'image';
+        markdownSnippet = "![" + cleanLabel + "](" + directLink + ")";
+      } else if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(name)) {
+        embedType = 'video';
+        markdownSnippet = "[▶ Video: " + cleanLabel + "](" + viewUrl + ")";
+      } else if (mime.includes('pdf') || /\.(pdf)$/i.test(name)) {
+        embedType = 'pdf';
+        markdownSnippet = "[📄 PDF: " + cleanLabel + "](" + viewUrl + ")";
+      }
+
+      filesList.push({
+        fileId: fileId,
+        fileName: name,
+        label: cleanLabel,
+        mimeType: mime,
+        embedType: embedType,
+        thumbnailUrl: directLink,
+        viewUrl: viewUrl,
+        downloadUrl: downloadUrl,
+        dateCreated: file.getDateCreated() ? file.getDateCreated().toISOString() : new Date().toISOString(),
+        lastUpdated: file.getLastUpdated() ? file.getLastUpdated().toISOString() : new Date().toISOString(),
+        sizeBytes: file.getSize(),
+        markdownSnippet: markdownSnippet
+      });
+    }
+
+    // Sort files by dateCreated descending (newest first)
+    filesList.sort(function(a, b) {
+      return new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime();
+    });
+
+    return {
+      success: true,
+      folderId: targetFolder.getId(),
+      folderUrl: targetFolder.getUrl(),
+      files: filesList,
+      totalCount: filesList.length
+    };
+  } catch (err) {
+    console.error("❌ Error retrieving user report media files:", err);
     return {
       success: false,
       message: err.toString(),

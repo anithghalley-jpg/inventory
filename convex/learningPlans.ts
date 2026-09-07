@@ -1323,3 +1323,102 @@ export const getAllUsersApprovedStripes = query({
     return userStripesMap;
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Personal User Learning Reports & Cloud Autosave
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getMyLearningReport = query({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = args.userEmail.trim().toLowerCase();
+    if (!email) return null;
+
+    const report = await ctx.db
+      .query("userLearningReports")
+      .withIndex("by_userEmail", (q) => q.eq("userEmail", email))
+      .first();
+
+    return report || null;
+  },
+});
+
+export const saveLearningReportDraft = mutation({
+  args: {
+    userEmail: v.string(),
+    userName: v.string(),
+    title: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = args.userEmail.trim().toLowerCase();
+    if (!email) throw new Error("Missing user email");
+
+    const now = new Date().toISOString();
+    const existing = await ctx.db
+      .query("userLearningReports")
+      .withIndex("by_userEmail", (q) => q.eq("userEmail", email))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        userName: args.userName || existing.userName,
+        title: args.title,
+        content: args.content,
+        lastSavedAt: now,
+      });
+      return { success: true, reportId: existing._id, lastSavedAt: now };
+    } else {
+      const newId = await ctx.db.insert("userLearningReports", {
+        userEmail: email,
+        userName: args.userName || "User",
+        title: args.title || "My Learning Experience & Project Report",
+        content: args.content || "",
+        lastSavedAt: now,
+        createdAt: now,
+      });
+      return { success: true, reportId: newId, lastSavedAt: now };
+    }
+  },
+});
+
+export const setUserReportDriveFolder = mutation({
+  args: {
+    userEmail: v.string(),
+    driveFolderId: v.string(),
+    driveFolderUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = args.userEmail.trim().toLowerCase();
+    if (!email) throw new Error("Missing user email");
+
+    const now = new Date().toISOString();
+    const existing = await ctx.db
+      .query("userLearningReports")
+      .withIndex("by_userEmail", (q) => q.eq("userEmail", email))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        driveFolderId: args.driveFolderId.trim(),
+        driveFolderUrl: args.driveFolderUrl.trim(),
+        lastSavedAt: now,
+      });
+    } else {
+      await ctx.db.insert("userLearningReports", {
+        userEmail: email,
+        userName: "User",
+        title: "My Learning Experience & Project Report",
+        content: "",
+        driveFolderId: args.driveFolderId.trim(),
+        driveFolderUrl: args.driveFolderUrl.trim(),
+        lastSavedAt: now,
+        createdAt: now,
+      });
+    }
+
+    return { success: true };
+  },
+});
