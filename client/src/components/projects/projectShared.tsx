@@ -103,7 +103,7 @@ markdownImageRenderer.image = function (arg: any, maybeTitle?: string, maybeText
   const normalizedSrc = normalizeImageUrl(href);
   const titleAttr = title ? ` title="${DOMPurify.sanitize(title)}"` : "";
   const altAttr = text ? ` alt="${DOMPurify.sanitize(text)}"` : "";
-  return `<img src="${normalizedSrc}"${altAttr}${titleAttr} loading="lazy" referrerpolicy="no-referrer" class="markdown-rendered-img" />`;
+  return `<img src="${normalizedSrc}"${altAttr}${titleAttr} loading="lazy" referrerpolicy="no-referrer" class="markdown-rendered-img" style="max-height: min(480px, 55vh); width: auto; max-width: 100%; object-fit: contain;" />`;
 };
 
 marked.use({
@@ -583,41 +583,90 @@ export interface ProjectDetailRecord {
   }>;
 }
 
-export function normalizeImageUrl(url: string) {
-  const trimmed = url.trim();
-  if (!trimmed) return "";
+export type ProjectTimelinePostRecord = Extract<ProjectDetailRecord["timeline"][number], { itemType: "post" }>;
+export type ProjectTimelineCheckpointRecord = Extract<ProjectDetailRecord["timeline"][number], { itemType: "checkpoint" }>;
+export type ProjectTimelineSystemRecord = Extract<ProjectDetailRecord["timeline"][number], { itemType: "system" }>;
+
+
+export function normalizeImageUrl(url?: string | null): string {
+  if (!url || typeof url !== "string") return "";
+  const cleaned = url.replace(/(?:#|&)overlay(?:_opacity)?=\d+/gi, "").trim();
+  if (!cleaned) return "";
 
   // 1. Google Drive thumbnail format (e.g. drive.google.com/thumbnail?id=FILE_ID&sz=w800)
-  const gdriveThumb = trimmed.match(/drive\.google\.com\/thumbnail\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
+  const gdriveThumb = cleaned.match(/drive\.google\.com\/thumbnail\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
   if (gdriveThumb?.[1]) {
     return `https://drive.google.com/thumbnail?id=${gdriveThumb[1]}&sz=w1200`;
   }
 
   // 2. Google Drive uc / export format (e.g. drive.google.com/uc?id=FILE_ID or drive.google.com/uc?export=view&id=FILE_ID)
-  const driveView = trimmed.match(/drive\.google\.com\/uc\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
+  const driveView = cleaned.match(/drive\.google\.com\/uc\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
   if (driveView?.[1]) {
     return `https://drive.google.com/thumbnail?id=${driveView[1]}&sz=w1200`;
   }
 
   // 3. Google Drive file/d/ format (e.g. drive.google.com/file/d/FILE_ID/view)
-  const driveFile = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  const driveFile = cleaned.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
   if (driveFile?.[1]) {
     return `https://drive.google.com/thumbnail?id=${driveFile[1]}&sz=w1200`;
   }
 
   // 4. Google Drive open format (e.g. drive.google.com/open?id=FILE_ID)
-  const driveOpen = trimmed.match(/drive\.google\.com\/open\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
+  const driveOpen = cleaned.match(/drive\.google\.com\/open\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i);
   if (driveOpen?.[1]) {
     return `https://drive.google.com/thumbnail?id=${driveOpen[1]}&sz=w1200`;
   }
 
   // 5. Google usercontent format
-  const googleUserContent = trimmed.match(/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/i);
+  const googleUserContent = cleaned.match(/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/i);
   if (googleUserContent?.[1]) {
     return `https://drive.google.com/thumbnail?id=${googleUserContent[1]}&sz=w1200`;
   }
 
-  return getOptimizedImageUrl(trimmed);
+  return getOptimizedImageUrl(cleaned);
+}
+
+/**
+ * Extracts the user-configured front color overlay opacity (0 - 100%) from banner URL metadata.
+ * Defaults to 40% subtle dark tint if not specified.
+ */
+export function extractBannerOverlayOpacity(url?: string | null): number {
+  if (!url || typeof url !== "string") return 40;
+  const match = url.match(/(?:#|&)overlay(?:_opacity)?=(\d+)/i);
+  if (match?.[1]) {
+    const parsed = parseInt(match[1], 10);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+      return parsed;
+    }
+  }
+  return 40;
+}
+
+/**
+ * Appends or updates the front color overlay opacity fragment on a banner URL.
+ */
+export function buildBannerUrlWithOpacity(rawUrl: string, opacity: number): string {
+  if (!rawUrl || typeof rawUrl !== "string") return "";
+  const clean = rawUrl.replace(/(?:#|&)overlay(?:_opacity)?=\d+/gi, "").trim();
+  if (!clean) return "";
+  const clamped = Math.max(0, Math.min(100, Math.round(opacity)));
+  return `${clean}#overlay=${clamped}`;
+}
+
+/**
+ * Authentic Google Drive tricolor triangle brand icon
+ */
+export function GoogleDriveIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 87.3 78" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+      <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" />
+      <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 10.15z" fill="#ea4335" />
+      <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+      <path d="m59.8 53h27.5c0-1.55-.4-3.1-1.2-4.5l-25.4-44c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8z" fill="#ffba00" />
+      <path d="m73.45 76.8c-1.35.8-2.9 1.2-4.5 1.2H13.75c-1.6 0-3.15-.45-4.5-1.2l13.75-23.8h46.6z" fill="#2684fc" />
+    </svg>
+  );
 }
 
 /**
@@ -958,21 +1007,64 @@ export const KANBAN_COLUMNS = [
   { key: "archived" as const, label: "Archived", color: "bg-slate-50 border-slate-200", textColor: "text-slate-500", dotColor: "bg-slate-400" },
 ];
 
+const AVATAR_COLOR_PALETTES = [
+  { bg: "bg-indigo-600", text: "text-white" },
+  { bg: "bg-rose-600", text: "text-white" },
+  { bg: "bg-emerald-600", text: "text-white" },
+  { bg: "bg-amber-600", text: "text-white" },
+  { bg: "bg-sky-600", text: "text-white" },
+  { bg: "bg-purple-600", text: "text-white" },
+  { bg: "bg-fuchsia-600", text: "text-white" },
+  { bg: "bg-teal-600", text: "text-white" },
+  { bg: "bg-orange-600", text: "text-white" },
+  { bg: "bg-violet-600", text: "text-white" },
+  { bg: "bg-cyan-600", text: "text-white" },
+  { bg: "bg-pink-600", text: "text-white" },
+  { bg: "bg-blue-600", text: "text-white" },
+  { bg: "bg-red-600", text: "text-white" },
+];
+
+export function getAvatarColor(seed: string) {
+  if (!seed) return AVATAR_COLOR_PALETTES[0];
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % AVATAR_COLOR_PALETTES.length;
+  return AVATAR_COLOR_PALETTES[index];
+}
+
 export function ProjectAvatar({
   imageUrl,
   label,
+  seed,
   className,
 }: {
   imageUrl?: string;
   label: string;
+  seed?: string;
   className?: string;
 }) {
-
   const normalized = normalizeImageUrl(imageUrl ?? "");
+  const initial = (label || "U").trim().charAt(0).toUpperCase();
+  const color = useMemo(() => getAvatarColor(seed || label || "user"), [seed, label]);
+
   return (
     <Avatar className={className}>
-      {normalized ? <AvatarImage src={normalized} alt={label} referrerPolicy="no-referrer" /> : null}
-      <AvatarFallback className="bg-slate-100 text-slate-600">{label.charAt(0)}</AvatarFallback>
+      {normalized ? (
+        <AvatarImage
+          src={normalized}
+          alt={label}
+          referrerPolicy="no-referrer"
+          className="object-cover w-full h-full"
+        />
+      ) : null}
+      <AvatarFallback
+        className={`font-bold select-none text-xs flex items-center justify-center transition-colors ${color.bg} ${color.text}`}
+      >
+        {initial}
+      </AvatarFallback>
     </Avatar>
   );
 }

@@ -603,7 +603,7 @@ export default function ProjectPostPanel({
   };
 
   return (
-    <div className="flex flex-col h-[780px] max-h-[85vh] neumorph-card overflow-hidden bg-slate-50/40">
+    <div className="flex flex-col h-[780px] max-h-[85vh] rounded-3xl bg-white border border-slate-200/90 shadow-sm overflow-hidden">
       {/* ── Top Header ── */}
       <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-200/90 bg-white/95 backdrop-blur shadow-xs shrink-0 z-10">
         <div className="flex items-center gap-3">

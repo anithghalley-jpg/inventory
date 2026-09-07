@@ -35,6 +35,7 @@ import {
   Sliders,
   CheckSquare,
   ChevronRight,
+  ChevronDown,
   History,
   Tag,
 } from "lucide-react";
@@ -67,6 +68,7 @@ export default function ProjectProfilePanel({
   const [progressDialogOpen, setProgressDialogOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<ProjectStatus>(projectDetail.status);
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<ProjectHistoryEntry | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState(false);
 
   const removeMemberMut = useMutation(api.projects.removeProjectMember);
   const setLifecycleStatusMut = useMutation(api.projects.setLifecycleStatus);
@@ -376,38 +378,58 @@ export default function ProjectProfilePanel({
                 No events recorded yet.
               </div>
             ) : (
-              historyData.map((entry) => {
-                const config = HISTORY_ACTION_LABELS[entry.action] || {
-                  label: entry.action.replace(/_/g, " "),
-                  color: "slate",
-                };
+              <>
+                {(expandedHistory || historyData.length <= 2
+                  ? historyData
+                  : historyData.slice(0, 2)
+                ).map((entry) => {
+                  const config = HISTORY_ACTION_LABELS[entry.action] || {
+                    label: entry.action.replace(/_/g, " "),
+                    color: "slate",
+                  };
 
-                return (
-                  <div
-                    key={entry.historyId}
-                    onClick={() => setSelectedHistoryEntry(entry)}
-                    className="neumorph-inset p-3 rounded-2xl flex items-start gap-3.5 cursor-pointer hover:bg-slate-100/80 transition-all"
-                  >
-                    <div className="h-8 w-8 rounded-full bg-white border border-slate-200/80 flex items-center justify-center text-slate-700 shadow-xs shrink-0 mt-0.5">
-                      <HistoryActionIcon action={entry.action} className="h-4 w-4" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-bold text-slate-800 truncate">{config.label}</p>
-                        <span className="text-[10px] text-slate-400 shrink-0 font-medium">
-                          {formatDateOnly(entry.createdAt)}
-                        </span>
+                  return (
+                    <div
+                      key={entry.historyId}
+                      onClick={() => setSelectedHistoryEntry(entry)}
+                      className="neumorph-inset p-3 rounded-2xl flex items-start gap-3.5 cursor-pointer hover:bg-slate-100/80 transition-all"
+                    >
+                      <div className="h-8 w-8 rounded-full bg-white border border-slate-200/80 flex items-center justify-center text-slate-700 shadow-xs shrink-0 mt-0.5">
+                        <HistoryActionIcon action={entry.action} className="h-4 w-4" />
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        By <span className="font-semibold text-slate-700">{entry.actorName}</span>
-                      </p>
-                    </div>
 
-                    <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0 self-center opacity-60" />
-                  </div>
-                );
-              })
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-bold text-slate-800 truncate">{config.label}</p>
+                          <span className="text-[10px] text-slate-400 shrink-0 font-medium">
+                            {formatDateOnly(entry.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          By <span className="font-semibold text-slate-700">{entry.actorName}</span>
+                        </p>
+                      </div>
+
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0 self-center opacity-60" />
+                    </div>
+                  );
+                })}
+
+                {historyData.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedHistory(!expandedHistory)}
+                    className="w-full py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expandedHistory ? "rotate-180" : ""}`} />
+                    <span>
+                      {expandedHistory
+                        ? `Collapse event history (${historyData.length - 2} hidden)`
+                        : `Show ${historyData.length - 2} more events (${historyData.length} total)`}
+                    </span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

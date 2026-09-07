@@ -110,7 +110,8 @@ function normalizeVideoUrl(url: string) {
   return trimmed;
 }
 
-function normalizeImageUrl(url: string) {
+function normalizeImageUrl(url?: string | null): string {
+  if (!url || typeof url !== "string") return "";
   const trimmed = url.trim();
   const driveView = trimmed.match(/^https:\/\/drive\.google\.com\/uc\?export=view&id=(.+)$/);
   const driveFile = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
