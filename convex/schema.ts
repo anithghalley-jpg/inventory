@@ -180,6 +180,8 @@ export default defineSchema({
     updatedAt: v.string(),
     lastActivityAt: v.optional(v.string()),
     teamImageUrl: v.optional(v.string()),
+    driveFolderId: v.optional(v.string()),
+    driveFolderUrl: v.optional(v.string()),
     // Legacy box/plan fields — kept optional so old data stays valid
     boxImageUrl: v.optional(v.string()),
     boxSubmittedAt: v.optional(v.string()),

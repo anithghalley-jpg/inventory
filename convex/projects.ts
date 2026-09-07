@@ -290,6 +290,8 @@ async function buildProjectCard(
     lastActivityAt: project.lastActivityAt ?? project.updatedAt,
     teamImageUrl: project.teamImageUrl ?? "",
     boxImageUrl: project.boxImageUrl ?? "",
+    driveFolderId: project.driveFolderId ?? "",
+    driveFolderUrl: project.driveFolderUrl ?? "",
     members,
     memberCount: members.length,
     likeCount: likes.length,
@@ -447,6 +449,8 @@ async function buildProjectDetail(
     updatedAt: project.updatedAt,
     lastActivityAt: project.lastActivityAt ?? project.updatedAt,
     teamImageUrl: project.teamImageUrl ?? "",
+    driveFolderId: project.driveFolderId ?? "",
+    driveFolderUrl: project.driveFolderUrl ?? "",
     questionConfig,
     // Setup stage
     setupSubmittedAt: project.setupSubmittedAt ?? "",
@@ -699,6 +703,40 @@ export const updateProjectIdentity = mutation({
       updatedAt: now,
       lastActivityAt: now,
     });
+
+    return { success: true };
+  },
+});
+
+export const setProjectDriveFolder = mutation({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+    driveFolderId: v.string(),
+    driveFolderUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) throw new Error("Project not found");
+    const viewer = await getUserByEmail(ctx, args.userEmail);
+    if (!viewer) throw new Error("User not found");
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(project._id, {
+      driveFolderId: args.driveFolderId.trim(),
+      driveFolderUrl: args.driveFolderUrl.trim(),
+      updatedAt: now,
+      lastActivityAt: now,
+    });
+
+    await logProjectHistory(
+      ctx,
+      project.projectId,
+      "IDENTITY_UPDATED",
+      viewer.email,
+      viewer.name,
+      `Linked Google Drive project folder: ${args.driveFolderUrl}`,
+    );
 
     return { success: true };
   },

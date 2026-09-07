@@ -424,6 +424,8 @@ export interface ProjectCardRecord {
   lastActivityAt?: string;
   teamImageUrl?: string;
   boxImageUrl?: string;
+  driveFolderId?: string;
+  driveFolderUrl?: string;
   members: ProjectCardMember[];
   memberCount: number;
   likeCount: number;
@@ -442,6 +444,8 @@ export interface ProjectDetailRecord {
   updatedAt: string;
   lastActivityAt?: string;
   teamImageUrl?: string;
+  driveFolderId?: string;
+  driveFolderUrl?: string;
   members: ProjectCardMember[];
   items: {
     requestId: string;
@@ -616,6 +620,49 @@ export function normalizeImageUrl(url: string) {
   return getOptimizedImageUrl(trimmed);
 }
 
+/**
+ * Extracts Google Drive File ID from various link formats:
+ * - https://drive.google.com/file/d/1AbC.../view?usp=sharing
+ * - https://drive.google.com/open?id=1AbC...
+ * - https://drive.google.com/uc?id=1AbC...
+ * - https://drive.google.com/thumbnail?id=1AbC...
+ * - Direct ID (alphanumeric string)
+ */
+export function extractDriveFileId(urlOrId: string): string | null {
+  if (!urlOrId || typeof urlOrId !== "string") return null;
+  const trimmed = urlOrId.trim();
+  if (!trimmed) return null;
+
+  // 1. /file/d/FILE_ID/...
+  const fileDMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileDMatch && fileDMatch[1]) return fileDMatch[1];
+
+  // 2. id=FILE_ID
+  const idParamMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idParamMatch && idParamMatch[1]) return idParamMatch[1];
+
+  // 3. /d/FILE_ID
+  const dMatch = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (dMatch && dMatch[1]) return dMatch[1];
+
+  // 4. Raw File ID
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+/**
+ * Builds standard Google Drive Markdown Image snippet as specified:
+ * ![Image Description](https://drive.google.com/thumbnail?id=YOUR_FILE_ID&sz=w800)
+ */
+export function buildDriveMarkdownImage(fileIdOrUrl: string, altText: string = "Image Description"): string {
+  const cleanId = extractDriveFileId(fileIdOrUrl) || fileIdOrUrl.trim();
+  const cleanAlt = (altText || "Image Description").replace(/[[\]]/g, "").trim();
+  return `![${cleanAlt}](https://drive.google.com/thumbnail?id=${cleanId}&sz=w800)`;
+}
+
 export function isDirectVideoUrl(url: string): boolean {
   if (!url) return false;
   const clean = url.trim().toLowerCase().split("?")[0].split("#")[0];
@@ -760,6 +807,20 @@ export function createEmptyCheckpointField() {
 // ─────────────────────────────────────────────────────────────────────────────
 // History & Report types
 // ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProjectDriveMediaFile {
+  fileId: string;
+  fileName: string;
+  label: string;
+  mimeType: string;
+  thumbnailUrl: string;
+  viewUrl: string;
+  downloadUrl: string;
+  dateCreated: string;
+  lastUpdated?: string;
+  sizeBytes?: number;
+  markdownSnippet: string;
+}
 
 export interface ProjectHistoryEntry {
   historyId: string;

@@ -28,6 +28,8 @@ import {
   Package,
   Activity,
   Sparkles,
+  ExternalLink,
+  Folder,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import { toast } from "sonner";
@@ -73,7 +75,11 @@ export default function ProjectReportGenerator({
     if (project.status === "COMPLETED") {
       md += `**Completion Date:** ${formatDateOnly(project.updatedAt)}  \n`;
     }
-    md += `**Last Activity:** ${formatDateTime(project.lastActivityAt || project.updatedAt)}  \n\n`;
+    md += `**Last Activity:** ${formatDateTime(project.lastActivityAt || project.updatedAt)}  \n`;
+    if (project.driveFolderUrl) {
+      md += `**Google Drive Media Folder:** [projects/${project.name}](${project.driveFolderUrl})  \n`;
+    }
+    md += `\n`;
 
     md += `---\n\n`;
 
@@ -407,6 +413,21 @@ export default function ProjectReportGenerator({
                     <span className="text-emerald-700 font-semibold">
                       Completed {formatDateOnly(project.updatedAt)}
                     </span>
+                  </>
+                )}
+                {project.driveFolderUrl && (
+                  <>
+                    <span>•</span>
+                    <a
+                      href={project.driveFolderUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-bold hover:underline"
+                    >
+                      <Folder className="h-3 w-3" />
+                      <span>Drive Media Folder</span>
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
                   </>
                 )}
               </div>

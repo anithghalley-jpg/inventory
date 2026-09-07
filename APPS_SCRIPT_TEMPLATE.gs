@@ -226,6 +226,15 @@ function doPost(e) {
         // OPTIMIZED: This just uploads and returns the URL
         response = handleUploadImageOptimized(data);
         break;
+      case 'createProjectFolder':
+        response = handleCreateProjectFolder(data);
+        break;
+      case 'uploadProjectMedia':
+        response = handleUploadProjectMedia(data);
+        break;
+      case 'getProjectMediaFiles':
+        response = handleGetProjectMediaFiles(data);
+        break;
       case 'getCategories':
         response = handleGetCategories(data);
         break;
@@ -664,7 +673,272 @@ function handleUploadImageOptimized(data) {
   }
 }
 
-// handleCompleteInventoryItem was removed (frontend will just call addInventoryItem)
+// ===== PROJECT GOOGLE DRIVE FOLDERS & MEDIA UPLOADS =====
+
+/**
+ * Resolves the parent folder where the Inventory Google Spreadsheet is stored.
+ */
+function getSpreadsheetParentFolder() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return DriveApp.getRootFolder();
+    const file = DriveApp.getFileById(ss.getId());
+    const parents = file.getParents();
+    if (parents.hasNext()) {
+      return parents.next();
+    }
+  } catch (e) {
+    console.warn("Could not get spreadsheet parent folder, falling back to root:", e);
+  }
+  return DriveApp.getRootFolder();
+}
+
+/**
+ * Gets or creates the root 'projects' folder alongside the Inventory Spreadsheet.
+ */
+function getOrCreateProjectsRootFolder() {
+  const parentFolder = getSpreadsheetParentFolder();
+  const folderName = "projects";
+  const existingFolders = parentFolder.getFoldersByName(folderName);
+  let projectsFolder;
+  if (existingFolders.hasNext()) {
+    projectsFolder = existingFolders.next();
+  } else {
+    // Check if capitalized 'Projects' exists
+    const capitalized = parentFolder.getFoldersByName("Projects");
+    if (capitalized.hasNext()) {
+      projectsFolder = capitalized.next();
+    } else {
+      projectsFolder = parentFolder.createFolder(folderName);
+      try {
+        projectsFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) {
+        console.warn("Could not set public sharing on projects root folder:", e);
+      }
+    }
+  }
+  return projectsFolder;
+}
+
+/**
+ * Creates or retrieves a project's subfolder inside the 'projects' directory on Google Drive.
+ */
+function handleCreateProjectFolder(data) {
+  try {
+    const projectName = (data.projectName || data.name || "Untitled Project").trim();
+    if (!projectName) {
+      return { success: false, message: "Missing project name" };
+    }
+
+    const projectsRoot = getOrCreateProjectsRootFolder();
+    const existing = projectsRoot.getFoldersByName(projectName);
+    let projectFolder;
+    if (existing.hasNext()) {
+      projectFolder = existing.next();
+    } else {
+      projectFolder = projectsRoot.createFolder(projectName);
+      try {
+        projectFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) {
+        console.warn("Could not set public sharing on project folder:", e);
+      }
+    }
+
+    const folderId = projectFolder.getId();
+    const folderUrl = projectFolder.getUrl();
+
+    console.log("📁 Project folder ready: " + projectName + " (" + folderId + ")");
+
+    return {
+      success: true,
+      folderId: folderId,
+      folderUrl: folderUrl,
+      folderName: projectName,
+      rootFolderId: projectsRoot.getId(),
+      message: 'Google Drive project folder is ready.'
+    };
+  } catch (err) {
+    console.error("❌ Error creating project folder:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
+/**
+ * Uploads media / photos directly to the project's dedicated Google Drive folder (isolated from inventory).
+ */
+function handleUploadProjectMedia(data) {
+  try {
+    const { fileName, imageTitle, mimeType, content, folderId, projectName } = data;
+    if (!content) {
+      return { success: false, message: "Missing image/media content" };
+    }
+
+    let targetFolder;
+    if (folderId) {
+      try {
+        targetFolder = DriveApp.getFolderById(folderId);
+      } catch (e) {
+        console.warn("Could not open folderId directly, resolving via project name:", e);
+      }
+    }
+
+    if (!targetFolder) {
+      const nameToUse = (projectName || "General Project Media").trim();
+      const projectsRoot = getOrCreateProjectsRootFolder();
+      const existing = projectsRoot.getFoldersByName(nameToUse);
+      if (existing.hasNext()) {
+        targetFolder = existing.next();
+      } else {
+        targetFolder = projectsRoot.createFolder(nameToUse);
+        try {
+          targetFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        } catch (e) {}
+      }
+    }
+
+    const safeMimeType = mimeType || 'image/png';
+    let rawName = (fileName || imageTitle || "").trim();
+    if (!rawName) {
+      rawName = "project_media_" + Date.now();
+    }
+    // Clean up filename special characters (allow alphanumeric, dashes, underscores, spaces)
+    let sanitizedBaseName = rawName.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_');
+    if (!/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(sanitizedBaseName)) {
+      sanitizedBaseName += (safeMimeType === 'image/jpeg' ? '.jpg' : '.png');
+    }
+
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(content),
+      safeMimeType,
+      sanitizedBaseName
+    );
+
+    const file = targetFolder.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {
+      console.warn("Workspace policy blocked file sharing:", e);
+    }
+
+    const fileId = file.getId();
+    const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+    const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w800";
+    const label = sanitizedBaseName.replace(/\.[^/.]+$/, "");
+    const markdownSnippet = "![" + label + "](" + directLink + ")";
+
+    console.log("📸 Project media uploaded successfully: " + sanitizedBaseName + " (" + fileId + ")");
+
+    return {
+      success: true,
+      fileId: fileId,
+      fileName: sanitizedBaseName,
+      label: label,
+      viewUrl: viewUrl,
+      imageUrl: directLink,
+      thumbnailUrl: directLink,
+      markdownSnippet: markdownSnippet,
+      folderId: targetFolder.getId(),
+      folderUrl: targetFolder.getUrl(),
+      message: "Media uploaded directly to Project Google Drive folder"
+    };
+  } catch (err) {
+    console.error("❌ Error uploading project media:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
+/**
+ * Retrieves all media files from a project's dedicated Google Drive folder.
+ */
+function handleGetProjectMediaFiles(data) {
+  try {
+    const { folderId, projectName } = data;
+    let targetFolder;
+
+    if (folderId) {
+      try {
+        targetFolder = DriveApp.getFolderById(folderId);
+      } catch (e) {
+        console.warn("Could not open folderId directly, falling back to name search:", e);
+      }
+    }
+
+    if (!targetFolder) {
+      const nameToUse = (projectName || "").trim();
+      if (!nameToUse) {
+        return { success: false, message: "Missing project name or folder ID", files: [] };
+      }
+      const projectsRoot = getOrCreateProjectsRootFolder();
+      const existing = projectsRoot.getFoldersByName(nameToUse);
+      if (existing.hasNext()) {
+        targetFolder = existing.next();
+      } else {
+        return {
+          success: true,
+          folderId: "",
+          folderUrl: "",
+          files: [],
+          message: "Project folder has not been created yet."
+        };
+      }
+    }
+
+    const filesList = [];
+    const filesIterator = targetFolder.getFiles();
+
+    while (filesIterator.hasNext()) {
+      const file = filesIterator.next();
+      const mime = file.getMimeType();
+      const fileId = file.getId();
+      const name = file.getName();
+      const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w800";
+      const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+      const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+      const cleanLabel = name.replace(/\.[^/.]+$/, "");
+      const markdownSnippet = "![" + cleanLabel + "](" + directLink + ")";
+
+      filesList.push({
+        fileId: fileId,
+        fileName: name,
+        label: cleanLabel,
+        mimeType: mime,
+        thumbnailUrl: directLink,
+        viewUrl: viewUrl,
+        downloadUrl: downloadUrl,
+        dateCreated: file.getDateCreated() ? file.getDateCreated().toISOString() : new Date().toISOString(),
+        lastUpdated: file.getLastUpdated() ? file.getLastUpdated().toISOString() : new Date().toISOString(),
+        sizeBytes: file.getSize(),
+        markdownSnippet: markdownSnippet
+      });
+    }
+
+    // Sort files by dateCreated descending (newest first)
+    filesList.sort(function(a, b) {
+      return new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime();
+    });
+
+    return {
+      success: true,
+      folderId: targetFolder.getId(),
+      folderUrl: targetFolder.getUrl(),
+      files: filesList,
+      totalCount: filesList.length
+    };
+  } catch (err) {
+    console.error("❌ Error retrieving project media files:", err);
+    return {
+      success: false,
+      message: err.toString(),
+      files: []
+    };
+  }
+}
 
 // ===== UTILITY FUNCTIONS =====
 
