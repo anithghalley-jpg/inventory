@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Users as UsersIcon, ExternalLink, Award, Sparkles } from 'lucide-react';
 import MakerStripesRack, { MakerStripe } from './MakerStripesRack';
+import { SAMPLE_THEMES, resolveThemeColor } from './ThemeColorPicker';
 import { getTagStyle } from '@/lib/tagUtils';
 import { getOptimizedImageUrl } from '@/lib/utils';
 
@@ -329,6 +330,11 @@ export default function MakerUserCard({
   // Online / active status
   const isOnline = user.laptopStatus === 'ONLINE' || user.laptopStatus === 'ACTIVE' || user.status === 'APPROVED';
 
+  // Custom Theme Color resolution (from SAMPLE_THEMES or direct hex/color)
+  const themeColor = useMemo(() => {
+    return resolveThemeColor(user.customTheme);
+  }, [user.customTheme]);
+
   const handleClick = (e: React.MouseEvent) => {
     if (onClick) {
       onClick();
@@ -343,9 +349,22 @@ export default function MakerUserCard({
     }
   };
 
+  const cardBorderColor = hasPageLink
+    ? (themeColor ? `${themeColor}` : '#06b6d4')
+    : undefined;
+
+  const cardStyle: React.CSSProperties = hasPageLink
+    ? ({
+        borderColor: cardBorderColor,
+        '--shine-color': themeColor ? `${themeColor}88` : 'rgba(56, 189, 248, 0.45)',
+        '--shine-color-soft': themeColor ? `${themeColor}33` : 'rgba(16, 185, 129, 0.2)',
+      } as React.CSSProperties)
+    : {};
+
   return (
     <div
       onClick={handleClick}
+      style={cardStyle}
       className={`
         group relative rounded-3xl p-3.5 transition-all duration-300 select-none w-full
         bg-white dark:bg-slate-900
@@ -353,7 +372,7 @@ export default function MakerUserCard({
         shadow-[0_4px_14px_rgba(0,0,0,0.05),inset_0_1px_1px_rgba(255,255,255,0.9)]
         dark:shadow-[0_4px_16px_rgba(0,0,0,0.35)]
         overflow-hidden flex flex-col justify-between
-        ${hasPageLink ? 'doc-shine-card border-cyan-400/80 dark:border-cyan-400/70 shadow-[0_0_16px_rgba(56,189,248,0.35)]' : ''}
+        ${hasPageLink ? 'doc-shine-card' : ''}
         ${hasPageLink || onClick || onEdit ? 'cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_26px_rgba(0,0,0,0.12)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.5)]' : ''}
         ${className}
       `}
@@ -378,10 +397,23 @@ export default function MakerUserCard({
 
       {/* =========================================================================
           DOCUMENTATION LINK SHINE EFFECT (ONLY rendered if user has website/doc link)
+          Carries the custom theme color shine beam!
           ========================================================================= */}
       {hasPageLink && (
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
-          <div className="w-[80%] h-[250%] -top-[75%] -left-[40%] bg-gradient-to-r from-transparent via-white/60 dark:via-cyan-300/30 to-transparent doc-shine-sweep pointer-events-none" />
+          <div 
+            className="w-[80%] h-[250%] -top-[75%] -left-[40%] doc-shine-sweep pointer-events-none" 
+            style={{
+              background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.65) 40%, ${themeColor || '#06b6d4'}bb 50%, rgba(255,255,255,0.65) 60%, transparent 100%)`,
+            }}
+          />
+          {/* Subtle top rim glow */}
+          <div
+            className="absolute top-0 inset-x-0 h-[2.5px] pointer-events-none opacity-90"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${themeColor || '#06b6d4'}, transparent)`,
+            }}
+          />
         </div>
       )}
 
@@ -389,19 +421,33 @@ export default function MakerUserCard({
           TOP PROFILE BAR (Avatar + Spray Aura + Name + Role Vinyl + FAB / Power)
           ========================================================================= */}
       <div className="relative z-10 flex items-start justify-between gap-2.5 pb-1.5">
-        {/* Left: Avatar with Bright Cyan & Emerald Spray Aura */}
+        {/* Left: Avatar with Spray Aura */}
         <div className="relative shrink-0">
-          {/* Cyan/Emerald/Gold Spray Glow */}
+          {/* Custom Theme Spray Glow */}
           <div
             className="absolute -inset-2 rounded-full blur-md opacity-80 group-hover:opacity-100 transition-all duration-300 pointer-events-none"
             style={{
-              background: 'radial-gradient(circle at 40% 40%, rgba(6,182,212,0.85) 0%, rgba(16,185,129,0.75) 50%, rgba(245,158,11,0.4) 80%, transparent 100%)',
+              background: themeColor
+                ? `radial-gradient(circle at 40% 40%, ${themeColor} 0%, ${themeColor}66 50%, transparent 100%)`
+                : 'radial-gradient(circle at 40% 40%, rgba(6,182,212,0.85) 0%, rgba(16,185,129,0.75) 50%, rgba(245,158,11,0.4) 80%, transparent 100%)',
             }}
           />
 
-          {/* Cyan & Emerald spray accent dots */}
-          <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_#22d3ee] pointer-events-none" />
-          <div className="absolute -bottom-0.5 left-1 w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_#34d399] pointer-events-none" />
+          {/* Spray accent dots */}
+          <div
+            className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full pointer-events-none transition-all duration-300"
+            style={{
+              backgroundColor: themeColor || '#22d3ee',
+              boxShadow: `0 0 6px ${themeColor || '#22d3ee'}`,
+            }}
+          />
+          <div
+            className="absolute -bottom-0.5 left-1 w-1.5 h-1.5 rounded-full pointer-events-none transition-all duration-300"
+            style={{
+              backgroundColor: themeColor || '#34d399',
+              boxShadow: `0 0 4px ${themeColor || '#34d399'}`,
+            }}
+          />
 
           {/* Avatar Thumbnail Container */}
           <div className="relative w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-white dark:bg-slate-800 border-2 border-white/95 dark:border-slate-700 shadow-[0_2px_8px_rgba(0,0,0,0.15)] overflow-hidden flex items-center justify-center">
@@ -416,8 +462,12 @@ export default function MakerUserCard({
 
           {/* Clean Stencil Badge on Avatar Corner (e.g. '20') */}
           <div
-            className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 border border-cyan-300 dark:border-cyan-600 rounded-[3px] font-mono font-black text-[8px] leading-tight shadow-xs select-none"
-            style={{ transform: 'rotate(-6deg)' }}
+            className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-white dark:bg-slate-800 rounded-[3px] font-mono font-black text-[8px] leading-tight shadow-xs select-none border"
+            style={{
+              transform: 'rotate(-6deg)',
+              color: themeColor || '#0891b2',
+              borderColor: themeColor ? `${themeColor}66` : '#67e8f9',
+            }}
           >
             20
           </div>
@@ -435,7 +485,10 @@ export default function MakerUserCard({
             </h3>
             {hasPageLink && (
               <span title="Documentation Available" className="inline-flex items-center">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-500 animate-pulse shrink-0" />
+                <Sparkles 
+                  className="w-3.5 h-3.5 animate-pulse shrink-0" 
+                  style={{ color: themeColor || '#06b6d4' }}
+                />
               </span>
             )}
           </div>

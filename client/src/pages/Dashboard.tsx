@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, UserX, Clock, Image as ImageIcon } from 'lucide-react';
+import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, UserX, Clock, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
 import { getTagStyle } from '@/lib/tagUtils';
@@ -21,6 +21,7 @@ import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
+import ThemeColorPicker from '@/components/ThemeColorPicker';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -296,6 +297,14 @@ export default function Dashboard() {
   const startMachineMutation = useMutation(api.machines.startSession);
   const endMachineMutation = useMutation(api.machines.endSession);
   const addItemToProjectMut = useMutation(api.projects.addItemToProject);
+  const updateProfileMutation = useMutation(api.users.updateProfile);
+
+  // Profile Edit State
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editProfileImage, setEditProfileImage] = useState("");
+  const [editProfileTheme, setEditProfileTheme] = useState("");
+  const [editProfileLink, setEditProfileLink] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Sync state with user context updates
   useEffect(() => {
@@ -860,9 +869,7 @@ export default function Dashboard() {
           </div>
 
           {/* Right: Profile & Controls */}
-
-          {/* Right: Profile & Controls */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             {/* Laptop Toggle */}
             <div className="hidden sm:flex items-center space-x-2 bg-muted/30 p-1.5 rounded-lg border border-border/50">
               <Switch
@@ -873,10 +880,51 @@ export default function Dashboard() {
               <Monitor className={`h-4 w-4 ${laptopStatus === 'Online' ? 'text-emerald-500' : 'text-slate-400'}`} />
             </div>
 
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="hidden sm:flex border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl font-bold text-xs"
+              onClick={() => {
+                setEditProfileImage(user?.profileImageUrl || "");
+                setEditProfileTheme(user?.customTheme || "");
+                setEditProfileLink(user?.myPageLink || "");
+                setEditProfileOpen(true);
+              }}
+            >
+              <UsersIcon className="w-4 h-4 mr-1.5" /> Edit Profile
+            </Button>
+
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="sm:hidden border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-full w-8 h-8 shrink-0"
+              onClick={() => {
+                setEditProfileImage(user?.profileImageUrl || "");
+                setEditProfileTheme(user?.customTheme || "");
+                setEditProfileLink(user?.myPageLink || "");
+                setEditProfileOpen(true);
+              }}
+              title="Edit Profile"
+            >
+              <UsersIcon className="w-4 h-4" />
+            </Button>
+
             <div className="h-8 w-px bg-border hidden sm:block"></div>
 
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-foreground leading-none">{user?.name}</p>
+            <div 
+              className="text-right hidden sm:block cursor-pointer group/user select-none"
+              onClick={() => {
+                setEditProfileImage(user?.profileImageUrl || "");
+                setEditProfileTheme(user?.customTheme || "");
+                setEditProfileLink(user?.myPageLink || "");
+                setEditProfileOpen(true);
+              }}
+              title="Click to edit profile"
+            >
+              <p className="text-sm font-bold text-foreground leading-none group-hover/user:text-emerald-600 transition-colors flex items-center justify-end gap-1">
+                {user?.name}
+                <Edit3 className="w-3 h-3 text-slate-400 group-hover/user:text-emerald-500" />
+              </p>
               <p className="text-[10px] text-muted-foreground">{user?.email}</p>
             </div>
 
@@ -1545,6 +1593,12 @@ export default function Dashboard() {
                               accessTags={getUserAccessTags(u)}
                               isFab={true}
                               stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                              onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
+                                setEditProfileImage(user?.profileImageUrl || "");
+                                setEditProfileTheme(user?.customTheme || "");
+                                setEditProfileLink(user?.myPageLink || "");
+                                setEditProfileOpen(true);
+                              } : undefined}
                             />
                           ))}
                         </div>
@@ -1566,6 +1620,12 @@ export default function Dashboard() {
                               accessTags={getUserAccessTags(u)}
                               isFab={false}
                               stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                              onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
+                                setEditProfileImage(user?.profileImageUrl || "");
+                                setEditProfileTheme(user?.customTheme || "");
+                                setEditProfileLink(user?.myPageLink || "");
+                                setEditProfileOpen(true);
+                              } : undefined}
                             />
                           ))}
                         </div>
@@ -1587,6 +1647,12 @@ export default function Dashboard() {
                               accessTags={getUserAccessTags(u)}
                               isFab={false}
                               stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                              onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
+                                setEditProfileImage(user?.profileImageUrl || "");
+                                setEditProfileTheme(user?.customTheme || "");
+                                setEditProfileLink(user?.myPageLink || "");
+                                setEditProfileOpen(true);
+                              } : undefined}
                             />
                           ))}
                         </div>
@@ -2298,6 +2364,75 @@ export default function Dashboard() {
                   className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-full px-5 shadow-sm cursor-pointer"
                 >
                   Confirm Withdraw
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Profile Dialog Modal */}
+          <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
+            <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-emerald-500" /> Edit Profile
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Profile Image URL</Label>
+                  <Input 
+                    placeholder="https://drive.google.com/... or https://example.com/photo.jpg"
+                    value={editProfileImage}
+                    onChange={(e) => setEditProfileImage(e.target.value)}
+                    className="text-xs h-9 rounded-xl border-slate-200 dark:border-slate-700"
+                  />
+                  <p className="text-[11px] text-slate-500">Google Drive links or image URLs. This appears as your card's background image.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Documentation Site / Portfolio Link</Label>
+                  <Input 
+                    placeholder="https://fabacademy.org/2026/labs/... or https://yourportfolio.dev"
+                    value={editProfileLink}
+                    onChange={(e) => setEditProfileLink(e.target.value)}
+                    className="text-xs h-9 rounded-xl border-slate-200 dark:border-slate-700"
+                  />
+                  <p className="text-[11px] text-slate-500">Adding a documentation page activates the holographic shine effect on your card.</p>
+                </div>
+                <ThemeColorPicker 
+                  value={editProfileTheme} 
+                  onChange={setEditProfileTheme} 
+                  hasDocLink={Boolean(editProfileLink.trim() && (editProfileLink.includes('.') || editProfileLink.startsWith('http')))}
+                />
+              </div>
+              <DialogFooter className="flex gap-2 sm:justify-end">
+                <Button variant="outline" onClick={() => setEditProfileOpen(false)} className="rounded-xl font-bold text-xs h-9">
+                  Cancel
+                </Button>
+                <Button 
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs h-9 shadow-md shadow-emerald-500/20"
+                  disabled={isSavingProfile}
+                  onClick={async () => {
+                    if (!user?.email) return;
+                    setIsSavingProfile(true);
+                    try {
+                      await updateProfileMutation({
+                        email: user.email,
+                        profileImageUrl: editProfileImage,
+                        customTheme: editProfileTheme,
+                        myPageLink: editProfileLink,
+                        scriptUrl: SCRIPT_URL
+                      });
+                      toast.success("Profile updated successfully!");
+                      setEditProfileOpen(false);
+                    } catch (e: any) {
+                      toast.error(e.message || "Failed to update profile");
+                      console.error(e);
+                    } finally {
+                      setIsSavingProfile(false);
+                    }
+                  }}
+                >
+                  {isSavingProfile ? "Saving..." : "Save Changes"}
                 </Button>
               </DialogFooter>
             </DialogContent>

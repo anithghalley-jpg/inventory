@@ -20,6 +20,7 @@ import MyPlansTab from '@/components/MyPlansTab';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
+import ThemeColorPicker from '@/components/ThemeColorPicker';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
@@ -1441,6 +1442,12 @@ export default function TeamDashboard() {
                                                     accessTags={getUserAccessTags(u)}
                                                     isFab={true}
                                                     stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                                                    onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
+                                                        setEditProfileImage(user?.profileImageUrl || "");
+                                                        setEditProfileTheme(user?.customTheme || "");
+                                                        setEditProfileLink(user?.myPageLink || "");
+                                                        setEditProfileOpen(true);
+                                                    } : undefined}
                                                 />
                                             ))}
                                         </div>
@@ -1462,6 +1469,12 @@ export default function TeamDashboard() {
                                                         accessTags={getUserAccessTags(u)}
                                                         isFab={false}
                                                         stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                                                        onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
+                                                            setEditProfileImage(user?.profileImageUrl || "");
+                                                            setEditProfileTheme(user?.customTheme || "");
+                                                            setEditProfileLink(user?.myPageLink || "");
+                                                            setEditProfileOpen(true);
+                                                        } : undefined}
                                                     />
                                                 ))}
                                             </div>
@@ -1484,6 +1497,12 @@ export default function TeamDashboard() {
                                                         accessTags={getUserAccessTags(u)}
                                                         isFab={false}
                                                         stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
+                                                        onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
+                                                            setEditProfileImage(user?.profileImageUrl || "");
+                                                            setEditProfileTheme(user?.customTheme || "");
+                                                            setEditProfileLink(user?.myPageLink || "");
+                                                            setEditProfileOpen(true);
+                                                        } : undefined}
                                                     />
                                                 ))}
                                             </div>
@@ -2472,22 +2491,19 @@ export default function TeamDashboard() {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label>Custom Theme (CSS Class, Hex Color, etc.)</Label>
-                            <Input 
-                                placeholder="e.g. emerald, blue, #10b981"
-                                value={editProfileTheme}
-                                onChange={(e) => setEditProfileTheme(e.target.value)}
-                            />
-                            <p className="text-xs text-muted-foreground">This customizes the glow and border color of your community card.</p>
-                        </div>
-                        <div className="space-y-2">
                             <Label>Personal Page / Portfolio Link</Label>
                             <Input 
                                 placeholder="https://yourwebsite.com"
                                 value={editProfileLink}
                                 onChange={(e) => setEditProfileLink(e.target.value)}
                             />
+                            <p className="text-xs text-muted-foreground">Adding a personal/portfolio link activates the holographic shine effect on your card.</p>
                         </div>
+                        <ThemeColorPicker 
+                            value={editProfileTheme} 
+                            onChange={setEditProfileTheme} 
+                            hasDocLink={Boolean(editProfileLink.trim() && (editProfileLink.includes('.') || editProfileLink.startsWith('http')))}
+                        />
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setEditProfileOpen(false)}>Cancel</Button>
