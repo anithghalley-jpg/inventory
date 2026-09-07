@@ -811,12 +811,19 @@ function handleUploadProjectMedia(data) {
     const safeMimeType = mimeType || 'image/png';
     let rawName = (fileName || imageTitle || "").trim();
     if (!rawName) {
-      rawName = "project_media_" + Date.now();
+      rawName = (safeMimeType.startsWith('video/') ? "project_video_" : "project_media_") + Date.now();
     }
     // Clean up filename special characters (allow alphanumeric, dashes, underscores, spaces)
     let sanitizedBaseName = rawName.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_');
-    if (!/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(sanitizedBaseName)) {
-      sanitizedBaseName += (safeMimeType === 'image/jpeg' ? '.jpg' : '.png');
+    const isVideo = safeMimeType.startsWith('video/') || /\.(mp4|webm|mov|m4v|avi|mkv|3gp|flv|ogv)$/i.test(sanitizedBaseName);
+    
+    if (!/\.[a-zA-Z0-9]{2,5}$/.test(sanitizedBaseName)) {
+      if (safeMimeType === 'video/webm') sanitizedBaseName += '.webm';
+      else if (safeMimeType === 'video/mp4') sanitizedBaseName += '.mp4';
+      else if (safeMimeType.startsWith('video/')) sanitizedBaseName += '.mp4';
+      else if (safeMimeType === 'image/jpeg') sanitizedBaseName += '.jpg';
+      else if (safeMimeType === 'image/png') sanitizedBaseName += '.png';
+      else sanitizedBaseName += '.png';
     }
 
     const blob = Utilities.newBlob(
@@ -836,7 +843,12 @@ function handleUploadProjectMedia(data) {
     const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
     const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w800";
     const label = sanitizedBaseName.replace(/\.[^/.]+$/, "");
-    const markdownSnippet = "![" + label + "](" + directLink + ")";
+    let markdownSnippet = "";
+    if (isVideo) {
+      markdownSnippet = '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" width="100%" height="360" frameborder="0" allow="autoplay" allowfullscreen></iframe>';
+    } else {
+      markdownSnippet = "![" + label + "](" + directLink + ")";
+    }
 
     console.log("📸 Project media uploaded successfully: " + sanitizedBaseName + " (" + fileId + ")");
 
@@ -845,6 +857,8 @@ function handleUploadProjectMedia(data) {
       fileId: fileId,
       fileName: sanitizedBaseName,
       label: label,
+      mimeType: safeMimeType,
+      isVideo: isVideo,
       viewUrl: viewUrl,
       imageUrl: directLink,
       thumbnailUrl: directLink,
@@ -910,13 +924,21 @@ function handleGetProjectMediaFiles(data) {
       const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
       const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
       const cleanLabel = name.replace(/\.[^/.]+$/, "");
-      const markdownSnippet = "![" + cleanLabel + "](" + directLink + ")";
+      const isVideo = (mime || "").toLowerCase().startsWith("video/") || /\.(mp4|webm|mov|m4v|avi|mkv|3gp|flv|ogv)$/i.test(name);
+      
+      let markdownSnippet = "";
+      if (isVideo) {
+        markdownSnippet = '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" width="100%" height="360" frameborder="0" allow="autoplay" allowfullscreen></iframe>';
+      } else {
+        markdownSnippet = "![" + cleanLabel + "](" + directLink + ")";
+      }
 
       filesList.push({
         fileId: fileId,
         fileName: name,
         label: cleanLabel,
         mimeType: mime,
+        isVideo: isVideo,
         thumbnailUrl: directLink,
         viewUrl: viewUrl,
         downloadUrl: downloadUrl,

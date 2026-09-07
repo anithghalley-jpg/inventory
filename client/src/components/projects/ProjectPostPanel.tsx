@@ -53,6 +53,8 @@ import {
   RefreshCw,
   Plus,
   ZoomIn,
+  Video,
+  Play,
 } from "lucide-react";
 import {
   formatDateTime,
@@ -62,6 +64,9 @@ import {
   ImageWithLightbox,
   insertMarkdownFormatting,
   normalizeImageUrl,
+  isVideoMedia,
+  buildDriveMarkdownVideo,
+  getDriveMediaEmbedCode,
   type ProjectDetailRecord,
   type TimelinePostKind,
   type ProjectDriveMediaFile,
@@ -101,6 +106,7 @@ export default function ProjectPostPanel({
   const [driveSearchQuery, setDriveSearchQuery] = useState("");
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<{ url: string; title: string; fileId: string } | null>(null);
 
   // Active background upload tasks
   interface ActiveUploadTask {
@@ -110,6 +116,7 @@ export default function ProjectPostPanel({
     previewUrl: string;
     status: "uploading" | "success" | "error";
     errorMessage?: string;
+    isVideo?: boolean;
   }
   const [activeUploads, setActiveUploads] = useState<ActiveUploadTask[]>([]);
 
@@ -123,7 +130,7 @@ export default function ProjectPostPanel({
   // Google Drive Folder & Media Modal State
   const [isCreatingDriveFolder, setIsCreatingDriveFolder] = useState(false);
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
-  const [mediaModalTab, setMediaModalTab] = useState<"camera" | "upload" | "driveLink">("camera");
+  const [mediaModalTab, setMediaModalTab] = useState<"camera" | "video" | "upload" | "driveLink">("camera");
 
   // Fetch Project Media files directly from Google Drive via Google Apps Script
   const fetchProjectDriveFiles = useCallback(async () => {
@@ -182,11 +189,13 @@ export default function ProjectPostPanel({
     fileName,
     altText,
     mimeType = "image/png",
+    isVideo = false,
   }: {
     base64Data: string;
     fileName: string;
     altText: string;
     mimeType?: string;
+    isVideo?: boolean;
   }) => {
     const uploadId = `upload_${Date.now()}`;
     const previewUrl = base64Data.startsWith("data:")
@@ -203,6 +212,7 @@ export default function ProjectPostPanel({
       altText,
       previewUrl,
       status: "uploading",
+      isVideo,
     };
 
     setActiveUploads((prev) => [newTask, ...prev]);
@@ -232,7 +242,7 @@ export default function ProjectPostPanel({
 
       const result = await response.json();
       if (!result.success) {
-        throw new Error(result.message || "Failed to upload image to project folder");
+        throw new Error(result.message || "Failed to upload media to project folder");
       }
 
       const fileId = result.fileId;
@@ -241,13 +251,17 @@ export default function ProjectPostPanel({
       const directLink = result.thumbnailUrl || `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
       const viewUrl = result.viewUrl || `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
       const downloadUrl = result.downloadUrl || `https://drive.google.com/uc?export=download&id=${fileId}`;
-      const markdownSnippet = result.markdownSnippet || `![${desc}](${directLink})`;
+      const isVideoFile = isVideo || result.isVideo === true || mimeType.startsWith("video/");
+      const markdownSnippet = isVideoFile
+        ? buildDriveMarkdownVideo(fileId)
+        : (result.markdownSnippet || `![${desc}](${directLink})`);
 
       const newDriveFile: ProjectDriveMediaFile = {
         fileId,
         fileName: finalFileName,
         label: desc,
         mimeType,
+        isVideo: isVideoFile,
         thumbnailUrl: directLink,
         viewUrl,
         downloadUrl,
@@ -255,7 +269,7 @@ export default function ProjectPostPanel({
         markdownSnippet,
       };
 
-      // Place newly uploaded image right at the top of the Google Drive media gallery
+      // Place newly uploaded file right at the top of the Google Drive media gallery
       setDriveFiles((prev) => [
         newDriveFile,
         ...prev.filter((f) => f.fileId !== fileId),
@@ -266,7 +280,7 @@ export default function ProjectPostPanel({
         prev.map((t) => (t.id === uploadId ? { ...t, status: "success" } : t))
       );
 
-      toast.success(`Image "${finalFileName}" uploaded to Google Drive!`);
+      toast.success(`${isVideoFile ? "Video" : "Image"} "${finalFileName}" uploaded to Google Drive!`);
 
       // Automatically remove task badge after 3.5 seconds
       setTimeout(() => {
@@ -357,11 +371,12 @@ export default function ProjectPostPanel({
     }, 50);
   };
 
-  // Copy Markdown snippet from a media file
+  // Copy Markdown/Embed snippet from a media file
   const handleCopyMediaMarkdown = (file: ProjectDriveMediaFile) => {
-    navigator.clipboard.writeText(file.markdownSnippet);
+    const snippet = getDriveMediaEmbedCode(file);
+    navigator.clipboard.writeText(snippet);
     setCopiedFileId(file.fileId);
-    toast.success(`Markdown embed code for "${file.label}" copied!`);
+    toast.success(isVideoMedia(file) ? `Video embed code for "${file.label}" copied!` : `Markdown image code for "${file.label}" copied!`);
     setTimeout(() => setCopiedFileId(null), 2000);
   };
 
@@ -1042,7 +1057,7 @@ export default function ProjectPostPanel({
                   </div>
 
                   {/* Media Action Buttons Toolbar */}
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     <Button
                       size="sm"
                       variant="outline"
@@ -1053,7 +1068,20 @@ export default function ProjectPostPanel({
                       className="h-8 text-xs font-bold rounded-xl border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 text-slate-700 gap-1.5 shadow-2xs"
                     >
                       <Camera className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>Take Photo</span>
+                      <span>Photo</span>
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setMediaModalTab("video");
+                        setMediaModalOpen(true);
+                      }}
+                      className="h-8 text-xs font-bold rounded-xl border-slate-200 hover:border-rose-400 hover:bg-rose-50 text-slate-700 gap-1.5 shadow-2xs"
+                    >
+                      <Video className="h-3.5 w-3.5 text-rose-600" />
+                      <span>Record</span>
                     </Button>
 
                     <Button
@@ -1079,7 +1107,7 @@ export default function ProjectPostPanel({
                       className="h-8 text-xs font-bold rounded-xl border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 text-slate-700 gap-1.5 shadow-2xs"
                     >
                       <LinkIcon className="h-3.5 w-3.5 text-cyan-600" />
-                      <span>Drive Link</span>
+                      <span>Link</span>
                     </Button>
                   </div>
 
@@ -1192,85 +1220,121 @@ export default function ProjectPostPanel({
                       </div>
                     </div>
                   ) : (
-                    filteredDriveFiles.map((file) => (
-                      <div
-                        key={file.fileId}
-                        className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-emerald-300 transition-all space-y-2.5"
-                      >
-                        {/* Thumbnail & Info */}
-                        <div className="flex items-start gap-2.5">
-                          {/* Thumbnail with Quick Preview trigger */}
-                          <div
-                            onClick={() => setPreviewImage({ url: file.thumbnailUrl, title: file.fileName })}
-                            className="relative h-16 w-20 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 cursor-pointer group"
-                          >
-                            <img
-                              src={file.thumbnailUrl}
-                              alt={file.label}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLElement).style.display = "none";
+                    filteredDriveFiles.map((file) => {
+                      const isVideo = isVideoMedia(file);
+                      return (
+                        <div
+                          key={file.fileId}
+                          className={`p-3 rounded-2xl bg-white border shadow-xs transition-all space-y-2.5 ${
+                            isVideo ? "border-rose-200/80 hover:border-rose-400" : "border-slate-200/80 hover:border-emerald-300"
+                          }`}
+                        >
+                          {/* Thumbnail & Info */}
+                          <div className="flex items-start gap-2.5">
+                            {/* Thumbnail with Quick Preview trigger */}
+                            <div
+                              onClick={() => {
+                                if (isVideo) {
+                                  setPreviewVideo({ url: file.viewUrl, title: file.fileName, fileId: file.fileId });
+                                } else {
+                                  setPreviewImage({ url: file.thumbnailUrl, title: file.fileName });
+                                }
                               }}
-                            />
-                            <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                              <ZoomIn className="h-4 w-4" />
-                            </div>
-                          </div>
-
-                          {/* File Details */}
-                          <div className="min-w-0 flex-1">
-                            <h6 className="text-xs font-bold text-slate-900 truncate" title={file.fileName}>
-                              {file.fileName}
-                            </h6>
-                            <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                              {file.label !== file.fileName ? file.label : ""}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-mono">
-                              <span>{formatDateOnly(file.dateCreated)}</span>
-                              {file.sizeBytes && file.sizeBytes > 0 && (
+                              className="relative h-16 w-20 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-slate-200/80 cursor-pointer group flex items-center justify-center"
+                            >
+                              {isVideo ? (
+                                <div className="w-full h-full bg-gradient-to-br from-slate-900 via-rose-950 to-slate-900 flex flex-col items-center justify-center text-white relative">
+                                  <Video className="h-5 w-5 text-rose-400 mb-0.5" />
+                                  <span className="text-[8px] font-black uppercase text-rose-300 tracking-wider">VIDEO</span>
+                                  <div className="absolute inset-0 bg-rose-600/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                    <Play className="h-5 w-5 fill-white text-white" />
+                                  </div>
+                                </div>
+                              ) : (
                                 <>
-                                  <span>•</span>
-                                  <span>{formatFileSize(file.sizeBytes)}</span>
+                                  <img
+                                    src={file.thumbnailUrl}
+                                    alt={file.label}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLElement).style.display = "none";
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                    <ZoomIn className="h-4 w-4" />
+                                  </div>
                                 </>
                               )}
                             </div>
+
+                            {/* File Details */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <h6 className="text-xs font-bold text-slate-900 truncate" title={file.fileName}>
+                                  {file.fileName}
+                                </h6>
+                                {isVideo && (
+                                  <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[8px] font-bold px-1.5 py-0 uppercase shrink-0">
+                                    Video
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                                {file.label !== file.fileName ? file.label : ""}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-mono">
+                                <span>{formatDateOnly(file.dateCreated)}</span>
+                                {file.sizeBytes && file.sizeBytes > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{formatFileSize(file.sizeBytes)}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons: Copy Code & Insert in Post */}
+                          <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCopyMediaMarkdown(file)}
+                              className="h-7 text-[11px] font-bold rounded-lg border-slate-200 hover:bg-slate-50 text-slate-700 gap-1 flex-1"
+                              title="Copy embed code to clipboard"
+                            >
+                              {copiedFileId === file.fileId ? (
+                                <>
+                                  <Check className="h-3 w-3 text-emerald-600" />
+                                  <span className="text-emerald-700">Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3 w-3 text-slate-500" />
+                                  <span>{isVideo ? "Copy Video" : "Copy Code"}</span>
+                                </>
+                              )}
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const snippet = getDriveMediaEmbedCode(file);
+                                handleInsertMarkdownSnippet(snippet);
+                                toast.success(isVideo ? `Embedded video "${file.fileName}" into post!` : `Embedded image "${file.fileName}" into post!`);
+                              }}
+                              className={`h-7 text-[11px] font-bold rounded-lg text-white gap-1 flex-1 cursor-pointer ${
+                                isVideo ? "bg-rose-600 hover:bg-rose-700 shadow-xs shadow-rose-500/20" : "bg-emerald-600 hover:bg-emerald-700"
+                              }`}
+                              title={isVideo ? "Insert video iframe into post" : "Insert image into post"}
+                            >
+                              <Plus className="h-3 w-3" />
+                              <span>{isVideo ? "Insert Video" : "Insert"}</span>
+                            </Button>
                           </div>
                         </div>
-
-                        {/* Action Buttons: Copy Code & Insert in Post */}
-                        <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleCopyMediaMarkdown(file)}
-                            className="h-7 text-[11px] font-bold rounded-lg border-slate-200 hover:bg-slate-50 text-slate-700 gap-1 flex-1"
-                            title="Copy markdown code to clipboard"
-                          >
-                            {copiedFileId === file.fileId ? (
-                              <>
-                                <Check className="h-3 w-3 text-emerald-600" />
-                                <span className="text-emerald-700">Copied!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-3 w-3 text-slate-500" />
-                                <span>Copy Code</span>
-                              </>
-                            )}
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            onClick={() => handleInsertMarkdownSnippet(file.markdownSnippet)}
-                            className="h-7 text-[11px] font-bold rounded-lg bg-slate-900 hover:bg-slate-800 text-white gap-1 flex-1 shadow-2xs"
-                            title="Insert markdown embed snippet into left post editor"
-                          >
-                            <Plus className="h-3 w-3" />
-                            <span>Insert</span>
-                          </Button>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1419,6 +1483,37 @@ export default function ProjectPostPanel({
                 src={previewImage.url}
                 alt={previewImage.title}
                 className="w-full h-full object-contain"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Quick Video Player Preview Dialog */}
+      {previewVideo && (
+        <Dialog open={!!previewVideo} onOpenChange={(open) => !open && setPreviewVideo(null)}>
+          <DialogContent className="max-w-2xl p-0 overflow-hidden rounded-3xl border-slate-800 bg-slate-950 text-white shadow-2xl">
+            <DialogHeader className="p-4 border-b border-slate-800 flex flex-row items-center justify-between">
+              <DialogTitle className="text-sm font-bold text-slate-200 truncate flex items-center gap-2">
+                <Video className="h-4 w-4 text-rose-400" />
+                <span>{previewVideo.title}</span>
+              </DialogTitle>
+              <a
+                href={`https://drive.google.com/file/d/${previewVideo.fileId}/view`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2.5 py-1 rounded-lg"
+              >
+                <span>Open in Drive</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </DialogHeader>
+            <div className="relative aspect-video w-full bg-black">
+              <iframe
+                src={`https://drive.google.com/file/d/${previewVideo.fileId}/preview`}
+                className="w-full h-full border-0"
+                allow="autoplay; fullscreen"
+                allowFullScreen
               />
             </div>
           </DialogContent>

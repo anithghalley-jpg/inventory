@@ -663,6 +663,26 @@ export function buildDriveMarkdownImage(fileIdOrUrl: string, altText: string = "
   return `![${cleanAlt}](https://drive.google.com/thumbnail?id=${cleanId}&sz=w800)`;
 }
 
+export function isVideoMedia(file?: { fileName?: string; mimeType?: string; isVideo?: boolean }): boolean {
+  if (!file) return false;
+  if (file.isVideo === true) return true;
+  if (file.mimeType && file.mimeType.toLowerCase().startsWith("video/")) return true;
+  if (file.fileName && /\.(mp4|webm|mov|m4v|avi|mkv|3gp|flv|ogv)$/i.test(file.fileName)) return true;
+  return false;
+}
+
+export function buildDriveMarkdownVideo(fileIdOrUrl: string): string {
+  const cleanId = extractDriveFileId(fileIdOrUrl) || fileIdOrUrl.trim();
+  return `<iframe src="https://drive.google.com/file/d/${cleanId}/preview" width="100%" height="360" frameborder="0" allow="autoplay" allowfullscreen></iframe>`;
+}
+
+export function getDriveMediaEmbedCode(file: ProjectDriveMediaFile): string {
+  if (isVideoMedia(file)) {
+    return buildDriveMarkdownVideo(file.fileId);
+  }
+  return file.markdownSnippet || buildDriveMarkdownImage(file.fileId, file.label || file.fileName);
+}
+
 export function isDirectVideoUrl(url: string): boolean {
   if (!url) return false;
   const clean = url.trim().toLowerCase().split("?")[0].split("#")[0];
@@ -813,6 +833,7 @@ export interface ProjectDriveMediaFile {
   fileName: string;
   label: string;
   mimeType: string;
+  isVideo?: boolean;
   thumbnailUrl: string;
   viewUrl: string;
   downloadUrl: string;
