@@ -696,98 +696,98 @@ export default function ProjectsWorkspace({ workspace, userEmail }: ProjectsWork
         /* PROJECT DETAIL VIEW                                                  */
         /* ═════════════════════════════════════════════════════════════════════ */
         <div className="space-y-6">
-          {isSelectedProjectMember && activeTab !== "report" ? (
-            <div className="space-y-6">
-              {/* Executive Hero Banner */}
-              <ProjectHeroBanner
-                projectDetail={projectDetail}
-                userEmail={userEmail ?? ""}
-                isMember={isSelectedProjectMember}
-              />
+          {/* Executive Hero Banner (Always rendered at the top) */}
+          <ProjectHeroBanner
+            projectDetail={projectDetail}
+            userEmail={userEmail ?? ""}
+            isMember={isSelectedProjectMember}
+          />
 
-              {/* Floating Sticky Tab Navigator Toolbar */}
-              <div className="sticky top-20 z-30 p-3 sm:p-4 rounded-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 shadow-md flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSelectedProjectId("")}
-                    className="h-9 px-3.5 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold shrink-0 shadow-2xs gap-1.5 cursor-pointer"
+          {isSelectedProjectMember && activeTab !== "report" && (
+            /* Floating Sticky Tab Navigator Toolbar for Profile & Post */
+            <div className="sticky top-20 z-30 p-3 sm:p-4 rounded-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 shadow-md flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedProjectId("")}
+                  className="h-9 px-3.5 rounded-xl border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold shrink-0 shadow-2xs gap-1.5 cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span>Back</span>
+                </Button>
+
+                {/* 3-Tab Navigator */}
+                <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 text-xs font-semibold shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("profile")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      activeTab === "profile"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
                   >
-                    <ChevronLeft className="h-4 w-4" />
-                    <span>Back</span>
-                  </Button>
-
-                  {/* 3-Tab Navigator */}
-                  <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 text-xs font-semibold shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("profile")}
-                      className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                        activeTab === "profile"
-                          ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold"
-                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      <FolderKanban className="h-3.5 w-3.5 text-indigo-600" />
-                      <span>Project Profile</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("post")}
-                      className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                        activeTab === "post"
-                          ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold"
-                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      <Edit3 className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>Project Post</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("report")}
-                      className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                        (activeTab as string) === "report"
-                          ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold"
-                          : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      <FileText className="h-3.5 w-3.5 text-cyan-600" />
-                      <span>Project Report</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px] font-bold shrink-0">
-                    Team Workspace
-                  </Badge>
+                    <FolderKanban className="h-3.5 w-3.5 text-indigo-600" />
+                    <span>Profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("post")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      activeTab === "post"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <Edit3 className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Post</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("report")}
+                    className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      (activeTab as string) === "report"
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <FileText className="h-3.5 w-3.5 text-cyan-600" />
+                    <span>Report</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Tab Content Panes for Profile & Post */}
-              <div>
-                {activeTab === "profile" && (
-                  <ProjectProfilePanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
-                )}
-                {activeTab === "post" && (
-                  <ProjectPostPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
-                )}
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-xs ${getStatusBadgeClass(projectDetail.status)}`}>
+                  <span className="h-2 w-2 rounded-full bg-current animate-pulse" />
+                  <span>{getStatusLabel(projectDetail.status)}</span>
+                </span>
               </div>
             </div>
-          ) : (
-            /* Report View: Full immersive timeline report starting directly with the hero banner and floating sticky toolbar! */
-            <ProjectReportGenerator
-              projectId={projectDetail.projectId}
-              userEmail={userEmail ?? ""}
-              projectDetail={projectDetail}
-              onBack={() => setSelectedProjectId("")}
-              isMember={isSelectedProjectMember}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-            />
           )}
+
+          {/* 3-Tab Content Panes (Seamless instant 0ms switching) */}
+          <div>
+            {isSelectedProjectMember && activeTab === "profile" && (
+              <ProjectProfilePanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
+            )}
+            {isSelectedProjectMember && activeTab === "post" && (
+              <ProjectPostPanel projectDetail={projectDetail} userEmail={userEmail ?? ""} />
+            )}
+            {(!isSelectedProjectMember || activeTab === "report") && (
+              <ProjectReportGenerator
+                projectId={projectDetail.projectId}
+                userEmail={userEmail ?? ""}
+                projectDetail={projectDetail}
+                onBack={() => setSelectedProjectId("")}
+                isMember={isSelectedProjectMember}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                hideHeroBanner={true}
+              />
+            )}
+          </div>
         </div>
       )}
 

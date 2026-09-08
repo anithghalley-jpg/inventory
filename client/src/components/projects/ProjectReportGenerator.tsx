@@ -69,6 +69,7 @@ interface ProjectReportGeneratorProps {
   isMember?: boolean;
   activeTab?: "profile" | "post" | "report";
   onTabChange?: (tab: "profile" | "post" | "report") => void;
+  hideHeroBanner?: boolean;
 }
 
 type TimelineFilterKind = "all" | "post" | "milestone" | "checkpoint" | "note" | "issue";
@@ -99,6 +100,7 @@ export default function ProjectReportGenerator({
   isMember = false,
   activeTab = "report",
   onTabChange,
+  hideHeroBanner = false,
 }: ProjectReportGeneratorProps) {
   const reportData = useQuery(api.projects.getProjectReportData, { userEmail, projectId });
   const [activeMode, setActiveMode] = useState<"timeline" | "raw">("timeline");
@@ -148,8 +150,9 @@ export default function ProjectReportGenerator({
 
   // ── Unified Chronological Stream ──
   const unifiedTimeline = useMemo(() => {
-    if (!reportData) return [];
-    const { project, history } = reportData;
+    const project = reportData?.project || projectDetail;
+    if (!project) return [];
+    const history = reportData?.history || [];
     const items: UnifiedTimelineEntry[] = [];
 
     // 1. Posts & Checkpoints from project.timeline
@@ -202,7 +205,7 @@ export default function ProjectReportGenerator({
     });
 
     return items;
-  }, [reportData, sortDirection]);
+  }, [reportData, projectDetail, sortDirection]);
 
   // Filtered timeline stream based on search and kind filter
   const filteredTimeline = useMemo(() => {
@@ -295,8 +298,8 @@ export default function ProjectReportGenerator({
 
   // Calculate project date stats
   const projectStats = useMemo(() => {
-    if (!reportData) return { start: "", end: "", days: 1, totalPosts: 0, totalMedia: 0 };
-    const { project } = reportData;
+    const project = reportData?.project || projectDetail;
+    if (!project) return { start: "", end: "", days: 1, totalPosts: 0, totalMedia: 0 };
     const start = new Date(project.createdAt).getTime();
     const end = project.status === "COMPLETED"
       ? new Date(project.updatedAt).getTime()
@@ -319,20 +322,22 @@ export default function ProjectReportGenerator({
       totalPosts,
       totalMedia,
     };
-  }, [reportData]);
+  }, [reportData, projectDetail]);
 
   // Helper to get Day Number for an entry
   const getDayNumber = (timestamp: string) => {
-    if (!reportData) return 1;
-    const start = new Date(reportData.project.createdAt).getTime();
+    const project = reportData?.project || projectDetail;
+    if (!project) return 1;
+    const start = new Date(project.createdAt).getTime();
     const current = new Date(timestamp).getTime();
     return Math.max(1, Math.floor((current - start) / (1000 * 60 * 60 * 24)) + 1);
   };
 
   // ── Collated Markdown Text ──
   const collatedMarkdown = useMemo(() => {
-    if (!reportData) return "";
-    const { project, history } = reportData;
+    const project = reportData?.project || projectDetail;
+    if (!project) return "";
+    const history = reportData?.history || [];
 
     let md = `# ${project.name} — Project Documentation Timeline\n\n`;
     md += `> **Status:** ${getStatusLabel(project.status)} | **Duration:** ${projectStats.start} → ${projectStats.end} (${projectStats.days} Days)\n`;
@@ -433,7 +438,7 @@ export default function ProjectReportGenerator({
     toast.success("Markdown file downloaded");
   };
 
-  if (!reportData) {
+  if (!reportData && !projectDetail) {
     return (
       <div className="p-16 flex flex-col items-center justify-center text-center space-y-3 bg-white rounded-3xl border border-slate-200">
         <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
@@ -442,17 +447,19 @@ export default function ProjectReportGenerator({
     );
   }
 
-  const { project } = reportData;
+  const project = reportData?.project || projectDetail;
   const coverImage = project.teamImageUrl || project.boxImageUrl || "";
 
   return (
     <div className="space-y-6 print:space-y-4">
       {/* ── 1. Executive Project Header Banner ── */}
-      <ProjectHeroBanner
-        projectDetail={project}
-        userEmail={userEmail}
-        isMember={isMember}
-      />
+      {!hideHeroBanner && (
+        <ProjectHeroBanner
+          projectDetail={project}
+          userEmail={userEmail}
+          isMember={isMember}
+        />
+      )}
 
       {/* ── 2. Floating Sticky Control Toolbar (Back Button, Tabs, Wide Search, Filter Categories, Sort, Markdown Export) ── */}
       <div className="sticky top-20 z-30 p-3 sm:p-4 rounded-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 shadow-md space-y-3 print:hidden">

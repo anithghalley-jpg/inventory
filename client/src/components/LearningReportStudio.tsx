@@ -13,6 +13,9 @@ import { SCRIPT_URL } from "@/config";
 import ProjectMediaModal from "./projects/ProjectMediaModal";
 import {
   insertMarkdownFormatting,
+  buildDriveMarkdownVideo,
+  getDriveMediaEmbedCode,
+  isVideoMedia,
   type ProjectDriveMediaFile,
 } from "./projects/projectShared";
 import {
@@ -43,6 +46,7 @@ import {
   Quote,
   Table as TableIcon,
   Video,
+  Play,
   FileText,
   File,
   Eye,
@@ -53,6 +57,7 @@ import {
   Download,
   Share2,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -113,6 +118,8 @@ export default function LearningReportStudio({
   const [driveSearchQuery, setDriveSearchQuery] = useState("");
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   const [previewMedia, setPreviewMedia] = useState<{ url: string; title: string } | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<{ url: string; title: string; fileId: string } | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
 
   // Active Background Uploads
   const [activeUploads, setActiveUploads] = useState<ActiveUploadTask[]>([]);
@@ -348,10 +355,11 @@ export default function LearningReportStudio({
       const downloadUrl =
         result.downloadUrl || `https://drive.google.com/uc?export=download&id=${fileId}`;
 
+      const isVideoFile = mimeType.startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(fileName);
       let snippet = result.markdownSnippet;
       if (!snippet) {
-        if (mimeType.startsWith("image/")) snippet = `![${desc}](${directLink})`;
-        else if (mimeType.startsWith("video/")) snippet = `[▶ Video: ${desc}](${viewUrl})`;
+        if (isVideoFile) snippet = buildDriveMarkdownVideo(fileId);
+        else if (mimeType.startsWith("image/")) snippet = `![${desc}](${directLink})`;
         else snippet = `[📄 ${desc}](${viewUrl})`;
       }
 
@@ -429,10 +437,41 @@ export default function LearningReportStudio({
   };
 
   const handleCopyFileMarkdown = (file: ProjectDriveMediaFile) => {
-    navigator.clipboard.writeText(file.markdownSnippet);
+    const isVideo = isVideoMedia(file) || file.mimeType?.startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(file.fileName);
+    const snippet = isVideo ? buildDriveMarkdownVideo(file.fileId) : (file.markdownSnippet || getDriveMediaEmbedCode(file));
+    navigator.clipboard.writeText(snippet);
     setCopiedFileId(file.fileId);
-    toast.success(`Markdown embed code for "${file.label}" copied!`);
+    toast.success(isVideo ? `Video embed code for "${file.label}" copied!` : `Markdown embed code for "${file.label}" copied!`);
     setTimeout(() => setCopiedFileId(null), 2000);
+  };
+
+  // Delete a media file from personal Google Drive
+  const handleDeleteDriveFile = async (file: ProjectDriveMediaFile) => {
+    if (!window.confirm(`Are you sure you want to delete "${file.fileName}" from your personal Google Drive? This will move the file to trash.`)) {
+      return;
+    }
+    setDeletingFileId(file.fileId);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "deleteDriveFile",
+          fileId: file.fileId,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Deleted "${file.fileName}" from Google Drive.`);
+        setDriveFiles((prev) => prev.filter((f) => f.fileId !== file.fileId));
+      } else {
+        toast.error(data.message || "Failed to delete file from Google Drive");
+      }
+    } catch (err: any) {
+      console.error("Delete drive file error:", err);
+      toast.error("Failed to delete file: " + (err.message || "Network error"));
+    } finally {
+      setDeletingFileId(null);
+    }
   };
 
   // Render Sanitized HTML for Markdown Preview
@@ -980,6 +1019,7 @@ export default function LearningReportStudio({
                     file.mimeType?.startsWith("image/") ||
                     /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(file.fileName);
                   const isVideo =
+                    isVideoMedia(file) ||
                     file.mimeType?.startsWith("video/") ||
                     /\.(mp4|webm|mov|mkv)$/i.test(file.fileName);
                   const isPdf =
@@ -988,19 +1028,23 @@ export default function LearningReportStudio({
                   return (
                     <div
                       key={file.fileId}
-                      className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-emerald-300 transition-all space-y-2.5"
+                      className={`p-3 rounded-2xl bg-white border shadow-xs transition-all space-y-2.5 ${
+                        isVideo ? "border-rose-200/80 hover:border-rose-400" : "border-slate-200/80 hover:border-emerald-300"
+                      }`}
                     >
                       {/* Thumbnail / Icon & File Details */}
                       <div className="flex items-start gap-2.5">
                         <div
                           onClick={() => {
-                            if (isImage) {
+                            if (isVideo) {
+                              setPreviewVideo({ url: file.viewUrl, title: file.fileName, fileId: file.fileId });
+                            } else if (isImage) {
                               setPreviewMedia({ url: file.thumbnailUrl, title: file.fileName });
                             } else {
                               window.open(file.viewUrl, "_blank", "noopener,noreferrer");
                             }
                           }}
-                          className="relative h-14 w-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80 cursor-pointer group flex items-center justify-center"
+                          className="relative h-14 w-16 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-slate-200/80 cursor-pointer group flex items-center justify-center"
                         >
                           {isImage ? (
                             <>
@@ -1017,8 +1061,12 @@ export default function LearningReportStudio({
                               </div>
                             </>
                           ) : isVideo ? (
-                            <div className="h-full w-full bg-slate-900 text-white flex items-center justify-center">
-                              <Video className="h-5 w-5 text-indigo-400" />
+                            <div className="w-full h-full bg-gradient-to-br from-slate-900 via-rose-950 to-slate-900 flex flex-col items-center justify-center text-white relative">
+                              <Video className="h-4 w-4 text-rose-400 mb-0.5" />
+                              <span className="text-[7px] font-black uppercase text-rose-300 tracking-wider">VIDEO</span>
+                              <div className="absolute inset-0 bg-rose-600/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                <Play className="h-4 w-4 fill-white text-white" />
+                              </div>
                             </div>
                           ) : isPdf ? (
                             <div className="h-full w-full bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-[10px]">
@@ -1032,9 +1080,16 @@ export default function LearningReportStudio({
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <h6 className="text-xs font-bold text-slate-900 truncate" title={file.fileName}>
-                            {file.fileName}
-                          </h6>
+                          <div className="flex items-center gap-1.5">
+                            <h6 className="text-xs font-bold text-slate-900 truncate" title={file.fileName}>
+                              {file.fileName}
+                            </h6>
+                            {isVideo && (
+                              <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[8px] font-bold px-1.5 py-0 uppercase shrink-0">
+                                Video
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-[10px] text-slate-400 mt-0.5 truncate">
                             {file.label !== file.fileName ? file.label : ""}
                           </p>
@@ -1050,8 +1105,8 @@ export default function LearningReportStudio({
                         </div>
                       </div>
 
-                      {/* Action Buttons: Copy Code & Insert in Report */}
-                      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
+                      {/* Action Buttons: Copy Code, Insert in Report, and Delete */}
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
                         <Button
                           size="sm"
                           variant="outline"
@@ -1067,19 +1122,40 @@ export default function LearningReportStudio({
                           ) : (
                             <>
                               <Copy className="h-3 w-3 text-slate-500" />
-                              <span>Copy Code</span>
+                              <span>{isVideo ? "Copy Video" : "Copy Code"}</span>
                             </>
                           )}
                         </Button>
 
                         <Button
                           size="sm"
-                          onClick={() => handleInsertMarkdownSnippet(file.markdownSnippet)}
-                          className="h-7 text-[11px] font-bold rounded-lg bg-slate-900 hover:bg-slate-800 text-white gap-1 flex-1 shadow-2xs"
-                          title="Insert embed snippet directly into markdown report"
+                          onClick={() => {
+                            const snippet = isVideo ? buildDriveMarkdownVideo(file.fileId) : file.markdownSnippet || getDriveMediaEmbedCode(file);
+                            handleInsertMarkdownSnippet(snippet);
+                            toast.success(isVideo ? `Embedded video "${file.fileName}" into report!` : `Embedded "${file.fileName}" into report!`);
+                          }}
+                          className={`h-7 text-[11px] font-bold rounded-lg text-white gap-1 flex-1 shadow-2xs cursor-pointer ${
+                            isVideo ? "bg-rose-600 hover:bg-rose-700 shadow-rose-500/20" : "bg-slate-900 hover:bg-slate-800"
+                          }`}
+                          title={isVideo ? "Insert video iframe into report" : "Insert embed snippet directly into markdown report"}
                         >
                           <Plus className="h-3 w-3" />
-                          <span>Insert</span>
+                          <span>{isVideo ? "Insert Video" : "Insert"}</span>
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteDriveFile(file)}
+                          disabled={deletingFileId === file.fileId}
+                          className="h-7 w-7 p-0 shrink-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer"
+                          title="Delete file from Google Drive"
+                        >
+                          {deletingFileId === file.fileId ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -1115,6 +1191,37 @@ export default function LearningReportStudio({
                 src={previewMedia.url}
                 alt={previewMedia.title}
                 className="w-full h-full object-contain"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Quick Video Player Preview Dialog */}
+      {previewVideo && (
+        <Dialog open={!!previewVideo} onOpenChange={(open) => !open && setPreviewVideo(null)}>
+          <DialogContent className="max-w-2xl p-0 overflow-hidden rounded-3xl border-slate-800 bg-slate-950 text-white shadow-2xl">
+            <DialogHeader className="p-4 border-b border-slate-800 flex flex-row items-center justify-between">
+              <DialogTitle className="text-sm font-bold text-slate-200 truncate flex items-center gap-2">
+                <Video className="h-4 w-4 text-rose-400" />
+                <span>{previewVideo.title}</span>
+              </DialogTitle>
+              <a
+                href={`https://drive.google.com/file/d/${previewVideo.fileId}/view`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2.5 py-1 rounded-lg"
+              >
+                <span>Open in Drive</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </DialogHeader>
+            <div className="relative aspect-video w-full bg-black">
+              <iframe
+                src={`https://drive.google.com/file/d/${previewVideo.fileId}/preview`}
+                className="w-full h-full border-0"
+                allow="autoplay; fullscreen"
+                allowFullScreen
               />
             </div>
           </DialogContent>

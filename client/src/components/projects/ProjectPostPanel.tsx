@@ -130,7 +130,8 @@ export default function ProjectPostPanel({
   // Google Drive Folder & Media Modal State
   const [isCreatingDriveFolder, setIsCreatingDriveFolder] = useState(false);
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
-  const [mediaModalTab, setMediaModalTab] = useState<"camera" | "video" | "upload" | "driveLink">("camera");
+  const [mediaModalTab, setMediaModalTab] = useState<"camera" | "upload" | "driveLink">("camera");
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
 
   // Fetch Project Media files directly from Google Drive via Google Apps Script
   const fetchProjectDriveFiles = useCallback(async () => {
@@ -378,6 +379,35 @@ export default function ProjectPostPanel({
     setCopiedFileId(file.fileId);
     toast.success(isVideoMedia(file) ? `Video embed code for "${file.label}" copied!` : `Markdown image code for "${file.label}" copied!`);
     setTimeout(() => setCopiedFileId(null), 2000);
+  };
+
+  // Delete a media file from Google Drive
+  const handleDeleteDriveFile = async (file: ProjectDriveMediaFile) => {
+    if (!window.confirm(`Are you sure you want to delete "${file.fileName}" from Google Drive? This will move the file to trash.`)) {
+      return;
+    }
+    setDeletingFileId(file.fileId);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "deleteDriveFile",
+          fileId: file.fileId,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Deleted "${file.fileName}" from Google Drive.`);
+        setDriveFiles((prev) => prev.filter((f) => f.fileId !== file.fileId));
+      } else {
+        toast.error(data.message || "Failed to delete file from Google Drive");
+      }
+    } catch (err: any) {
+      console.error("Delete drive file error:", err);
+      toast.error("Failed to delete file: " + (err.message || "Network error"));
+    } finally {
+      setDeletingFileId(null);
+    }
   };
 
   // All timeline posts
@@ -1057,7 +1087,7 @@ export default function ProjectPostPanel({
                   </div>
 
                   {/* Media Action Buttons Toolbar */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1.5">
                     <Button
                       size="sm"
                       variant="outline"
@@ -1069,19 +1099,6 @@ export default function ProjectPostPanel({
                     >
                       <Camera className="h-3.5 w-3.5 text-emerald-600" />
                       <span>Photo</span>
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setMediaModalTab("video");
-                        setMediaModalOpen(true);
-                      }}
-                      className="h-8 text-xs font-bold rounded-xl border-slate-200 hover:border-rose-400 hover:bg-rose-50 text-slate-700 gap-1.5 shadow-2xs"
-                    >
-                      <Video className="h-3.5 w-3.5 text-rose-600" />
-                      <span>Record</span>
                     </Button>
 
                     <Button
@@ -1294,8 +1311,8 @@ export default function ProjectPostPanel({
                             </div>
                           </div>
 
-                          {/* Action Buttons: Copy Code & Insert in Post */}
-                          <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
+                          {/* Action Buttons: Copy Code, Insert in Post, and Delete */}
+                          <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
                             <Button
                               size="sm"
                               variant="outline"
@@ -1330,6 +1347,21 @@ export default function ProjectPostPanel({
                             >
                               <Plus className="h-3 w-3" />
                               <span>{isVideo ? "Insert Video" : "Insert"}</span>
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeleteDriveFile(file)}
+                              disabled={deletingFileId === file.fileId}
+                              className="h-7 w-7 p-0 shrink-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg cursor-pointer"
+                              title="Delete file from Google Drive"
+                            >
+                              {deletingFileId === file.fileId ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
                             </Button>
                           </div>
                         </div>

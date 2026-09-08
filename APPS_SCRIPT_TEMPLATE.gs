@@ -244,6 +244,11 @@ function doPost(e) {
       case 'getUserReportMediaFiles':
         response = handleGetUserReportMediaFiles(data);
         break;
+      case 'deleteDriveFile':
+      case 'deleteProjectMediaFile':
+      case 'deleteUserReportMedia':
+        response = handleDeleteDriveFile(data);
+        break;
       case 'getCategories':
         response = handleGetCategories(data);
         break;
@@ -971,6 +976,32 @@ function handleGetProjectMediaFiles(data) {
   }
 }
 
+/**
+ * Trashes/deletes a media file from Google Drive by its File ID.
+ */
+function handleDeleteDriveFile(data) {
+  try {
+    const fileId = (data.fileId || data.id || "").trim();
+    if (!fileId) {
+      return { success: false, message: "Missing fileId to delete" };
+    }
+    const file = DriveApp.getFileById(fileId);
+    file.setTrashed(true);
+    console.log("🗑️ File successfully moved to Drive trash: " + fileId);
+    return {
+      success: true,
+      fileId: fileId,
+      message: "File deleted successfully from Google Drive"
+    };
+  } catch (err) {
+    console.error("❌ Error deleting Drive file:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
 // ===== USER LEARNING REPORT GOOGLE DRIVE FOLDERS & MEDIA UPLOADS =====
 
 /**
@@ -1120,7 +1151,7 @@ function handleUploadUserReportMedia(data) {
       markdownSnippet = "![" + label + "](" + directLink + ")";
     } else if (safeMimeType.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(sanitizedBaseName)) {
       embedType = 'video';
-      markdownSnippet = "[▶ Video: " + label + "](" + viewUrl + ")";
+      markdownSnippet = '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" width="100%" height="360" frameborder="0" allow="autoplay" allowfullscreen></iframe>';
     } else if (safeMimeType.includes('pdf') || /\.(pdf)$/i.test(sanitizedBaseName)) {
       embedType = 'pdf';
       markdownSnippet = "[📄 PDF: " + label + "](" + viewUrl + ")";
@@ -1209,7 +1240,7 @@ function handleGetUserReportMediaFiles(data) {
         markdownSnippet = "![" + cleanLabel + "](" + directLink + ")";
       } else if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(name)) {
         embedType = 'video';
-        markdownSnippet = "[▶ Video: " + cleanLabel + "](" + viewUrl + ")";
+        markdownSnippet = '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" width="100%" height="360" frameborder="0" allow="autoplay" allowfullscreen></iframe>';
       } else if (mime.includes('pdf') || /\.(pdf)$/i.test(name)) {
         embedType = 'pdf';
         markdownSnippet = "[📄 PDF: " + cleanLabel + "](" + viewUrl + ")";
