@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw, GraduationCap } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw, GraduationCap, Laptop } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
 import AdminLearningReportsTab from '@/components/AdminLearningReportsTab';
 import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
+import DeviceUsageTracker from '@/components/admin/DeviceUsageTracker';
 
 /**
  * Design: Modern Minimalist - Admin Panel
@@ -53,6 +54,8 @@ interface User {
   myPageLink?: string;
   sessionStart?: string;
   sessionEnd?: string;
+  activeDeviceId?: string;
+  activeDeviceName?: string;
 }
 
 interface InventoryItem {
@@ -1465,7 +1468,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="users" className="space-y-20" onValueChange={(tab) => { if (tab === 'settings') fetchSyncStatus(); }}>
-          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-7xl grid-cols-10' : 'max-w-3xl grid-cols-6'} bg-muted`}>
+          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-7xl grid-cols-11' : 'max-w-3xl grid-cols-6'} bg-muted`}>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -1500,6 +1503,12 @@ export default function AdminPanel() {
               <Zap className="w-4 h-4" />
               <span className="hidden sm:inline">Machines</span>
             </TabsTrigger>
+            {user?.role === 'ADMIN' && (
+              <TabsTrigger value="devices" className="flex items-center gap-2">
+                <Laptop className="w-4 h-4 text-indigo-500" />
+                <span className="hidden sm:inline">Devices</span>
+              </TabsTrigger>
+            )}
             {user?.role === 'ADMIN' && (
               <TabsTrigger value="projects" className="flex items-center gap-2">
                 <FolderKanban className="w-4 h-4" />
@@ -2532,9 +2541,17 @@ export default function AdminPanel() {
                         <Card key={u.id} className="p-4 border-l-4 border-l-emerald-500 flex flex-col gap-1 shadow-sm relative group">
                           <p className="font-bold text-sm truncate pr-6" title={u.name}>{u.name}</p>
                           <p className="text-xs text-muted-foreground truncate pr-6" title={u.email}>{u.email}</p>
-                          <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit mt-1">
-                            Online
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
+                              Online
+                            </span>
+                            {u.activeDeviceName && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded-md" title={`Device: ${u.activeDeviceName}`}>
+                                <Laptop className="h-3 w-3 text-indigo-600" />
+                                <span className="truncate max-w-[120px]">{u.activeDeviceName}</span>
+                              </span>
+                            )}
+                          </div>
                           <Button 
                             variant="destructive" 
                             size="icon" 
@@ -2767,6 +2784,12 @@ export default function AdminPanel() {
               )}
             </div>
           </TabsContent>
+
+          {user?.role === 'ADMIN' && (
+            <TabsContent value="devices" className="space-y-6">
+              <DeviceUsageTracker />
+            </TabsContent>
+          )}
 
           {user?.role === 'ADMIN' && (
             <TabsContent value="updates" className="space-y-6">

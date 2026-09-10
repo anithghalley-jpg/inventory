@@ -58,6 +58,8 @@ export const toggleLaptop = mutation({
     isTurningOn: v.boolean(),
     newTotal: v.number(),
     scriptUrl: v.string(),
+    deviceId: v.optional(v.string()),
+    deviceName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userDoc = await ctx.db.query("users").withIndex("by_email", q => q.eq("email", args.email)).first();
@@ -69,10 +71,61 @@ export const toggleLaptop = mutation({
     let nextTotal = userDoc.totalTime;
     let sessionStart = userDoc.sessionStart ?? "";
     let sessionEnd = userDoc.sessionEnd ?? "";
+    let activeDeviceId = userDoc.activeDeviceId;
+    let activeDeviceName = userDoc.activeDeviceName;
+    let activeDeviceLogId = userDoc.activeDeviceLogId;
 
     if (args.isTurningOn) {
       sessionStart = now;
       sessionEnd = "";
+
+      // If a device was chosen
+      if (args.deviceId && args.deviceName) {
+        activeDeviceId = args.deviceId;
+        activeDeviceName = args.deviceName;
+        const logId = `dlog_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        activeDeviceLogId = logId;
+
+        // GMT+6 date
+        let gmt6Date = now.slice(0, 10);
+        try {
+          gmt6Date = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Dhaka",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(new Date(now));
+        } catch {
+          const offsetMs = 6 * 60 * 60 * 1000;
+          gmt6Date = new Date(new Date(now).getTime() + offsetMs).toISOString().slice(0, 10);
+        }
+
+        await ctx.db.insert("deviceLogs", {
+          logId,
+          deviceId: args.deviceId,
+          deviceName: args.deviceName,
+          userEmail: userDoc.email,
+          userName: userDoc.name,
+          startTime: now,
+          date: gmt6Date,
+          createdAt: now,
+        });
+
+        // Update device in-use state
+        const device = await ctx.db
+          .query("devices")
+          .withIndex("by_deviceId", (q) => q.eq("deviceId", args.deviceId!))
+          .first();
+        if (device) {
+          await ctx.db.patch(device._id, {
+            status: "IN_USE",
+            currentUserEmail: userDoc.email,
+            currentUserName: userDoc.name,
+            currentSessionStart: now,
+            updatedAt: now,
+          });
+        }
+      }
     } else {
       sessionEnd = now;
       if (sessionStart) {
@@ -84,6 +137,47 @@ export const toggleLaptop = mutation({
       } else {
         nextTotal = args.newTotal;
       }
+
+      // Finalize active device session if any
+      const logIdToClose = activeDeviceLogId;
+      if (logIdToClose) {
+        const log = await ctx.db
+          .query("deviceLogs")
+          .withIndex("by_logId", (q) => q.eq("logId", logIdToClose))
+          .first();
+
+        if (log && !log.endTime) {
+          const startMs = new Date(log.startTime).getTime();
+          const endMs = new Date(now).getTime();
+          const durationMinutes = Math.max(1, Math.round((endMs - startMs) / 60000));
+          await ctx.db.patch(log._id, {
+            endTime: now,
+            durationMinutes,
+          });
+        }
+      }
+
+      const deviceIdToFree = activeDeviceId;
+      if (deviceIdToFree) {
+        const device = await ctx.db
+          .query("devices")
+          .withIndex("by_deviceId", (q) => q.eq("deviceId", deviceIdToFree))
+          .first();
+
+        if (device && device.currentUserEmail === userDoc.email) {
+          await ctx.db.patch(device._id, {
+            status: "AVAILABLE",
+            currentUserEmail: undefined,
+            currentUserName: undefined,
+            currentSessionStart: undefined,
+            updatedAt: now,
+          });
+        }
+      }
+
+      activeDeviceId = undefined;
+      activeDeviceName = undefined;
+      activeDeviceLogId = undefined;
     }
 
     const updatedUser = {
@@ -92,6 +186,9 @@ export const toggleLaptop = mutation({
       sessionStart,
       sessionEnd,
       totalTime: nextTotal,
+      activeDeviceId,
+      activeDeviceName,
+      activeDeviceLogId,
     };
 
     await ctx.db.patch(userDoc._id, {
@@ -99,6 +196,9 @@ export const toggleLaptop = mutation({
       sessionStart: updatedUser.sessionStart,
       sessionEnd: updatedUser.sessionEnd,
       totalTime: updatedUser.totalTime,
+      activeDeviceId: updatedUser.activeDeviceId,
+      activeDeviceName: updatedUser.activeDeviceName,
+      activeDeviceLogId: updatedUser.activeDeviceLogId,
     });
 
     await enqueueSheetsSyncJob(ctx, {

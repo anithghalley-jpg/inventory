@@ -23,6 +23,7 @@ import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
 import ThemeColorPicker from '@/components/ThemeColorPicker';
 import LearningReportStudio from '@/components/LearningReportStudio';
+import DeviceSelectModal from '@/components/devices/DeviceSelectModal';
 
 /**
  * Design: Modern Minimalist - Dashboard Page
@@ -300,6 +301,11 @@ export default function Dashboard() {
   const endMachineMutation = useMutation(api.machines.endSession);
   const addItemToProjectMut = useMutation(api.projects.addItemToProject);
   const updateProfileMutation = useMutation(api.users.updateProfile);
+
+  // Device Tracking queries & state
+  const registeredDevices = useQuery(api.devices.getAll) || [];
+  const deviceSettings = useQuery(api.devices.getSettings);
+  const [deviceModalOpen, setDeviceModalOpen] = useState(false);
 
   // Profile Edit State
   const [editProfileOpen, setEditProfileOpen] = useState(false);
@@ -654,6 +660,11 @@ export default function Dashboard() {
   };
 
   const handleLaptopToggle = async (checked: boolean) => {
+    if (checked && deviceSettings?.enableDeviceTracking) {
+      setDeviceModalOpen(true);
+      return;
+    }
+
     const newStatus = checked ? 'Online' : 'Offline';
     // Optimistic Update
     setLaptopStatus(newStatus);
@@ -671,6 +682,25 @@ export default function Dashboard() {
       toast.error("Failed to update status");
       // Revert on error
       setLaptopStatus(checked ? 'Offline' : 'Online');
+    }
+  };
+
+  const handleConfirmDeviceAndStart = async (selectedDevice: { deviceId: string; name: string }) => {
+    setLaptopStatus('Online');
+    try {
+      await toggleLaptopMut({
+        email: user?.email || '',
+        isTurningOn: true,
+        newTotal: totalScreenTime,
+        scriptUrl: SCRIPT_URL,
+        deviceId: selectedDevice.deviceId,
+        deviceName: selectedDevice.name,
+      });
+      toast.success(`Lab session started on ${selectedDevice.name}!`);
+    } catch (error) {
+      console.error("Failed to start session with device", error);
+      toast.error("Failed to start session");
+      setLaptopStatus('Offline');
     }
   };
 
@@ -2457,6 +2487,16 @@ export default function Dashboard() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Device Selection Prompt Modal for Work Toggle */}
+          <DeviceSelectModal
+            open={deviceModalOpen}
+            onOpenChange={setDeviceModalOpen}
+            devices={registeredDevices as any}
+            onConfirm={handleConfirmDeviceAndStart}
+            onCancel={() => setLaptopStatus('Offline')}
+            userName={user?.name}
+          />
         </Tabs>
       </main >
     </div >

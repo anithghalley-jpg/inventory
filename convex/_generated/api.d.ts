@@ -10,6 +10,7 @@
 
 import type * as aspects from "../aspects.js";
 import type * as dashboardUpdates from "../dashboardUpdates.js";
+import type * as devices from "../devices.js";
 import type * as fabAcademy from "../fabAcademy.js";
 import type * as fabInterns from "../fabInterns.js";
 import type * as home from "../home.js";
@@ -33,6 +34,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   aspects: typeof aspects;
   dashboardUpdates: typeof dashboardUpdates;
+  devices: typeof devices;
   fabAcademy: typeof fabAcademy;
   fabInterns: typeof fabInterns;
   home: typeof home;

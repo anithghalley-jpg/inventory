@@ -33,6 +33,9 @@ export default defineSchema({
     tags: v.array(v.string()),
     note: v.optional(v.string()),
     customTheme: v.optional(v.string()),
+    activeDeviceId: v.optional(v.string()),
+    activeDeviceName: v.optional(v.string()),
+    activeDeviceLogId: v.optional(v.string()),
     stripeCustomizations: v.optional(v.array(v.object({
       planId: v.string(),
       char: v.string(),
@@ -121,12 +124,48 @@ export default defineSchema({
     command: v.optional(v.string()), // "ON", "OFF"
   }).index("by_machineId", ["machineId"])
     .index("by_machineId_and_startTime", ["machineId", "startTime"]),
+
+  devices: defineTable({
+    deviceId: v.string(),
+    name: v.string(),
+    serialNumber: v.string(),
+    macAddress: v.string(),
+    brand: v.string(),
+    status: v.optional(v.string()),
+    currentUserEmail: v.optional(v.string()),
+    currentUserName: v.optional(v.string()),
+    currentSessionStart: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_deviceId", ["deviceId"])
+    .index("by_name", ["name"]),
+
+  deviceLogs: defineTable({
+    logId: v.string(),
+    deviceId: v.string(),
+    deviceName: v.string(),
+    userEmail: v.string(),
+    userName: v.string(),
+    startTime: v.string(),
+    endTime: v.optional(v.string()),
+    durationMinutes: v.optional(v.number()),
+    date: v.string(),
+    createdAt: v.string(),
+  })
+    .index("by_logId", ["logId"])
+    .index("by_deviceId", ["deviceId"])
+    .index("by_date", ["date"])
+    .index("by_userEmail", ["userEmail"])
+    .index("by_deviceId_and_date", ["deviceId", "date"]),
   
   settings: defineTable({
     adminSettingsTitle: v.string(),
     homeDescription: v.optional(v.string()),
     allowTeamInventory: v.boolean(),
     allowPublicProjectAccess: v.boolean(),
+    enableDeviceTracking: v.optional(v.boolean()),
     theme: v.optional(v.string()),
   }).index("by_adminSettingsTitle", ["adminSettingsTitle"]),
 

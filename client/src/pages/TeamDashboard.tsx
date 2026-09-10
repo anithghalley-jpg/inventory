@@ -22,10 +22,11 @@ import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
 import ThemeColorPicker from '@/components/ThemeColorPicker';
 import LearningReportStudio from '@/components/LearningReportStudio';
+import DeviceSelectModal from '@/components/devices/DeviceSelectModal';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Clock, Image as ImageIcon, Edit3
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Clock, Image as ImageIcon, Edit3, Laptop
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -240,6 +241,8 @@ interface User {
     myPageLink?: string;
     profileImageUrl?: string;
     customTheme?: string;
+    activeDeviceId?: string;
+    activeDeviceName?: string;
 }
 
 interface UsageRecord {
@@ -313,6 +316,11 @@ export default function TeamDashboard() {
     // Laptop State
     const [laptopStatus, setLaptopStatus] = useState<'Online' | 'Offline'>(user?.laptopStatus || 'Offline');
     const [totalScreenTime, setTotalScreenTime] = useState(user?.totalTime || 0);
+
+    // Device Tracking queries & state
+    const registeredDevices = useQuery(api.devices.getAll) || [];
+    const deviceSettings = useQuery(api.devices.getSettings);
+    const [deviceModalOpen, setDeviceModalOpen] = useState(false);
 
     // Stripes query
     const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
@@ -715,6 +723,11 @@ export default function TeamDashboard() {
     };
 
     const handleLaptopToggle = async (checked: boolean) => {
+        if (checked && deviceSettings?.enableDeviceTracking) {
+            setDeviceModalOpen(true);
+            return;
+        }
+
         const newStatus = checked ? 'Online' : 'Offline';
         setLaptopStatus(newStatus);
         try {
@@ -729,10 +742,27 @@ export default function TeamDashboard() {
             } else {
                 toast.success('Lab Session Started');
             }
-
         } catch (e) {
             toast.error("Status update failed");
             setLaptopStatus(checked ? 'Offline' : 'Online');
+        }
+    };
+
+    const handleConfirmDeviceAndStart = async (selectedDevice: { deviceId: string; name: string }) => {
+        setLaptopStatus('Online');
+        try {
+            await toggleLaptopMut({
+                email: user?.email || '',
+                isTurningOn: true,
+                newTotal: totalScreenTime,
+                scriptUrl: SCRIPT_URL,
+                deviceId: selectedDevice.deviceId,
+                deviceName: selectedDevice.name,
+            });
+            toast.success(`Lab Session Started on ${selectedDevice.name}!`);
+        } catch (e) {
+            toast.error("Status update failed");
+            setLaptopStatus('Offline');
         }
     };
 
@@ -1694,7 +1724,15 @@ export default function TeamDashboard() {
                                                 </div>
                                                 <div>
                                                     <p className="font-bold text-slate-900">{u.name}</p>
-                                                    <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
+                                                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                                        <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Active Now</p>
+                                                        {u.activeDeviceName && (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded-md" title={`Device: ${u.activeDeviceName}`}>
+                                                                <Laptop className="h-3 w-3 text-indigo-600" />
+                                                                <span className="truncate max-w-[130px]">{u.activeDeviceName}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <button
@@ -2617,6 +2655,16 @@ export default function TeamDashboard() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* DEVICE SELECT AUTOCOMPLETE MODAL */}
+            <DeviceSelectModal
+                open={deviceModalOpen}
+                onOpenChange={setDeviceModalOpen}
+                devices={registeredDevices as any}
+                onConfirm={handleConfirmDeviceAndStart}
+                onCancel={() => setLaptopStatus('Offline')}
+                userName={user?.name}
+            />
         </div >
     );
 }
