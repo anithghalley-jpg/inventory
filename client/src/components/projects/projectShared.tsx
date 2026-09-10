@@ -456,6 +456,7 @@ export interface ProjectDetailRecord {
   }[];
   likeCount: number;
   viewerHasLiked: boolean;
+  viewerIsMember?: boolean;
   permissions: {
     isMember: boolean;
     canRenameProject: boolean;
@@ -519,6 +520,7 @@ export interface ProjectDetailRecord {
     | {
         itemType: "post";
         id: string;
+        order?: number;
         kind: TimelinePostKind;
         createdAt: string;
         updatedAt: string;

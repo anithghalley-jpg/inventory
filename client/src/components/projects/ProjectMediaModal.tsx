@@ -529,11 +529,10 @@ export default function ProjectMediaModal({
                   <button
                     type="button"
                     onClick={() => setDriveEmbedType("image")}
-                    className={`h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
-                      driveEmbedType === "image"
+                    className={`h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${driveEmbedType === "image"
                         ? "bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900"
                         : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                    }`}
+                      }`}
                   >
                     <ImageIcon className="h-3.5 w-3.5" />
                     <span>Image (Markdown)</span>
@@ -541,11 +540,10 @@ export default function ProjectMediaModal({
                   <button
                     type="button"
                     onClick={() => setDriveEmbedType("video")}
-                    className={`h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
-                      driveEmbedType === "video"
+                    className={`h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${driveEmbedType === "video"
                         ? "bg-rose-600 text-white border-rose-600"
                         : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                    }`}
+                      }`}
                   >
                     <Video className="h-3.5 w-3.5" />
                     <span>Video (iFrame Player)</span>

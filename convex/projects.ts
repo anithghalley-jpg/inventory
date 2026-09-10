@@ -421,25 +421,43 @@ async function buildProjectDetail(
     }),
   );
 
-  const postTimelineItems = posts.map((post) => ({
-    itemType: "post" as const,
-    id: post.entryId,
-    kind: post.kind,
-    createdAt: post.createdAt,
-    updatedAt: post.updatedAt,
-    authorEmail: post.authorEmail,
-    authorName: post.authorName,
-    authorRole: post.authorRole,
-    body: post.body,
-    images: post.images ?? [],
-    videos: post.videos ?? [],
-    links: post.links ?? [],
-    reactions: reactionsByEntry.get(post.entryId) ?? [],
-  }));
+  const postTimelineItems = posts
+    .slice()
+    .sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) {
+        return a.order - b.order;
+      }
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return a.createdAt.localeCompare(b.createdAt);
+    })
+    .map((post, idx) => ({
+      itemType: "post" as const,
+      id: post.entryId,
+      order: post.order ?? idx,
+      kind: post.kind,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      authorEmail: post.authorEmail,
+      authorName: post.authorName,
+      authorRole: post.authorRole,
+      body: post.body,
+      images: post.images ?? [],
+      videos: post.videos ?? [],
+      links: post.links ?? [],
+      reactions: reactionsByEntry.get(post.entryId) ?? [],
+    }));
 
-  const trailingTimeline = [...customTimelineItems, ...postTimelineItems].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt),
-  );
+  const trailingTimeline = [...customTimelineItems, ...postTimelineItems].sort((a, b) => {
+    if (a.itemType === "post" && b.itemType === "post") {
+      const orderA = (a as any).order;
+      const orderB = (b as any).order;
+      if (orderA !== undefined && orderB !== undefined) {
+        return orderA - orderB;
+      }
+    }
+    return a.createdAt.localeCompare(b.createdAt);
+  });
 
   return {
     projectId: project.projectId,
@@ -1449,6 +1467,14 @@ export const addTimelinePost = mutation({
       throw new Error("Only project members, team, or admin can attach media");
     }
 
+    const existingPosts = await ctx.db
+      .query("projectTimelineEntries")
+      .withIndex("by_projectId_and_createdAt", (q) => q.eq("projectId", args.projectId))
+      .take(MAX_TIMELINE_POSTS);
+
+    const maxOrder = existingPosts.reduce((max, p) => Math.max(max, p.order ?? -1), -1);
+    const newOrder = maxOrder >= 0 ? maxOrder + 1 : existingPosts.length;
+
     const now = new Date().toISOString();
     await ctx.db.insert("projectTimelineEntries", {
       entryId: crypto.randomUUID(),
@@ -1463,6 +1489,7 @@ export const addTimelinePost = mutation({
       links,
       createdAt: now,
       updatedAt: now,
+      order: newOrder,
     });
 
     await touchProject(ctx, args.projectId, now);
@@ -1562,6 +1589,51 @@ export const deleteTimelinePost = mutation({
   },
 });
 
+export const reorderTimelinePosts = mutation({
+  args: {
+    userEmail: v.string(),
+    projectId: v.string(),
+    entryIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await assertApprovedViewer(ctx, args.userEmail);
+    const project = await getProjectByProjectId(ctx, args.projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const members = await getProjectMembers(ctx, project.projectId);
+    const isMember = members.some((member) => member.userEmail.toLowerCase() === user.email.toLowerCase());
+    const isPrivileged = user.role === "ADMIN" || user.role === "TEAM";
+    if (!isMember && !isPrivileged) {
+      throw new Error("Only team members can rearrange project posts");
+    }
+
+    const posts = await ctx.db
+      .query("projectTimelineEntries")
+      .withIndex("by_projectId_and_createdAt", (q) => q.eq("projectId", args.projectId))
+      .take(MAX_TIMELINE_POSTS);
+
+    const postsMap = new Map<string, typeof posts[0]>();
+    posts.forEach((p) => postsMap.set(p.entryId, p));
+
+    const now = new Date().toISOString();
+    for (let index = 0; index < args.entryIds.length; index++) {
+      const entryId = args.entryIds[index];
+      const post = postsMap.get(entryId);
+      if (post) {
+        await ctx.db.patch(post._id, {
+          order: index,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await touchProject(ctx, args.projectId, now);
+    await logProjectHistory(ctx, args.projectId, "POSTS_REORDERED", user.email, user.name, "Rearranged timeline posts");
+    return { success: true };
+  },
+});
 
 export const toggleProjectLike = mutation({
   args: {

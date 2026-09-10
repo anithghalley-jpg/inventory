@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,8 @@ import {
   Folder,
   Search,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Tag,
   Clock,
   CheckSquare,
@@ -76,6 +78,7 @@ type TimelineFilterKind = "all" | "post" | "milestone" | "checkpoint" | "note" |
 
 interface UnifiedTimelineEntry {
   id: string;
+  order?: number;
   itemType: "post" | "checkpoint" | "history_milestone";
   createdAt: string;
   postKind?: string;
@@ -103,6 +106,18 @@ export default function ProjectReportGenerator({
   hideHeroBanner = false,
 }: ProjectReportGeneratorProps) {
   const reportData = useQuery(api.projects.getProjectReportData, { userEmail, projectId });
+  const reorderTimelinePostsMut = useMutation(api.projects.reorderTimelinePosts);
+  const [isReordering, setIsReordering] = useState(false);
+
+  const canManagePostOrder = Boolean(
+    isMember ||
+    projectDetail?.permissions?.isMember ||
+    projectDetail?.permissions?.canModerateTimeline ||
+    projectDetail?.viewerIsMember ||
+    reportData?.project?.permissions?.isMember ||
+    reportData?.project?.permissions?.canModerateTimeline
+  );
+
   const [activeMode, setActiveMode] = useState<"timeline" | "raw">("timeline");
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -161,6 +176,7 @@ export default function ProjectReportGenerator({
         const p = t as ProjectTimelinePostRecord;
         items.push({
           id: p.id,
+          order: p.order,
           itemType: "post",
           createdAt: p.createdAt,
           postKind: p.kind || "update",
@@ -198,14 +214,79 @@ export default function ProjectReportGenerator({
       });
     });
 
-    // Sort by timestamp
+    // Sort by custom order for posts, preserving journey / latest direction
     items.sort((a, b) => {
+      if (a.itemType === "post" && b.itemType === "post") {
+        const orderA = a.order;
+        const orderB = b.order;
+        if (orderA !== undefined && orderB !== undefined && orderA !== orderB) {
+          return sortDirection === "asc" ? orderA - orderB : orderB - orderA;
+        }
+      }
       const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       return sortDirection === "asc" ? diff : -diff;
     });
 
     return items;
   }, [reportData, projectDetail, sortDirection]);
+
+  // Extract all post entries in their current display order
+  const allPostEntries = useMemo(() => {
+    return unifiedTimeline.filter((item) => item.itemType === "post");
+  }, [unifiedTimeline]);
+
+  // Handlers to rearrange / move posts up or down
+  const handleMovePostUp = async (postId: string) => {
+    const postIndex = allPostEntries.findIndex((p) => p.id === postId);
+    if (postIndex <= 0 || isReordering) return;
+
+    const reordered = [...allPostEntries];
+    const temp = reordered[postIndex];
+    reordered[postIndex] = reordered[postIndex - 1];
+    reordered[postIndex - 1] = temp;
+
+    const entryIds = reordered.map((p) => p.id);
+    setIsReordering(true);
+    try {
+      await reorderTimelinePostsMut({
+        userEmail,
+        projectId,
+        entryIds,
+      });
+      toast.success("Post moved up & order saved!");
+    } catch (err: any) {
+      console.error("Failed to reorder posts:", err);
+      toast.error(err?.message || "Failed to update post order");
+    } finally {
+      setIsReordering(false);
+    }
+  };
+
+  const handleMovePostDown = async (postId: string) => {
+    const postIndex = allPostEntries.findIndex((p) => p.id === postId);
+    if (postIndex < 0 || postIndex >= allPostEntries.length - 1 || isReordering) return;
+
+    const reordered = [...allPostEntries];
+    const temp = reordered[postIndex];
+    reordered[postIndex] = reordered[postIndex + 1];
+    reordered[postIndex + 1] = temp;
+
+    const entryIds = reordered.map((p) => p.id);
+    setIsReordering(true);
+    try {
+      await reorderTimelinePostsMut({
+        userEmail,
+        projectId,
+        entryIds,
+      });
+      toast.success("Post moved down & order saved!");
+    } catch (err: any) {
+      console.error("Failed to reorder posts:", err);
+      toast.error(err?.message || "Failed to update post order");
+    } finally {
+      setIsReordering(false);
+    }
+  };
 
   // Filtered timeline stream based on search and kind filter
   const filteredTimeline = useMemo(() => {
@@ -366,14 +447,12 @@ export default function ProjectReportGenerator({
       md += `\n`;
     }
 
-    // 3. Chronological Documentation Stream
-    md += `## Chronological Documentation Stream\n\n`;
+    // 3. Documentation Timeline Stream (preserves custom order)
+    md += `## Documentation Timeline Stream\n\n`;
 
-    const chronologicalItems = [...unifiedTimeline].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+    const documentationItems = [...unifiedTimeline];
 
-    chronologicalItems.forEach((entry, idx) => {
+    documentationItems.forEach((entry, idx) => {
       const dayNum = getDayNumber(entry.createdAt);
       const dateStr = formatDateTime(entry.createdAt);
 
@@ -733,6 +812,39 @@ export default function ProjectReportGenerator({
                           </div>
 
                           <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                            {/* Reorder controls for Team Members & Admins */}
+                            {canManagePostOrder && allPostEntries.length > 1 && (
+                              <div className="flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl px-1.5 py-0.5 shadow-2xs">
+                                <span
+                                  className="text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-300 mr-1"
+                                  title={`Position #${allPostEntries.findIndex((p) => p.id === entry.id) + 1} of ${allPostEntries.length}`}
+                                >
+                                  #{allPostEntries.findIndex((p) => p.id === entry.id) + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMovePostUp(entry.id)}
+                                  disabled={allPostEntries.findIndex((p) => p.id === entry.id) <= 0 || isReordering}
+                                  className="h-6 w-6 rounded-lg flex items-center justify-center text-indigo-700 hover:text-white hover:bg-indigo-600 dark:text-indigo-300 dark:hover:bg-indigo-600 disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-indigo-700 cursor-pointer transition-all active:scale-90"
+                                  title="Move post up (earlier in report)"
+                                >
+                                  <ArrowUp className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMovePostDown(entry.id)}
+                                  disabled={
+                                    allPostEntries.findIndex((p) => p.id === entry.id) >= allPostEntries.length - 1 ||
+                                    isReordering
+                                  }
+                                  className="h-6 w-6 rounded-lg flex items-center justify-center text-indigo-700 hover:text-white hover:bg-indigo-600 dark:text-indigo-300 dark:hover:bg-indigo-600 disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-indigo-700 cursor-pointer transition-all active:scale-90"
+                                  title="Move post down (later in report)"
+                                >
+                                  <ArrowDown className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )}
+
                             <span className="text-[11px] font-mono font-bold bg-slate-900 text-white px-2.5 py-1 rounded-xl shadow-xs">
                               Day {dayNum}
                             </span>

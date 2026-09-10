@@ -288,6 +288,7 @@ export default defineSchema({
     })),
     createdAt: v.string(),
     updatedAt: v.string(),
+    order: v.optional(v.number()),
   })
     .index("by_entryId", ["entryId"])
     .index("by_projectId_and_createdAt", ["projectId", "createdAt"]),
