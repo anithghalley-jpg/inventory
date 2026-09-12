@@ -69,12 +69,21 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
   const [participantSubTab, setParticipantSubTab] = useState<"all" | "confirmed" | "standby" | "attended" | "absent" | "approved">("all");
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
 
-  // Manual Add Participant Modal State
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false);
   const [manualAddUserEmail, setManualAddUserEmail] = useState("");
   const [manualAddUserName, setManualAddUserName] = useState("");
   const [manualAddAttended, setManualAddAttended] = useState(true);
   const [isSubmittingManualAdd, setIsSubmittingManualAdd] = useState(false);
+
+  // Sync viewPlan with live Convex myPlans updates reactively
+  React.useEffect(() => {
+    if (viewPlan && myPlans) {
+      const livePlan = myPlans.find((p: any) => p._id === viewPlan._id);
+      if (livePlan) {
+        setViewPlan(livePlan);
+      }
+    }
+  }, [myPlans]);
 
 
   const resetForm = () => {
@@ -1075,12 +1084,12 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                         Submission Approved ⭐
                                       </span>
                                     )}
-                                    {u.attended && u.submissionStatus === "REJECTED" && (
+                                    {!isApprovedStudent && u.attended && u.submissionStatus === "REJECTED" && (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
                                         Needs Revision ❌
                                       </span>
                                     )}
-                                    {u.attended && u.submissionStatus === "PENDING" && (
+                                    {!isApprovedStudent && u.attended && u.submissionStatus === "PENDING" && (
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
                                         Pending Review ⏳
                                       </span>
@@ -1115,7 +1124,7 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                             <ExternalLink className="w-3 h-3" />
                                           </a>
                                         </div>
-                                        {u.feedbackNote && (
+                                        {!isApprovedStudent && u.feedbackNote && (
                                           <p className="text-[11px] text-rose-600 italic mt-1 font-medium pl-1">
                                             Feedback note: "{u.feedbackNote}"
                                           </p>
@@ -1160,7 +1169,7 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                                         ...ed,
                                                         registeredUsers: (ed.registeredUsers || []).map((usr: any) =>
                                                           usr.email.toLowerCase() === u.email.toLowerCase()
-                                                            ? { ...usr, submissionStatus: "APPROVED" }
+                                                            ? { ...usr, submissionStatus: "APPROVED", feedbackNote: "" }
                                                             : usr
                                                         ),
                                                       }
@@ -1170,9 +1179,11 @@ export default function MyPlansTab({ teamMembers }: MyPlansTabProps) {
                                             } else {
                                               setViewPlan((p: any) => ({
                                                 ...p,
-                                                registeredUsers: p.registeredUsers.map((usr: any) =>
-                                                  usr.email.toLowerCase() === u.email.toLowerCase() ? { ...usr, submissionStatus: "APPROVED" } : usr
-                                                )
+                                                registeredUsers: (p.registeredUsers || []).map((usr: any) =>
+                                                  usr.email.toLowerCase() === u.email.toLowerCase()
+                                                    ? { ...usr, submissionStatus: "APPROVED", feedbackNote: "" }
+                                                    : usr
+                                                ),
                                               }));
                                             }
                                           } catch (e: any) {

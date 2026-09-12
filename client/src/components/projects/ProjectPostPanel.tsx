@@ -22,6 +22,7 @@ import {
   Italic,
   Code,
   List,
+  ListOrdered,
   CheckSquare,
   Heading2,
   Quote,
@@ -805,6 +806,16 @@ export default function ProjectPostPanel({
                     onClick={() => applyFormat("- ", "", "list item")}
                   >
                     <List className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 rounded-lg"
+                    title="Numbered List (1. item)"
+                    onClick={() => applyFormat("1. ", "", "numbered item")}
+                  >
+                    <ListOrdered className="h-4 w-4" />
                   </Button>
                   <Button
                     type="button"

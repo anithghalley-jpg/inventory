@@ -477,64 +477,197 @@
 }
 
 /* Report Preview */
-/* Timeline Markdown Styles */
-.timeline-markdown {
+/* Timeline & Report Markdown Styles */
+.timeline-markdown,
+.report-markdown,
+.markdown-preview {
   word-break: break-word;
   line-height: 1.65;
 }
 
 .timeline-markdown h1,
-.timeline-markdown h2,
-.timeline-markdown h3,
-.timeline-markdown h4 {
-  font-weight: 700;
+.report-markdown h1,
+.markdown-preview h1 {
+  font-weight: 800;
   color: #0f172a;
-  margin-top: 0.75rem;
-  margin-bottom: 0.35rem;
-  line-height: 1.3;
-}
-
-.timeline-markdown h1 { font-size: 1.2rem; }
-.timeline-markdown h2 { font-size: 1.05rem; }
-.timeline-markdown h3 { font-size: 0.95rem; }
-.timeline-markdown h4 { font-size: 0.875rem; }
-
-.timeline-markdown p {
-  margin-top: 0.25rem;
+  margin-top: 1.25rem;
   margin-bottom: 0.5rem;
+  line-height: 1.25;
+  font-size: 1.35rem;
 }
 
-.timeline-markdown p:last-child {
+.timeline-markdown h2,
+.report-markdown h2,
+.markdown-preview h2 {
+  font-weight: 750;
+  color: #0f172a;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.3;
+  font-size: 1.15rem;
+}
+
+.timeline-markdown h3,
+.report-markdown h3,
+.markdown-preview h3 {
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 0.85rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.35;
+  font-size: 1.025rem;
+}
+
+.timeline-markdown h4,
+.report-markdown h4,
+.markdown-preview h4 {
+  font-weight: 700;
+  color: #334155;
+  margin-top: 0.75rem;
+  margin-bottom: 0.3rem;
+  font-size: 0.925rem;
+}
+
+.timeline-markdown p,
+.report-markdown p,
+.markdown-preview p {
+  margin-top: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.timeline-markdown p:last-child,
+.report-markdown p:last-child,
+.markdown-preview p:last-child {
   margin-bottom: 0;
 }
 
-.timeline-markdown ul {
-  list-style-type: disc;
-  padding-left: 1.25rem;
-  margin: 0.4rem 0;
+/* ─── Unordered Lists (Bullets) ─── */
+.timeline-markdown ul,
+.report-markdown ul,
+.markdown-preview ul {
+  list-style-type: disc !important;
+  list-style-position: outside !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.4rem !important;
+  margin-bottom: 0.6rem !important;
 }
 
-.timeline-markdown ol {
-  list-style-type: decimal;
-  padding-left: 1.25rem;
-  margin: 0.4rem 0;
+.timeline-markdown ul ul,
+.report-markdown ul ul,
+.markdown-preview ul ul {
+  list-style-type: circle !important;
+  padding-left: 1.25rem !important;
+  margin-top: 0.2rem !important;
+  margin-bottom: 0.2rem !important;
 }
 
-.timeline-markdown li {
-  margin: 0.15rem 0;
+.timeline-markdown ul ul ul,
+.report-markdown ul ul ul,
+.markdown-preview ul ul ul {
+  list-style-type: square !important;
 }
 
-.timeline-markdown blockquote {
-  border-left: 3.5px solid #6366f1;
+/* ─── Ordered Lists (Numbered) ─── */
+.timeline-markdown ol,
+.report-markdown ol,
+.markdown-preview ol {
+  list-style-type: decimal !important;
+  list-style-position: outside !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.4rem !important;
+  margin-bottom: 0.6rem !important;
+}
+
+.timeline-markdown ol ol,
+.report-markdown ol ol,
+.markdown-preview ol ol {
+  list-style-type: lower-alpha !important;
+  padding-left: 1.25rem !important;
+  margin-top: 0.2rem !important;
+  margin-bottom: 0.2rem !important;
+}
+
+.timeline-markdown ol ol ol,
+.report-markdown ol ol ol,
+.markdown-preview ol ol ol {
+  list-style-type: lower-roman !important;
+}
+
+/* ─── Mixed Nested Lists ─── */
+.timeline-markdown ol ul,
+.report-markdown ol ul,
+.markdown-preview ol ul {
+  list-style-type: disc !important;
+  padding-left: 1.25rem !important;
+  margin-top: 0.2rem !important;
+  margin-bottom: 0.2rem !important;
+}
+
+.timeline-markdown ul ol,
+.report-markdown ul ol,
+.markdown-preview ul ol {
+  list-style-type: decimal !important;
+  padding-left: 1.25rem !important;
+  margin-top: 0.2rem !important;
+  margin-bottom: 0.2rem !important;
+}
+
+/* ─── List Items ─── */
+.timeline-markdown li,
+.report-markdown li,
+.markdown-preview li {
+  display: list-item !important;
+  margin: 0.25rem 0 !important;
+  padding-left: 0.25rem;
+  line-height: 1.6;
+}
+
+/* ─── Checklist / Task List Items ─── */
+.timeline-markdown ul:has(> li > input[type="checkbox"]),
+.report-markdown ul:has(> li > input[type="checkbox"]),
+.markdown-preview ul:has(> li > input[type="checkbox"]),
+.timeline-markdown li:has(> input[type="checkbox"]),
+.report-markdown li:has(> input[type="checkbox"]),
+.markdown-preview li:has(> input[type="checkbox"]) {
+  list-style-type: none !important;
+}
+
+.timeline-markdown li:has(> input[type="checkbox"]),
+.report-markdown li:has(> input[type="checkbox"]),
+.markdown-preview li:has(> input[type="checkbox"]) {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 0.5rem;
+  padding-left: 0 !important;
+}
+
+.timeline-markdown input[type="checkbox"],
+.report-markdown input[type="checkbox"],
+.markdown-preview input[type="checkbox"] {
+  margin-top: 0.3rem !important;
+  height: 1rem !important;
+  width: 1rem !important;
+  accent-color: #10b981 !important;
+  border-radius: 0.25rem !important;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.timeline-markdown blockquote,
+.report-markdown blockquote,
+.markdown-preview blockquote {
+  border-left: 3.5px solid #10b981;
   background: #f8fafc;
-  padding: 0.4rem 0.85rem;
-  margin: 0.5rem 0;
+  padding: 0.45rem 0.9rem;
+  margin: 0.6rem 0;
   border-radius: 0 0.5rem 0.5rem 0;
   color: #475569;
   font-style: italic;
 }
 
-.timeline-markdown code:not(pre code) {
+.timeline-markdown code:not(pre code),
+.report-markdown code:not(pre code),
+.markdown-preview code:not(pre code) {
   background-color: #f1f5f9;
   color: #db2777;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -544,7 +677,9 @@
   border: 1px solid #e2e8f0;
 }
 
-.timeline-markdown pre {
+.timeline-markdown pre,
+.report-markdown pre,
+.markdown-preview pre {
   background-color: #0f172a;
   color: #f8fafc;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -552,11 +687,13 @@
   padding: 0.75rem 1rem;
   border-radius: 0.75rem;
   overflow-x: auto;
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
   border: 1px solid #1e293b;
 }
 
-.timeline-markdown pre code {
+.timeline-markdown pre code,
+.report-markdown pre code,
+.markdown-preview pre code {
   background: transparent;
   color: inherit;
   padding: 0;
@@ -564,22 +701,28 @@
   font-size: inherit;
 }
 
-.timeline-markdown a {
-  color: #2563eb;
+.timeline-markdown a,
+.report-markdown a,
+.markdown-preview a {
+  color: #059669;
   text-decoration: underline;
   text-underline-offset: 2px;
   font-weight: 500;
   transition: color 0.15s ease;
 }
 
-.timeline-markdown a:hover {
-  color: #1d4ed8;
+.timeline-markdown a:hover,
+.report-markdown a:hover,
+.markdown-preview a:hover {
+  color: #047857;
 }
 
-.timeline-markdown table {
+.timeline-markdown table,
+.report-markdown table,
+.markdown-preview table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.5rem 0;
+  margin: 0.6rem 0;
   font-size: 0.825rem;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -587,22 +730,30 @@
 }
 
 .timeline-markdown th,
-.timeline-markdown td {
+.timeline-markdown td,
+.report-markdown th,
+.report-markdown td,
+.markdown-preview th,
+.markdown-preview td {
   border: 1px solid #e2e8f0;
-  padding: 0.35rem 0.65rem;
+  padding: 0.4rem 0.75rem;
 }
 
-.timeline-markdown th {
+.timeline-markdown th,
+.report-markdown th,
+.markdown-preview th {
   background-color: #f8fafc;
   font-weight: 700;
   color: #334155;
   text-align: left;
 }
 
-.timeline-markdown hr {
+.timeline-markdown hr,
+.report-markdown hr,
+.markdown-preview hr {
   border: 0;
   border-top: 1px solid #e2e8f0;
-  margin: 0.75rem 0;
+  margin: 0.85rem 0;
 }
 
 .timeline-markdown img,

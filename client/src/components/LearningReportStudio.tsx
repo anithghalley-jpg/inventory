@@ -42,6 +42,7 @@ import {
   Heading3,
   Code,
   List,
+  ListOrdered,
   CheckSquare,
   Quote,
   Table as TableIcon,
@@ -436,6 +437,56 @@ export default function LearningReportStudio({
     if (updated) handleContentChange(updated);
   };
 
+  const applyListFormat = (type: "ordered" | "unordered" | "checklist") => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const val = textarea.value;
+    const selected = val.substring(start, end);
+
+    // Markdown lists require a preceding newline if we aren't at the start of a line
+    const needsPrecedingNewline = start > 0 && val[start - 1] !== "\n";
+    const prefix = needsPrecedingNewline ? "\n" : "";
+
+    let formatted = "";
+    if (selected.trim().length > 0) {
+      const lines = selected.split("\n");
+      if (type === "ordered") {
+        formatted = lines
+          .map((line, idx) => `${idx + 1}. ${line.replace(/^(\d+\.\s*|[-*+]\s*|[-*+]\s*\[[ xX]\]\s*)/, "")}`)
+          .join("\n");
+      } else if (type === "checklist") {
+        formatted = lines
+          .map((line) => `- [ ] ${line.replace(/^(\d+\.\s*|[-*+]\s*|[-*+]\s*\[[ xX]\]\s*)/, "")}`)
+          .join("\n");
+      } else {
+        formatted = lines
+          .map((line) => `- ${line.replace(/^(\d+\.\s*|[-*+]\s*|[-*+]\s*\[[ xX]\]\s*)/, "")}`)
+          .join("\n");
+      }
+    } else {
+      if (type === "ordered") {
+        formatted = "1. First step\n2. Second step\n3. Third step";
+      } else if (type === "checklist") {
+        formatted = "- [ ] First task\n- [ ] Second task";
+      } else {
+        formatted = "- Key deliverable\n- Technical skill\n- Observation";
+      }
+    }
+
+    const replacement = `${prefix}${formatted}\n`;
+    const nextValue = val.substring(0, start) + replacement + val.substring(end);
+    handleContentChange(nextValue);
+
+    setTimeout(() => {
+      textarea.focus();
+      const selectionStartPos = start + prefix.length;
+      const selectionEndPos = start + replacement.length;
+      textarea.setSelectionRange(selectionStartPos, selectionEndPos);
+    }, 0);
+  };
+
   const handleCopyFileMarkdown = (file: ProjectDriveMediaFile) => {
     const isVideo = isVideoMedia(file) || file.mimeType?.startsWith("video/") || /\.(mp4|webm|mov|mkv)$/i.test(file.fileName);
     const snippet = isVideo ? buildDriveMarkdownVideo(file.fileId) : (file.markdownSnippet || getDriveMediaEmbedCode(file));
@@ -478,10 +529,13 @@ export default function LearningReportStudio({
   const renderedHtml = useMemo(() => {
     if (!markdownContent) return "";
     try {
-      const parsed = marked.parse(markdownContent) as string;
+      const parsed = marked.parse(markdownContent, {
+        gfm: true,
+        breaks: true,
+      }) as string;
       return DOMPurify.sanitize(parsed, {
-        ADD_TAGS: ["img", "iframe", "video", "source", "table", "thead", "tbody", "tr", "th", "td"],
-        ADD_ATTR: ["target", "rel", "referrerpolicy", "src", "alt", "title", "controls", "class", "style", "width", "height"],
+        ADD_TAGS: ["img", "iframe", "video", "source", "table", "thead", "tbody", "tr", "th", "td", "input", "ul", "ol", "li"],
+        ADD_ATTR: ["target", "rel", "referrerpolicy", "src", "alt", "title", "controls", "class", "style", "width", "height", "type", "checked", "disabled"],
       });
     } catch (e) {
       return markdownContent;
@@ -703,7 +757,7 @@ export default function LearningReportStudio({
               size="sm"
               className="h-7 w-7 p-0 text-slate-600 hover:text-slate-900 rounded-lg"
               title="Bullet List (- item)"
-              onClick={() => applyFormat("- ", "", "List item")}
+              onClick={() => applyListFormat("unordered")}
             >
               <List className="h-3.5 w-3.5" />
             </Button>
@@ -712,8 +766,18 @@ export default function LearningReportStudio({
               variant="ghost"
               size="sm"
               className="h-7 w-7 p-0 text-slate-600 hover:text-slate-900 rounded-lg"
+              title="Numbered List (1. item)"
+              onClick={() => applyListFormat("ordered")}
+            >
+              <ListOrdered className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-slate-600 hover:text-slate-900 rounded-lg"
               title="Checklist (- [ ] task)"
-              onClick={() => applyFormat("- [ ] ", "", "Deliverable complete")}
+              onClick={() => applyListFormat("checklist")}
             >
               <CheckSquare className="h-3.5 w-3.5" />
             </Button>
@@ -812,7 +876,7 @@ export default function LearningReportStudio({
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 rounded-2xl border border-slate-200 bg-white shadow-xs">
                   <div
-                    className="prose prose-sm max-w-none text-slate-800 leading-relaxed space-y-3 prose-headings:font-bold prose-headings:text-slate-900 prose-a:text-emerald-600 prose-img:rounded-2xl prose-img:border prose-img:border-slate-200 prose-img:shadow-sm prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:rounded-2xl"
+                    className="report-markdown timeline-markdown text-slate-800 leading-relaxed space-y-3"
                     dangerouslySetInnerHTML={{ __html: renderedHtml }}
                   />
                 </div>

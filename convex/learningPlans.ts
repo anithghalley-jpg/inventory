@@ -622,17 +622,22 @@ export const submitLearningProof = mutation({
     let updatedPastEditions = pastEditions;
     let foundAttended = false;
 
+    const updateParticipantSubmission = (u: any) => {
+      foundAttended = true;
+      return {
+        ...u,
+        submissionUrl: args.submissionUrl.trim(),
+        submissionStatus: "PENDING" as const,
+        feedbackNote: "", // Reset previous revision notes upon resubmission
+        submittedAt: Date.now(),
+      };
+    };
+
     if (targetEditionNum !== undefined) {
       if (targetEditionNum === currentEditionNum) {
         updatedCurrentUsers = currentUsers.map((u) => {
           if (u.email.toLowerCase() === emailLower && u.attended) {
-            foundAttended = true;
-            return {
-              ...u,
-              submissionUrl: args.submissionUrl.trim(),
-              submissionStatus: "PENDING" as const,
-              submittedAt: Date.now(),
-            };
+            return updateParticipantSubmission(u);
           }
           return u;
         });
@@ -643,13 +648,7 @@ export const submitLearningProof = mutation({
               ...ed,
               registeredUsers: (ed.registeredUsers || []).map((u: any) => {
                 if (u.email.toLowerCase() === emailLower && u.attended) {
-                  foundAttended = true;
-                  return {
-                    ...u,
-                    submissionUrl: args.submissionUrl.trim(),
-                    submissionStatus: "PENDING" as const,
-                    submittedAt: Date.now(),
-                  };
+                  return updateParticipantSubmission(u);
                 }
                 return u;
               }),
@@ -658,19 +657,15 @@ export const submitLearningProof = mutation({
           return ed;
         });
       }
-    } else {
-      // If targetEditionNum not provided: first check current edition if user attended, else find latest attended past edition
+    }
+
+    if (!foundAttended) {
+      // Fallback: check current edition first if user attended, else find latest attended past edition
       const userInCur = currentUsers.find((u) => u.email.toLowerCase() === emailLower && u.attended);
       if (userInCur) {
         updatedCurrentUsers = currentUsers.map((u) => {
           if (u.email.toLowerCase() === emailLower && u.attended) {
-            foundAttended = true;
-            return {
-              ...u,
-              submissionUrl: args.submissionUrl.trim(),
-              submissionStatus: "PENDING" as const,
-              submittedAt: Date.now(),
-            };
+            return updateParticipantSubmission(u);
           }
           return u;
         });
@@ -692,13 +687,7 @@ export const submitLearningProof = mutation({
                 ...ed,
                 registeredUsers: (ed.registeredUsers || []).map((u: any) => {
                   if (u.email.toLowerCase() === emailLower && u.attended) {
-                    foundAttended = true;
-                    return {
-                      ...u,
-                      submissionUrl: args.submissionUrl.trim(),
-                      submissionStatus: "PENDING" as const,
-                      submittedAt: Date.now(),
-                    };
+                    return updateParticipantSubmission(u);
                   }
                   return u;
                 }),
@@ -745,16 +734,32 @@ export const reviewLearningSubmission = mutation({
 
     let updatedCurrentUsers = currentUsers;
     let updatedPastEditions = pastEditions;
+    let matched = false;
+
+    const updateUserRecord = (u: any) => {
+      matched = true;
+      if (args.status === "APPROVED") {
+        return {
+          ...u,
+          submissionStatus: "APPROVED" as const,
+          feedbackNote: args.feedbackNote || "", // clear previous revision notes on approval
+          attended: true,
+          submittedAt: u.submittedAt || Date.now(),
+        };
+      } else {
+        return {
+          ...u,
+          submissionStatus: "REJECTED" as const,
+          feedbackNote: args.feedbackNote || "Please review feedback and update project link.",
+        };
+      }
+    };
 
     if (targetEditionNum !== undefined) {
       if (targetEditionNum === currentEditionNum) {
         updatedCurrentUsers = currentUsers.map((u) => {
           if (u.email.toLowerCase() === emailLower) {
-            return {
-              ...u,
-              submissionStatus: args.status,
-              feedbackNote: args.feedbackNote || "",
-            };
+            return updateUserRecord(u);
           }
           return u;
         });
@@ -765,11 +770,7 @@ export const reviewLearningSubmission = mutation({
               ...ed,
               registeredUsers: (ed.registeredUsers || []).map((u: any) => {
                 if (u.email.toLowerCase() === emailLower) {
-                  return {
-                    ...u,
-                    submissionStatus: args.status,
-                    feedbackNote: args.feedbackNote || "",
-                  };
+                  return updateUserRecord(u);
                 }
                 return u;
               }),
@@ -778,51 +779,36 @@ export const reviewLearningSubmission = mutation({
           return ed;
         });
       }
-    } else {
-      // If targetEditionNum not provided: update current edition if user has submissionUrl, else update specific past edition
-      const hasInCurrent = currentUsers.some((u) => u.email.toLowerCase() === emailLower && Boolean(u.submissionUrl));
-      if (hasInCurrent) {
+    }
+
+    // Fallback if not matched in specific edition: search across current users and past editions
+    if (!matched) {
+      const existsInCurrent = currentUsers.some((u) => u.email.toLowerCase() === emailLower);
+      if (existsInCurrent) {
         updatedCurrentUsers = currentUsers.map((u) => {
           if (u.email.toLowerCase() === emailLower) {
-            return {
-              ...u,
-              submissionStatus: args.status,
-              feedbackNote: args.feedbackNote || "",
-            };
+            return updateUserRecord(u);
           }
           return u;
         });
-      } else {
-        let targetPastEdNum: number | null = null;
-        for (let i = pastEditions.length - 1; i >= 0; i--) {
-          const uInPast = (pastEditions[i].registeredUsers || []).find(
-            (u: any) => u.email.toLowerCase() === emailLower && Boolean(u.submissionUrl)
-          );
-          if (uInPast) {
-            targetPastEdNum = pastEditions[i].editionNumber;
-            break;
+      }
+
+      if (!matched) {
+        updatedPastEditions = pastEditions.map((ed: any) => {
+          const hasUser = (ed.registeredUsers || []).some((u: any) => u.email.toLowerCase() === emailLower);
+          if (hasUser) {
+            return {
+              ...ed,
+              registeredUsers: (ed.registeredUsers || []).map((u: any) => {
+                if (u.email.toLowerCase() === emailLower) {
+                  return updateUserRecord(u);
+                }
+                return u;
+              }),
+            };
           }
-        }
-        if (targetPastEdNum !== null) {
-          updatedPastEditions = pastEditions.map((ed: any) => {
-            if (ed.editionNumber === targetPastEdNum) {
-              return {
-                ...ed,
-                registeredUsers: (ed.registeredUsers || []).map((u: any) => {
-                  if (u.email.toLowerCase() === emailLower) {
-                    return {
-                      ...u,
-                      submissionStatus: args.status,
-                      feedbackNote: args.feedbackNote || "",
-                    };
-                  }
-                  return u;
-                }),
-              };
-            }
-            return ed;
-          });
-        }
+          return ed;
+        });
       }
     }
 
@@ -834,7 +820,7 @@ export const reviewLearningSubmission = mutation({
 
     return {
       success: true,
-      message: args.status === "APPROVED" ? "Completion approved! 👍" : "Follow-up requested from student ❌",
+      message: args.status === "APPROVED" ? "Submission approved & marked completed! ⭐" : "Follow-up requested from student ❌",
     };
   },
 });
