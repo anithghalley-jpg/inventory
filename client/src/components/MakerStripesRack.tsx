@@ -113,50 +113,87 @@ export default function MakerStripesRack({
     <>
       <TooltipProvider delayDuration={100}>
         <div
-          className={`inline-flex items-center gap-[3px] p-1 rounded-lg bg-slate-950/90 border border-slate-700/80 shadow-sm ${
+          className={`relative inline-flex items-center p-1 rounded-xl bg-slate-950/95 border border-slate-700/80 shadow-[0_2px_8px_rgba(0,0,0,0.3)] ${
             editable ? "cursor-pointer hover:border-emerald-500 transition-all hover:scale-[1.02]" : ""
           } ${className}`}
           onClick={editable ? handleOpenModal : undefined}
           title={editable ? "Click to edit letters or emojis" : undefined}
         >
-          {stripes.map((stripe, idx) => {
-            const style = getStripeStyle(stripe, idx);
-            const displayChar = stripe.char || stripe.title.charAt(0).toUpperCase();
+          {/* Continuous Braided Thread Filament Channel */}
+          <div className="absolute inset-x-2.5 top-1/2 -translate-y-1/2 h-[3px] bg-gradient-to-r from-emerald-500 via-amber-400 to-emerald-500 opacity-70 rounded-full shadow-[0_0_4px_rgba(16,185,129,0.5)] pointer-events-none" />
+          <div className="absolute inset-x-2.5 top-1/2 -translate-y-1/2 h-[1px] bg-white/70 pointer-events-none" />
 
-            return (
-              <Tooltip key={`${stripe.planId}_${idx}`}>
-                <TooltipTrigger asChild>
-                  <div
-                    className={`relative flex items-center justify-center font-sans font-black select-none ${style.border} ${style.gradient} ${style.text} ${sizeClasses} transition-all hover:-translate-y-0.5 hover:z-20 hover:shadow-[0_0_8px_rgba(255,255,255,0.45)]`}
-                  >
-                    {/* Subtle top bevel */}
-                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-white/40 pointer-events-none rounded-t-[2px]"></div>
-                    {/* Sharp centered character */}
-                    <span className="relative z-10 leading-none tracking-normal antialiased">
-                      {displayChar}
-                    </span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="bg-slate-900 text-white border-slate-700 p-2.5 max-w-xs shadow-xl rounded-xl">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
-                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                      <span>Approved Session</span>
+          {/* Left Terminal Anchor Rivet */}
+          <div className="relative z-10 mr-1.5 flex items-center justify-center pointer-events-none select-none">
+            <span className="w-2 h-2 rounded-full bg-gradient-to-b from-slate-200 to-slate-400 border border-slate-600 shadow-[0_1px_2px_rgba(0,0,0,0.5)] flex items-center justify-center">
+              <span className="w-0.5 h-0.5 rounded-full bg-slate-900" />
+            </span>
+          </div>
+
+          {/* Threaded Session Chiclet Nodes */}
+          <div className="relative z-10 inline-flex items-center gap-[4px]">
+            {stripes.map((stripe, idx) => {
+              const style = getStripeStyle(stripe, idx);
+              const displayChar = stripe.char || stripe.title.charAt(0).toUpperCase();
+
+              return (
+                <React.Fragment key={`${stripe.planId}_${idx}`}>
+                  {/* Intermediate Braided Thread Link Segment */}
+                  {idx > 0 && (
+                    <div className="w-2 h-[2.5px] bg-gradient-to-r from-emerald-400 via-yellow-300 to-amber-400 rounded-full shadow-[0_0_5px_rgba(52,211,153,0.8)] pointer-events-none -mx-[1px] relative flex items-center justify-center">
+                      <span className="w-full h-[0.75px] bg-white/90" />
                     </div>
-                    <p className="font-bold text-xs text-white leading-tight">{stripe.title}</p>
-                    {stripe.edition && (
-                      <p className="text-[10px] text-slate-400">Edition {stripe.edition}</p>
-                    )}
-                    {editable && (
-                      <p className="text-[9px] text-emerald-300 font-medium pt-1 border-t border-slate-800 flex items-center gap-1">
-                        <Edit3 className="w-2.5 h-2.5" /> Click to customize
-                      </p>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
+                  )}
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`relative flex items-center justify-center font-sans font-black select-none ${style.border} ${style.gradient} ${style.text} ${sizeClasses} shadow-md transition-all hover:-translate-y-0.5 hover:z-20 hover:shadow-[0_0_10px_rgba(255,255,255,0.5)]`}
+                      >
+                        {/* Subtle top bevel */}
+                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-white/40 pointer-events-none rounded-t-[2px]"></div>
+
+                        {/* Thread Eyelet Left */}
+                        <span className="absolute -left-[1.5px] top-1/2 -translate-y-1/2 w-[2px] h-[3.5px] bg-slate-200 border border-slate-700 rounded-r-[1px] pointer-events-none" />
+
+                        {/* Sharp centered character */}
+                        <span className="relative z-10 leading-none tracking-normal antialiased">
+                          {displayChar}
+                        </span>
+
+                        {/* Thread Eyelet Right */}
+                        <span className="absolute -right-[1.5px] top-1/2 -translate-y-1/2 w-[2px] h-[3.5px] bg-slate-200 border border-slate-700 rounded-l-[1px] pointer-events-none" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="bg-slate-900 text-white border-slate-700 p-2.5 max-w-xs shadow-xl rounded-xl z-50">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          <span>Session Chain Node #{idx + 1} of {stripes.length}</span>
+                        </div>
+                        <p className="font-bold text-xs text-white leading-tight">{stripe.title}</p>
+                        {stripe.edition && (
+                          <p className="text-[10px] text-slate-400">Edition {stripe.edition}</p>
+                        )}
+                        {editable && (
+                          <p className="text-[9px] text-emerald-300 font-medium pt-1 border-t border-slate-800 flex items-center gap-1">
+                            <Edit3 className="w-2.5 h-2.5" /> Click to customize
+                          </p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* Right Terminal Anchor Rivet */}
+          <div className="relative z-10 ml-1.5 flex items-center justify-center pointer-events-none select-none">
+            <span className="w-2 h-2 rounded-full bg-gradient-to-b from-slate-200 to-slate-400 border border-slate-600 shadow-[0_1px_2px_rgba(0,0,0,0.5)] flex items-center justify-center">
+              <span className="w-0.5 h-0.5 rounded-full bg-slate-900" />
+            </span>
+          </div>
         </div>
       </TooltipProvider>
 
@@ -170,32 +207,47 @@ export default function MakerStripesRack({
                   <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                     <Award className="w-4 h-4" />
                   </div>
-                  <span>Customize Stripes</span>
+                  <span>Customize Session Chain</span>
                 </div>
                 <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                  {stripes.length} earned
+                  {stripes.length} chain {stripes.length === 1 ? 'node' : 'nodes'}
                 </span>
               </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-3 py-1">
-              {/* Live Preview Rack */}
+              {/* Live Preview Rack with Thread Links */}
               <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 flex flex-col items-center justify-center space-y-1.5">
-                <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-950 border border-slate-800 shadow-inner">
-                  {editingStripes.map((s, idx) => {
-                    const style = getStripeStyle(s, idx);
-                    return (
-                      <div
-                        key={idx}
-                        className={`w-7 h-9 rounded-[4px] flex items-center justify-center font-sans font-black text-sm select-none border ${style.border} ${style.gradient} ${style.text} shadow-xs relative`}
-                      >
-                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-white/40 pointer-events-none rounded-t-[3px]"></div>
-                        <span className="relative z-10 leading-none">
-                          {s.char || s.title.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div className="relative inline-flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 shadow-inner">
+                  {/* Continuous Thread in Preview */}
+                  <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 h-[2.5px] bg-gradient-to-r from-emerald-500 via-amber-400 to-emerald-500 opacity-70 pointer-events-none" />
+                  
+                  {/* Left Rivet */}
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300 border border-slate-600 mr-1 shrink-0 relative z-10" />
+
+                  <div className="relative z-10 flex items-center gap-1">
+                    {editingStripes.map((s, idx) => {
+                      const style = getStripeStyle(s, idx);
+                      return (
+                        <React.Fragment key={idx}>
+                          {idx > 0 && (
+                            <span className="w-1.5 h-[2px] bg-gradient-to-r from-emerald-400 to-amber-300 rounded-full shrink-0" />
+                          )}
+                          <div
+                            className={`w-7 h-9 rounded-[4px] flex items-center justify-center font-sans font-black text-sm select-none border ${style.border} ${style.gradient} ${style.text} shadow-xs relative`}
+                          >
+                            <div className="absolute top-0 left-0 right-0 h-[2px] bg-white/40 pointer-events-none rounded-t-[3px]"></div>
+                            <span className="relative z-10 leading-none">
+                              {s.char || s.title.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right Rivet */}
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300 border border-slate-600 ml-1 shrink-0 relative z-10" />
                 </div>
                 <span className="text-xs font-mono font-bold text-emerald-400 tracking-wider">
                   "{editingStripes.map(s => s.char || s.title.charAt(0).toUpperCase()).join("")}"

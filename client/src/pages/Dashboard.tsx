@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, UserX, Clock, Image as ImageIcon, Edit3 } from 'lucide-react';
+import { Search, Plus, LogOut, Package, History, Printer, Scissors, Zap, BookOpen, Users as UsersIcon, Monitor, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Award, UserX, Clock, Image as ImageIcon, Edit3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getOptimizedImageUrl } from '@/lib/utils';
 import { getTagStyle } from '@/lib/tagUtils';
@@ -21,6 +21,8 @@ import ProjectsWorkspace from '@/components/ProjectsWorkspace';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
+import MakerCardCustomizerModal from '@/components/MakerCardCustomizerModal';
+import { useCommunityMakers } from '@/hooks/useCommunityMakers';
 import ThemeColorPicker from '@/components/ThemeColorPicker';
 import LearningReportStudio from '@/components/LearningReportStudio';
 import DeviceSelectModal from '@/components/devices/DeviceSelectModal';
@@ -375,62 +377,14 @@ export default function Dashboard() {
     // Data is now fetched reactively via Convex useQuery
   }, [isAuthenticated]);
 
-  // Community Search & Filter Logic:
-  // 1. Access tags: directly from user database (u.tags)
-  // 2. Session tags: the character/word/emoji earned per approved session submission
-  const getUserAccessTags = React.useCallback((u: any) => {
-    return Array.isArray(u.tags) ? u.tags : [];
-  }, []);
-
-  const getUserSessionTags = React.useCallback((u: any) => {
-    const userStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-    return userStripes
-      .map((s: any) => (s.char || s.title?.charAt(0)?.toUpperCase() || '').trim())
-      .filter(Boolean);
-  }, [allUsersApprovedStripes]);
-
-  const getUserEffectiveTags = React.useCallback((u: any) => {
-    const accessTags = getUserAccessTags(u);
-    const sessionTags = getUserSessionTags(u);
-    return Array.from(new Set<string>([...accessTags, ...sessionTags]));
-  }, [getUserAccessTags, getUserSessionTags]);
-
-  const isFabUser = React.useCallback((u: any) => {
-    const accessTags = getUserAccessTags(u);
-    const sessionStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-    const hasFatag = accessTags.some((t: string) => t.toLowerCase().startsWith("fa 20"));
-    const totalCount = accessTags.length + sessionStripes.length;
-    return hasFatag || totalCount >= 4;
-  }, [allUsersApprovedStripes, getUserAccessTags]);
-
-  const availableTags = useMemo(() => {
-    const tags = new Set<string>();
-    allUsers.forEach(u => {
-      const uTags = getUserEffectiveTags(u);
-      uTags.forEach((t: string) => tags.add(t));
-    });
-    return Array.from(tags).sort();
-  }, [allUsers, getUserEffectiveTags]);
-
-  const filteredCommunityUsers = useMemo(() => {
-    return allUsers
-      .filter(u => {
-        const matchesSearch = !communitySearchQuery ||
-          (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
-          (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
-
-        const uTags = getUserEffectiveTags(u);
-        const matchesCategory = selectedCommunityTag === 'all' || uTags.includes(selectedCommunityTag);
-
-        return matchesSearch && matchesCategory;
-      })
-      .sort((a, b) => {
-        const aCount = getUserEffectiveTags(a).length;
-        const bCount = getUserEffectiveTags(b).length;
-        if (bCount !== aCount) return bCount - aCount; // Users with badges/tags appear on top!
-        return (a.name || "").localeCompare(b.name || "");
-      });
-  }, [allUsers, communitySearchQuery, selectedCommunityTag, getUserEffectiveTags]);
+  // High-performance single-pass memoized Community filter & milestone pipeline
+  const {
+    fabMakers,
+    certifiedMakers,
+    communityMakers,
+    availableCategories,
+    totalCount: filteredCommunityCount,
+  } = useCommunityMakers(allUsers, allUsersApprovedStripes, communitySearchQuery, selectedCommunityTag);
 
   // Track if we're using the fallback (Sheets) or Convex
   const [inventorySource, setInventorySource] = React.useState<'convex' | 'sheets' | 'loading'>('loading');
@@ -1590,19 +1544,26 @@ export default function Dashboard() {
           {/* TAB 3: USERS (COMMUNITY) */}
           <TabsContent value="users">
             <Card className="card-soft p-6">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold">Community Directory</h2>
-                  <p className="text-muted-foreground">Certified makers in the space.</p>
+                  <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    Community Directory
+                    {user && (
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
+                        {filteredCommunityCount} Makers
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-muted-foreground text-sm">Discover skilled peers, mentors, and workshop contributors.</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                   {/* Search Bar */}
-                  <div className="relative w-full sm:w-64">
+                  <div className="relative w-full sm:w-60">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search name or email..."
-                      className="pl-9 bg-white/50 backdrop-blur border-slate-200 focus:border-emerald-400 focus:ring-emerald-400"
+                      placeholder="Search name, email, or skill..."
+                      className="pl-9 bg-white/50 backdrop-blur border-slate-200 focus:border-emerald-400 focus:ring-emerald-400 text-xs h-9 rounded-xl"
                       value={communitySearchQuery}
                       onChange={(e) => setCommunitySearchQuery(e.target.value)}
                     />
@@ -1610,12 +1571,12 @@ export default function Dashboard() {
 
                   {/* Category Dropdown */}
                   <Select value={selectedCommunityTag} onValueChange={setSelectedCommunityTag}>
-                    <SelectTrigger className="w-full sm:w-48 bg-white/50 backdrop-blur border-slate-200">
+                    <SelectTrigger className="w-full sm:w-44 bg-white/50 backdrop-blur border-slate-200 text-xs h-9 rounded-xl">
                       <SelectValue placeholder="All Categories" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      {availableTags.map((tag) => (
+                      {availableCategories.map((tag) => (
                         <SelectItem key={tag} value={tag}>
                           {tag}
                         </SelectItem>
@@ -1626,83 +1587,76 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-10">
-                {filteredCommunityUsers.length > 0 ? (
+                {filteredCommunityCount > 0 ? (
                   <>
-                    {/* FAB SECTION (High Skill / FA Cert) */}
-                    {filteredCommunityUsers.filter(isFabUser).length > 0 && (
+                    {/* FAB SECTION (Fab Academy Alumni & Fab Experts) */}
+                    {fabMakers.length > 0 && (
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
-                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Fab Academy & Master Makers</h3>
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                            Fab Academy Alumni & Senior Contributors ({fabMakers.length})
+                          </h3>
                           <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-6 border-b border-slate-100 dark:border-slate-800">
-                          {filteredCommunityUsers.filter(isFabUser).map((u) => (
+                          {fabMakers.map((item) => (
                             <MakerUserCard
-                              key={u._id || u.id}
-                              user={u}
-                              accessTags={getUserAccessTags(u)}
-                              isFab={true}
-                              stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
-                              onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
-                                setEditProfileImage(user?.profileImageUrl || "");
-                                setEditProfileTheme(user?.customTheme || "");
-                                setEditProfileLink(user?.myPageLink || "");
-                                setEditProfileOpen(true);
-                              } : undefined}
+                              key={item.user._id || item.user.id || item.user.email}
+                              user={item.user}
+                              accessTags={item.accessTags}
+                              isFab={item.isFab}
+                              stripes={item.sessionStripes}
+                              onEdit={item.user.email?.toLowerCase() === user?.email?.toLowerCase() ? () => setEditProfileOpen(true) : undefined}
                             />
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* CERTIFIED SKILL MAKERS (Users with badges/tags earned directly or via approved sessions) */}
-                    {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length > 0).length > 0 && (
+                    {/* ACTIVE MAKERS & BADGE HOLDERS */}
+                    {certifiedMakers.length > 0 && (
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
-                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Certified Makers & Badge Holders</h3>
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <Award className="w-3.5 h-3.5 text-emerald-500" />
+                            Active Makers & Badge Holders ({certifiedMakers.length})
+                          </h3>
                           <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-6 border-b border-slate-100 dark:border-slate-800">
-                          {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length > 0).map((u) => (
+                          {certifiedMakers.map((item) => (
                             <MakerUserCard
-                              key={u._id || u.id}
-                              user={u}
-                              accessTags={getUserAccessTags(u)}
-                              isFab={false}
-                              stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
-                              onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
-                                setEditProfileImage(user?.profileImageUrl || "");
-                                setEditProfileTheme(user?.customTheme || "");
-                                setEditProfileLink(user?.myPageLink || "");
-                                setEditProfileOpen(true);
-                              } : undefined}
+                              key={item.user._id || item.user.id || item.user.email}
+                              user={item.user}
+                              accessTags={item.accessTags}
+                              isFab={item.isFab}
+                              stripes={item.sessionStripes}
+                              onEdit={item.user.email?.toLowerCase() === user?.email?.toLowerCase() ? () => setEditProfileOpen(true) : undefined}
                             />
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* OTHER COMMUNITY MEMBERS */}
-                    {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length === 0).length > 0 && (
+                    {/* COMMUNITY CONTRIBUTORS */}
+                    {communityMakers.length > 0 && (
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
-                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Community Members</h3>
+                          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                            Community Contributors ({communityMakers.length})
+                          </h3>
                           <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
-                          {filteredCommunityUsers.filter(u => !isFabUser(u) && getUserEffectiveTags(u).length === 0).map((u) => (
+                          {communityMakers.map((item) => (
                             <MakerUserCard
-                              key={u._id || u.id}
-                              user={u}
-                              accessTags={getUserAccessTags(u)}
-                              isFab={false}
-                              stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
-                              onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
-                                setEditProfileImage(user?.profileImageUrl || "");
-                                setEditProfileTheme(user?.customTheme || "");
-                                setEditProfileLink(user?.myPageLink || "");
-                                setEditProfileOpen(true);
-                              } : undefined}
+                              key={item.user._id || item.user.id || item.user.email}
+                              user={item.user}
+                              accessTags={item.accessTags}
+                              isFab={item.isFab}
+                              stripes={item.sessionStripes}
+                              onEdit={item.user.email?.toLowerCase() === user?.email?.toLowerCase() ? () => setEditProfileOpen(true) : undefined}
                             />
                           ))}
                         </div>
@@ -1712,7 +1666,7 @@ export default function Dashboard() {
                 ) : (
                   <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
                     <UsersIcon className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-900">No users found</h3>
+                    <h3 className="text-lg font-semibold text-slate-900">No makers found</h3>
                     <p className="text-slate-500">Try adjusting your search or category filters.</p>
                     <Button
                       variant="link"
@@ -2419,74 +2373,14 @@ export default function Dashboard() {
             </DialogContent>
           </Dialog>
 
-          {/* Edit Profile Dialog Modal */}
-          <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
-            <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl">
-              <DialogHeader>
-                <DialogTitle className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-emerald-500" /> Edit Profile
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Profile Image URL</Label>
-                  <Input 
-                    placeholder="https://drive.google.com/... or https://example.com/photo.jpg"
-                    value={editProfileImage}
-                    onChange={(e) => setEditProfileImage(e.target.value)}
-                    className="text-xs h-9 rounded-xl border-slate-200 dark:border-slate-700"
-                  />
-                  <p className="text-[11px] text-slate-500">Google Drive links or image URLs. This appears as your card's background image.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Documentation Site / Portfolio Link</Label>
-                  <Input 
-                    placeholder="https://fabacademy.org/2026/labs/... or https://yourportfolio.dev"
-                    value={editProfileLink}
-                    onChange={(e) => setEditProfileLink(e.target.value)}
-                    className="text-xs h-9 rounded-xl border-slate-200 dark:border-slate-700"
-                  />
-                  <p className="text-[11px] text-slate-500">Adding a documentation page activates the holographic shine effect on your card.</p>
-                </div>
-                <ThemeColorPicker 
-                  value={editProfileTheme} 
-                  onChange={setEditProfileTheme} 
-                  hasDocLink={Boolean(editProfileLink.trim() && (editProfileLink.includes('.') || editProfileLink.startsWith('http')))}
-                />
-              </div>
-              <DialogFooter className="flex gap-2 sm:justify-end">
-                <Button variant="outline" onClick={() => setEditProfileOpen(false)} className="rounded-xl font-bold text-xs h-9">
-                  Cancel
-                </Button>
-                <Button 
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs h-9 shadow-md shadow-emerald-500/20"
-                  disabled={isSavingProfile}
-                  onClick={async () => {
-                    if (!user?.email) return;
-                    setIsSavingProfile(true);
-                    try {
-                      await updateProfileMutation({
-                        email: user.email,
-                        profileImageUrl: editProfileImage,
-                        customTheme: editProfileTheme,
-                        myPageLink: editProfileLink,
-                        scriptUrl: SCRIPT_URL
-                      });
-                      toast.success("Profile updated successfully!");
-                      setEditProfileOpen(false);
-                    } catch (e: any) {
-                      toast.error(e.message || "Failed to update profile");
-                      console.error(e);
-                    } finally {
-                      setIsSavingProfile(false);
-                    }
-                  }}
-                >
-                  {isSavingProfile ? "Saving..." : "Save Changes"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          {/* Maker Identity Studio Customizer Modal */}
+          <MakerCardCustomizerModal
+            open={editProfileOpen}
+            onOpenChange={setEditProfileOpen}
+            user={allUsers.find((u) => u.email?.toLowerCase() === user?.email?.toLowerCase()) || user}
+            stripes={allUsersApprovedStripes[user?.email?.toLowerCase() || ''] || []}
+            accessTags={(allUsers.find((u) => u.email?.toLowerCase() === user?.email?.toLowerCase()) || user)?.tags || []}
+          />
 
           {/* Device Selection Prompt Modal for Work Toggle */}
           <DeviceSelectModal

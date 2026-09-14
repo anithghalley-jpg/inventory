@@ -1679,3 +1679,109 @@
   animation: docPulseBorder 3.5s ease-in-out infinite;
 }
 
+/* =========================================================================
+   MAKER IDENTITY SKINS & HARDWARE ACCELERATED STYLING
+   ========================================================================= */
+
+.maker-card-optimized {
+  content-visibility: auto;
+  contain-intrinsic-size: 240px;
+  will-change: transform;
+}
+
+/* 1. Emerald Circuit Skin (Tactile FR4 PCB with Glowing Traces) */
+.skin-emerald-circuit {
+  background: linear-gradient(145deg, rgba(6, 43, 23, 0.96) 0%, rgba(3, 24, 13, 0.98) 100%) !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.18), inset 0 1px 1px rgba(52, 211, 153, 0.3) !important;
+}
+
+/* 2. Blueprint Drafting Skin (Technical Cyan Grid with Drafting Corner Accents) */
+.skin-blueprint {
+  background: linear-gradient(135deg, #092648 0%, #061830 100%) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 4px 20px rgba(56, 189, 248, 0.2), inset 0 1px 1px rgba(125, 211, 252, 0.35) !important;
+}
+
+/* 3. Ruby Optics Core Skin (Translucent Laser Edge-Lit Acrylic) */
+.skin-ruby-optics {
+  background: linear-gradient(145deg, #38080f 0%, #1f0307 100%) !important;
+  border-color: #f43f5e !important;
+  box-shadow: 0 4px 20px rgba(244, 63, 94, 0.25), inset 0 1px 1px rgba(251, 113, 133, 0.4) !important;
+}
+
+/* 4. Gold Inlay Brass Skin (Rich Metallic Gold Leaf & Polished Brass Edge) */
+.skin-gold-inlay {
+  background: linear-gradient(145deg, #241c08 0%, #151004 100%) !important;
+  border-color: #fbbf24 !important;
+  box-shadow: 0 4px 22px rgba(251, 191, 36, 0.25), inset 0 1px 2px rgba(254, 240, 138, 0.5) !important;
+}
+
+/* 5. Obsidian Stealth Skin (Forged Carbon Fiber & Brushed Titanium) */
+.skin-obsidian {
+  background: linear-gradient(145deg, #18181b 0%, #09090b 100%) !important;
+  border-color: #71717a !important;
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.15) !important;
+}
+
+/* 6. Synthwave Neon Skin (Vibrant Electric Magenta & Indigo Pulse) */
+.skin-synthwave {
+  background: linear-gradient(145deg, #23083b 0%, #11031f 100%) !important;
+  border-color: #d946ef !important;
+  box-shadow: 0 4px 24px rgba(217, 70, 239, 0.28), 0 0 12px rgba(14, 165, 233, 0.2), inset 0 1px 1px rgba(244, 114, 182, 0.4) !important;
+}
+
+/* 7. Prismatic Glass Skin (Frosted Crystal Glassmorphism) */
+.skin-glass {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(16px) !important;
+  border-color: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.1), inset 0 1px 2px rgba(255, 255, 255, 0.9) !important;
+}
+.dark .skin-glass {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.12) !important;
+}
+
+/* 8. Iridescent Holo Prism Skin (Reflective Rainbow Diffraction Foil) */
+.skin-holo-prism {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 25px rgba(56, 189, 248, 0.3), 0 0 35px rgba(236, 72, 153, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.7) !important;
+}
+
+/* 9. Cosmic Aurora Skin (Northern Lights Violet & Emerald Wave) */
+.skin-aurora {
+  background: linear-gradient(145deg, #091a2f 0%, #030f1c 100%) !important;
+  border-color: #2dd4bf !important;
+  box-shadow: 0 4px 26px rgba(45, 212, 191, 0.3), 0 0 16px rgba(168, 85, 247, 0.25), inset 0 1px 1px rgba(153, 246, 228, 0.5) !important;
+}
+
+/* 10. Signature Onyx & Gold Skin (Prestige Artisan Finish) */
+.skin-signature-onyx {
+  background: linear-gradient(145deg, #121214 0%, #080809 100%) !important;
+  border: 1.5px solid #eab308 !important;
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.65), 0 0 16px rgba(234, 179, 8, 0.28), inset 0 1px 2px rgba(254, 240, 138, 0.6) !important;
+}
+
+/* 11. Natural Workshop Craft (Warm Walnut Grain & Natural Paper) */
+.skin-natural-craft {
+  background: linear-gradient(145deg, #2b1d12 0%, #180f08 100%) !important;
+  border-color: #b45309 !important;
+  box-shadow: 0 4px 20px rgba(180, 83, 9, 0.25), inset 0 1px 1px rgba(253, 230, 138, 0.3) !important;
+}
+
+/* Dynamic Holo Glint animation */
+@keyframes holoShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.holo-dynamic-beam {
+  background-size: 200% 200%;
+  animation: holoShift 6s ease infinite;
+}
+
+

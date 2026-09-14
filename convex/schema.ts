@@ -41,6 +41,14 @@ export default defineSchema({
       char: v.string(),
       color: v.optional(v.string()),
     }))),
+    cardSkin: v.optional(v.string()),
+    cardCoverUrl: v.optional(v.string()),
+    cardBgOpacity: v.optional(v.number()),
+    cardTagPositions: v.optional(v.string()),
+    cardBadgeAlignment: v.optional(v.string()),
+    customTagline: v.optional(v.string()),
+    featuredBadge: v.optional(v.string()),
+    cardLayoutSize: v.optional(v.string()),
   }).index("by_email", ["email"]),
   
   requests: defineTable({

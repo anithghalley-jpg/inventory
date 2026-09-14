@@ -300,6 +300,14 @@ export const updateProfile = mutation({
     profileImageUrl: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     customTheme: v.optional(v.string()),
+    cardSkin: v.optional(v.string()),
+    cardCoverUrl: v.optional(v.string()),
+    cardBgOpacity: v.optional(v.number()),
+    cardTagPositions: v.optional(v.string()),
+    cardBadgeAlignment: v.optional(v.string()),
+    customTagline: v.optional(v.string()),
+    featuredBadge: v.optional(v.string()),
+    cardLayoutSize: v.optional(v.string()),
     scriptUrl: v.string(),
   },
   handler: async (ctx, args) => {
@@ -316,6 +324,14 @@ export const updateProfile = mutation({
     if (args.profileImageUrl !== undefined) patch.profileImageUrl = args.profileImageUrl;
     if (args.tags !== undefined) patch.tags = args.tags;
     if (args.customTheme !== undefined) patch.customTheme = args.customTheme;
+    if (args.cardSkin !== undefined) patch.cardSkin = args.cardSkin;
+    if (args.cardCoverUrl !== undefined) patch.cardCoverUrl = args.cardCoverUrl;
+    if (args.cardBgOpacity !== undefined) patch.cardBgOpacity = args.cardBgOpacity;
+    if (args.cardTagPositions !== undefined) patch.cardTagPositions = args.cardTagPositions;
+    if (args.cardBadgeAlignment !== undefined) patch.cardBadgeAlignment = args.cardBadgeAlignment;
+    if (args.customTagline !== undefined) patch.customTagline = args.customTagline;
+    if (args.featuredBadge !== undefined) patch.featuredBadge = args.featuredBadge;
+    if (args.cardLayoutSize !== undefined) patch.cardLayoutSize = args.cardLayoutSize;
 
     await ctx.db.patch(user._id, patch);
     const updatedUser = { ...user, ...patch };

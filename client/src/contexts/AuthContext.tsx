@@ -17,6 +17,14 @@ export interface User {
   profileImageUrl?: string;
   customTheme?: string;
   myPageLink?: string;
+  cardSkin?: string;
+  cardCoverUrl?: string;
+  cardBgOpacity?: number;
+  cardTagPositions?: string;
+  cardBadgeAlignment?: string;
+  customTagline?: string;
+  featuredBadge?: string;
+  cardLayoutSize?: string;
 }
 
 interface AuthContextType {
@@ -57,6 +65,14 @@ function normalizeUser(data: any): User {
     profileImageUrl: data.profileImageUrl || '',
     customTheme: data.customTheme || '',
     myPageLink: data.myPageLink || '',
+    cardSkin: data.cardSkin || 'default',
+    cardCoverUrl: data.cardCoverUrl || '',
+    cardBgOpacity: typeof data.cardBgOpacity === 'number' ? data.cardBgOpacity : 85,
+    cardTagPositions: data.cardTagPositions || '',
+    cardBadgeAlignment: data.cardBadgeAlignment || 'grid',
+    customTagline: data.customTagline || '',
+    featuredBadge: data.featuredBadge || '',
+    cardLayoutSize: data.cardLayoutSize || 'standard',
   };
 }
 

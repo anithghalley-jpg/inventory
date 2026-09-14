@@ -20,13 +20,15 @@ import MyPlansTab from '@/components/MyPlansTab';
 import LearningReportPdfModal from '@/components/LearningReportPdfModal';
 import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
+import MakerCardCustomizerModal from '@/components/MakerCardCustomizerModal';
+import { useCommunityMakers } from '@/hooks/useCommunityMakers';
 import ThemeColorPicker from '@/components/ThemeColorPicker';
 import LearningReportStudio from '@/components/LearningReportStudio';
 import DeviceSelectModal from '@/components/devices/DeviceSelectModal';
 import {
     Search, Package, LogOut, Users as UsersIcon,
     LayoutDashboard, ShoppingBag, History, Monitor,
-    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Clock, Image as ImageIcon, Edit3, Laptop
+    Printer, Scissors, Zap, BookOpen, XCircle, Sparkles, FolderKanban, GraduationCap, CheckCircle2, ExternalLink, Star, Award, Clock, Image as ImageIcon, Edit3, Laptop
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -322,87 +324,18 @@ export default function TeamDashboard() {
     const deviceSettings = useQuery(api.devices.getSettings);
     const [deviceModalOpen, setDeviceModalOpen] = useState(false);
 
-    // Stripes query
+    // Stripes & Team queries
     const allUsersApprovedStripes = useQuery(api.learningPlans.getAllUsersApprovedStripes) || {};
+    const teamMembers = useMemo(() => allUsers.filter(u => u.role === 'TEAM' || u.role === 'ADMIN'), [allUsers]);
 
-    // Community Search & Filter Logic:
-    // 1. Access tags: directly from user database (u.tags)
-    // 2. Session tags: the character/word/emoji earned per approved session submission
-    const getUserAccessTags = React.useCallback((u: any) => {
-        return Array.isArray(u.tags) ? u.tags : [];
-    }, []);
-
-    const getUserSessionTags = React.useCallback((u: any) => {
-        const userStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-        return userStripes
-            .map((s: any) => (s.char || s.title?.charAt(0)?.toUpperCase() || '').trim())
-            .filter(Boolean);
-    }, [allUsersApprovedStripes]);
-
-    const getUserEffectiveTags = React.useCallback((u: any) => {
-        const accessTags = getUserAccessTags(u);
-        const sessionTags = getUserSessionTags(u);
-        return Array.from(new Set<string>([...accessTags, ...sessionTags]));
-    }, [getUserAccessTags, getUserSessionTags]);
-
-    const isFabUser = React.useCallback((u: any) => {
-        const accessTags = getUserAccessTags(u);
-        const sessionStripes = allUsersApprovedStripes[u.email?.toLowerCase()] || [];
-        const hasFatag = accessTags.some((t: string) => t.toLowerCase().startsWith("fa 20"));
-        const totalCount = accessTags.length + sessionStripes.length;
-        return hasFatag || totalCount >= 4;
-    }, [allUsersApprovedStripes, getUserAccessTags]);
-
-    const availableTags = useMemo(() => {
-        const tags = new Set<string>();
-        allUsers.forEach(u => {
-            const uTags = getUserEffectiveTags(u);
-            uTags.forEach((t: string) => tags.add(t));
-        });
-        return Array.from(tags).sort();
-    }, [allUsers, getUserEffectiveTags]);
-
-    const filteredCommunityUsers = useMemo(() => {
-        return allUsers
-            .filter(u => {
-                const matchesSearch = !communitySearchQuery ||
-                    (u.name || "").toLowerCase().includes(communitySearchQuery.toLowerCase()) ||
-                    (u.email || "").toLowerCase().includes(communitySearchQuery.toLowerCase());
-
-                const uTags = getUserEffectiveTags(u);
-                const matchesTag = selectedCommunityTag === 'all' || uTags.includes(selectedCommunityTag);
-
-                return matchesSearch && matchesTag;
-            })
-            .sort((a, b) => {
-                const aCount = getUserEffectiveTags(a).length;
-                const bCount = getUserEffectiveTags(b).length;
-                if (bCount !== aCount) return bCount - aCount; // Users with badges/tags appear on top!
-                return (a.name || "").localeCompare(b.name || "");
-            });
-    }, [allUsers, communitySearchQuery, selectedCommunityTag, getUserEffectiveTags]);
-
-    const filteredTeam = useMemo(() =>
-        filteredCommunityUsers
-            .filter(u => u.role === 'TEAM' || u.role === 'ADMIN')
-            .sort((a, b) => {
-                const aCount = getUserEffectiveTags(a).length;
-                const bCount = getUserEffectiveTags(b).length;
-                if (bCount !== aCount) return bCount - aCount;
-                return (a.name || "").localeCompare(b.name || "");
-            }),
-        [filteredCommunityUsers, getUserEffectiveTags]);
-
-    const filteredStudents = useMemo(() =>
-        filteredCommunityUsers
-            .filter(u => u.role !== 'TEAM' && u.role !== 'ADMIN')
-            .sort((a, b) => {
-                const aCount = getUserEffectiveTags(a).length;
-                const bCount = getUserEffectiveTags(b).length;
-                if (bCount !== aCount) return bCount - aCount;
-                return (a.name || "").localeCompare(b.name || "");
-            }),
-        [filteredCommunityUsers, getUserEffectiveTags]);
+    // High-performance single-pass memoized Community filter & milestone pipeline
+    const {
+        fabMakers,
+        certifiedMakers,
+        communityMakers,
+        availableCategories,
+        totalCount: filteredCommunityCount,
+    } = useCommunityMakers(allUsers, allUsersApprovedStripes, communitySearchQuery, selectedCommunityTag);
 
     const filteredOnlineUsers = useMemo(() => {
         return allUsers.filter(u => {
@@ -1427,19 +1360,26 @@ export default function TeamDashboard() {
                     {/* --- COMMUNITY TAB (RENAMED FROM USERS) --- */}
                     <TabsContent value="users" className="focus-visible:outline-none focus-visible:ring-0">
                         <div className="space-y-6">
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
                                 <div>
-                                    <h2 className="text-2xl font-bold tracking-tight">Community Directory</h2>
-                                    <p className="text-sm text-slate-500">View team members, their holdings, and skills.</p>
+                                    <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                        Community Directory
+                                        {user && (
+                                            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                                {filteredCommunityCount} Makers
+                                            </span>
+                                        )}
+                                    </h2>
+                                    <p className="text-sm text-slate-500">Discover team members, makers, workshop contributors, and skill areas.</p>
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                                     {/* Search Bar */}
-                                    <div className="relative w-full sm:w-64">
+                                    <div className="relative w-full sm:w-60">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                         <Input
-                                            placeholder="Search name or email..."
-                                            className="pl-9 bg-white border-slate-200 focus:border-emerald-400 focus:ring-emerald-400"
+                                            placeholder="Search name, email, or skill..."
+                                            className="pl-9 bg-white border-slate-200 focus:border-emerald-400 focus:ring-emerald-400 text-xs h-9 rounded-xl"
                                             value={communitySearchQuery}
                                             onChange={(e) => setCommunitySearchQuery(e.target.value)}
                                         />
@@ -1447,12 +1387,12 @@ export default function TeamDashboard() {
 
                                     {/* Category Dropdown */}
                                     <Select value={selectedCommunityTag} onValueChange={setSelectedCommunityTag}>
-                                        <SelectTrigger className="w-full sm:w-48 bg-white border-slate-200">
+                                        <SelectTrigger className="w-full sm:w-44 bg-white border-slate-200 text-xs h-9 rounded-xl">
                                             <SelectValue placeholder="All Categories" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="all">All Categories</SelectItem>
-                                            {availableTags.map((tag) => (
+                                            {availableCategories.map((tag) => (
                                                 <SelectItem key={tag} value={tag}>
                                                     {tag}
                                                 </SelectItem>
@@ -1462,79 +1402,76 @@ export default function TeamDashboard() {
                                 </div>
                             </div>
 
-                            {filteredCommunityUsers.length > 0 ? (
+                            {filteredCommunityCount > 0 ? (
                                 <div className="space-y-10">
-                                    {/* GLOBAL FAB SECTION (Priority Members) */}
-                                    {filteredCommunityUsers.filter(isFabUser).length > 0 && (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-8 border-b border-slate-100">
-                                            {filteredCommunityUsers.filter(isFabUser).map((u) => (
-                                                <MakerUserCard
-                                                    key={u._id || u.id}
-                                                    user={u}
-                                                    accessTags={getUserAccessTags(u)}
-                                                    isFab={true}
-                                                    stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
-                                                    onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
-                                                        setEditProfileImage(user?.profileImageUrl || "");
-                                                        setEditProfileTheme(user?.customTheme || "");
-                                                        setEditProfileLink(user?.myPageLink || "");
-                                                        setEditProfileOpen(true);
-                                                    } : undefined}
-                                                />
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* TEAM SECTION (Standard Members) */}
-                                    {filteredTeam.filter(u => !isFabUser(u)).length > 0 && (
-                                        <div className="space-y-6">
+                                    {/* FAB ACADEMY ALUMNI & SENIOR CONTRIBUTORS */}
+                                    {fabMakers.length > 0 && (
+                                        <div className="space-y-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="h-px flex-1 bg-slate-200" />
-                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">The Team</h3>
+                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-600 flex items-center gap-1.5">
+                                                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                                    Fab Academy Alumni & Senior Contributors ({fabMakers.length})
+                                                </h3>
                                                 <div className="h-px flex-1 bg-slate-200" />
                                             </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
-                                                {filteredTeam.filter(u => !isFabUser(u)).map((u) => (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-8 border-b border-slate-100">
+                                                {fabMakers.map((item) => (
                                                     <MakerUserCard
-                                                        key={u._id || u.id}
-                                                        user={u}
-                                                        accessTags={getUserAccessTags(u)}
-                                                        isFab={false}
-                                                        stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
-                                                        onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
-                                                            setEditProfileImage(user?.profileImageUrl || "");
-                                                            setEditProfileTheme(user?.customTheme || "");
-                                                            setEditProfileLink(user?.myPageLink || "");
-                                                            setEditProfileOpen(true);
-                                                        } : undefined}
+                                                        key={item.user._id || item.user.id || item.user.email}
+                                                        user={item.user}
+                                                        accessTags={item.accessTags}
+                                                        isFab={item.isFab}
+                                                        stripes={item.sessionStripes}
+                                                        onEdit={item.user.email?.toLowerCase() === user?.email?.toLowerCase() ? () => setEditProfileOpen(true) : undefined}
                                                     />
                                                 ))}
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* STUDENTS SECTION (Standard Members) */}
-                                    {filteredStudents.filter(u => !isFabUser(u)).length > 0 && (
-                                        <div className="space-y-6">
+                                    {/* ACTIVE MAKERS & BADGE HOLDERS */}
+                                    {certifiedMakers.length > 0 && (
+                                        <div className="space-y-4">
                                             <div className="flex items-center gap-3">
+                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 flex items-center gap-1.5">
+                                                    <Award className="w-3.5 h-3.5 text-emerald-500" />
+                                                    Active Makers & Badge Holders ({certifiedMakers.length})
+                                                </h3>
                                                 <div className="h-px flex-1 bg-slate-200" />
-                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Makers & Students</h3>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start pb-8 border-b border-slate-100">
+                                                {certifiedMakers.map((item) => (
+                                                    <MakerUserCard
+                                                        key={item.user._id || item.user.id || item.user.email}
+                                                        user={item.user}
+                                                        accessTags={item.accessTags}
+                                                        isFab={item.isFab}
+                                                        stripes={item.sessionStripes}
+                                                        onEdit={item.user.email?.toLowerCase() === user?.email?.toLowerCase() ? () => setEditProfileOpen(true) : undefined}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* COMMUNITY CONTRIBUTORS */}
+                                    {communityMakers.length > 0 && (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-3">
+                                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+                                                    Community Contributors ({communityMakers.length})
+                                                </h3>
                                                 <div className="h-px flex-1 bg-slate-200" />
                                             </div>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
-                                                {filteredStudents.filter(u => !isFabUser(u)).map((u) => (
+                                                {communityMakers.map((item) => (
                                                     <MakerUserCard
-                                                        key={u._id || u.id}
-                                                        user={u}
-                                                        accessTags={getUserAccessTags(u)}
-                                                        isFab={false}
-                                                        stripes={allUsersApprovedStripes[u.email?.toLowerCase()] || []}
-                                                        onEdit={u.email?.toLowerCase() === user?.email?.toLowerCase() ? () => {
-                                                            setEditProfileImage(user?.profileImageUrl || "");
-                                                            setEditProfileTheme(user?.customTheme || "");
-                                                            setEditProfileLink(user?.myPageLink || "");
-                                                            setEditProfileOpen(true);
-                                                        } : undefined}
+                                                        key={item.user._id || item.user.id || item.user.email}
+                                                        user={item.user}
+                                                        accessTags={item.accessTags}
+                                                        isFab={item.isFab}
+                                                        stripes={item.sessionStripes}
+                                                        onEdit={item.user.email?.toLowerCase() === user?.email?.toLowerCase() ? () => setEditProfileOpen(true) : undefined}
                                                     />
                                                 ))}
                                             </div>
@@ -1546,15 +1483,12 @@ export default function TeamDashboard() {
                                     <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
                                         <UsersIcon className="w-8 h-8 text-slate-300" />
                                     </div>
-                                    <h3 className="text-lg font-bold text-slate-900">No users found</h3>
-                                    <p className="text-slate-500 mb-6">We couldn't find any users matching your criteria.</p>
+                                    <h3 className="text-lg font-bold text-slate-900">No makers found</h3>
+                                    <p className="text-slate-500 mb-6">We couldn't find any makers matching your criteria.</p>
                                     <Button
-                                        variant="outline"
-                                        onClick={() => {
-                                            setCommunitySearchQuery('');
-                                            setSelectedCommunityTag('all');
-                                        }}
-                                        className="border-slate-200 hover:bg-white"
+                                        variant="link"
+                                        className="text-emerald-600"
+                                        onClick={() => { setCommunitySearchQuery(''); setSelectedCommunityTag('all'); }}
                                     >
                                         Clear all filters
                                     </Button>
@@ -1761,7 +1695,7 @@ export default function TeamDashboard() {
 
                     {/* --- MY PLANS TAB --- */}
                     <TabsContent value="plans" className="focus-visible:outline-none focus-visible:ring-0">
-                        <MyPlansTab teamMembers={filteredTeam} />
+                        <MyPlansTab teamMembers={teamMembers} />
                     </TabsContent>
 
 
@@ -2533,67 +2467,14 @@ export default function TeamDashboard() {
                 onAssign={handleAddItemToProject}
             />
 
-            {/* RETURN CONFIRM DIALOG - Missing in previous code, essential for 'Return Item' action */}
-            <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Edit Profile</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <Label>Profile Image URL</Label>
-                            <Input 
-                                placeholder="https://example.com/image.jpg"
-                                value={editProfileImage}
-                                onChange={(e) => setEditProfileImage(e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Personal Page / Portfolio Link</Label>
-                            <Input 
-                                placeholder="https://yourwebsite.com"
-                                value={editProfileLink}
-                                onChange={(e) => setEditProfileLink(e.target.value)}
-                            />
-                            <p className="text-xs text-muted-foreground">Adding a personal/portfolio link activates the holographic shine effect on your card.</p>
-                        </div>
-                        <ThemeColorPicker 
-                            value={editProfileTheme} 
-                            onChange={setEditProfileTheme} 
-                            hasDocLink={Boolean(editProfileLink.trim() && (editProfileLink.includes('.') || editProfileLink.startsWith('http')))}
-                        />
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setEditProfileOpen(false)}>Cancel</Button>
-                        <Button 
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                            disabled={isSavingProfile}
-                            onClick={async () => {
-                                if (!user?.email) return;
-                                setIsSavingProfile(true);
-                                try {
-                                    await updateProfileMutation({
-                                        email: user.email,
-                                        profileImageUrl: editProfileImage,
-                                        customTheme: editProfileTheme,
-                                        myPageLink: editProfileLink,
-                                        scriptUrl: SCRIPT_URL
-                                    });
-                                    toast.success("Profile updated successfully!");
-                                    setEditProfileOpen(false);
-                                } catch (e) {
-                                    toast.error("Failed to update profile");
-                                    console.error(e);
-                                } finally {
-                                    setIsSavingProfile(false);
-                                }
-                            }}
-                        >
-                            {isSavingProfile ? "Saving..." : "Save Changes"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {/* Maker Identity Studio Customizer Modal */}
+            <MakerCardCustomizerModal
+                open={editProfileOpen}
+                onOpenChange={setEditProfileOpen}
+                user={allUsers.find((u) => u.email?.toLowerCase() === user?.email?.toLowerCase()) || user}
+                stripes={allUsersApprovedStripes[user?.email?.toLowerCase() || ''] || []}
+                accessTags={(allUsers.find((u) => u.email?.toLowerCase() === user?.email?.toLowerCase()) || user)?.tags || []}
+            />
 
             <Dialog open={!!returnItem} onOpenChange={(o) => !o && setReturnItem(null)}>
                 <DialogContent>
