@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { motion } from "framer-motion";
 
-import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2, Users, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Star, History, ExternalLink } from "lucide-react";
+import { Menu, X, LayoutGrid, List, ArrowRight, CheckCircle2, Users, ChevronDown, ChevronUp, Clock, UserCheck, UserX, Star, History, ExternalLink, GraduationCap, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import CommonRoomSection from "@/components/learning/CommonRoomSection";
 
 
 import { toast } from "sonner";
@@ -26,7 +27,13 @@ function getEmbedUrl(url: string) {
     const videoId = url.split("vimeo.com/")[1].split("?")[0];
     embedUrl = `https://player.vimeo.com/video/${videoId}`;
   } else if (url.includes("drive.google.com/file/d/")) {
-    const fileId = url.split("/d/")[1].split("/")[0];
+    const fileId = url.split("/d/")[1].split("/")[0].split("?")[0];
+    embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+  } else if (url.includes("drive.google.com/open?id=")) {
+    const fileId = url.split("id=")[1].split("&")[0];
+    embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+  } else if (url.includes("drive.google.com/uc?id=")) {
+    const fileId = url.split("id=")[1].split("&")[0];
     embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
   }
   return embedUrl;
@@ -42,8 +49,20 @@ function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-  if (trimmedDate < todayStr) return true;
-  if (trimmedDate > todayStr) return false;
+  // Standard YYYY-MM-DD check
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    if (trimmedDate < todayStr) return true;
+    if (trimmedDate > todayStr) return false;
+  } else {
+    // Non-standard date format fallback
+    const parsed = Date.parse(trimmedDate);
+    if (!isNaN(parsed)) {
+      const d = new Date(parsed);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (dStr < todayStr) return true;
+      if (dStr > todayStr) return false;
+    }
+  }
 
   if (!timeStr || !timeStr.trim()) return false;
 
@@ -74,6 +93,54 @@ function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
   }
 
   return false;
+}
+
+function getPlanTimestamp(plan: { date?: string; time?: string; createdAt?: number; updatedAt?: number }): number {
+  if (!plan.date || !plan.date.trim()) {
+    return plan.createdAt || 0;
+  }
+
+  const trimmedDate = plan.date.trim();
+  let hours = 0;
+  let minutes = 0;
+
+  if (plan.time && plan.time.trim()) {
+    const trimmedTime = plan.time.trim();
+    const match24 = trimmedTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (match24) {
+      hours = parseInt(match24[1], 10);
+      minutes = parseInt(match24[2], 10);
+    } else {
+      const match12 = trimmedTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (match12) {
+        let h = parseInt(match12[1], 10);
+        const m = parseInt(match12[2], 10);
+        const ampm = match12[3].toUpperCase();
+        if (ampm === "PM" && h < 12) h += 12;
+        if (ampm === "AM" && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+  }
+
+  const parts = trimmedDate.split("-");
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const mo = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const dt = new Date(y, mo, d, hours, minutes, 0, 0);
+    if (!isNaN(dt.getTime())) return dt.getTime();
+  }
+
+  const parsed = Date.parse(trimmedDate);
+  if (!isNaN(parsed)) {
+    const dt = new Date(parsed);
+    dt.setHours(hours, minutes, 0, 0);
+    return dt.getTime();
+  }
+
+  return plan.createdAt || 0;
 }
 
 function PlanParticipantsPanel({ plan }: { plan: any }) {
@@ -535,7 +602,42 @@ export default function Learning() {
   const [, navigate] = useLocation();
   const registerForPlan = useMutation(api.learningPlans.registerForPlan);
 
-  const publishedPlans = useQuery(api.learningPlans.getPublishedPlans) || [];
+  const publishedPlansRaw = useQuery(api.learningPlans.getPublishedPlans) || [];
+  const commonRoomPodcasts = (useQuery(api.commonRoom.getAll) || []) as any[];
+  const [learningSubTab, setLearningSubTab] = useState<"experiences" | "common-room">("experiences");
+
+  const { orderedPlans, upcomingCount, completedCount } = useMemo(() => {
+    const upcoming: any[] = [];
+    const completed: any[] = [];
+
+    for (const plan of publishedPlansRaw) {
+      if (isDateTimeExpired(plan.date, plan.time)) {
+        completed.push(plan);
+      } else {
+        upcoming.push(plan);
+      }
+    }
+
+    // Upcoming sessions sorted by date & time ASC (earliest/closest upcoming session first at the top)
+    upcoming.sort((a, b) => {
+      const timeDiff = getPlanTimestamp(a) - getPlanTimestamp(b);
+      if (timeDiff !== 0) return timeDiff;
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
+
+    // Completed sessions sorted by date & time DESC (most recently completed session first)
+    completed.sort((a, b) => {
+      const timeDiff = getPlanTimestamp(b) - getPlanTimestamp(a);
+      if (timeDiff !== 0) return timeDiff;
+      return ((b.updatedAt || b.createdAt) || 0) - ((a.updatedAt || a.createdAt) || 0);
+    });
+
+    return {
+      orderedPlans: [...upcoming, ...completed],
+      upcomingCount: upcoming.length,
+      completedCount: completed.length,
+    };
+  }, [publishedPlansRaw]);
 
   useEffect(() => {
     const pendingPlanId = sessionStorage.getItem('pendingSessionJoin');
@@ -607,8 +709,13 @@ export default function Learning() {
               </button>
             </Link>
             <Link href="/learning">
-              <button className="text-sm font-semibold tracking-wide transition-colors duration-200 text-slate-900">
-                Learning
+              <button className="relative inline-flex items-center text-sm font-semibold tracking-wide transition-colors duration-200 text-slate-900">
+                <span>Learning</span>
+                {upcomingCount > 0 && (
+                  <span className="absolute -top-2.5 -right-3.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-black text-white shadow-xs ring-2 ring-white animate-in zoom-in-50 duration-300">
+                    {upcomingCount}
+                  </span>
+                )}
               </button>
             </Link>
           </div>
@@ -650,8 +757,13 @@ export default function Learning() {
               </button>
             </Link>
             <Link href="/learning">
-              <button onClick={() => setMobileMenuOpen(false)} className="w-full rounded-2xl px-4 py-3 text-left text-sm font-semibold tracking-wide text-slate-900 bg-emerald-50 text-emerald-700">
-                Learning
+              <button onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between w-full rounded-2xl px-4 py-3 text-left text-sm font-semibold tracking-wide text-slate-900 bg-emerald-50 text-emerald-700">
+                <span>Learning</span>
+                {upcomingCount > 0 && (
+                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1.5 text-xs font-bold text-white shadow-xs">
+                    {upcomingCount}
+                  </span>
+                )}
               </button>
             </Link>
             <div className="mt-2 border-t border-slate-100 pt-3">
@@ -667,11 +779,48 @@ export default function Learning() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 pt-32 pb-24">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div>
-            <p className="mt-4 text-lg text-slate-600 max-w-2xl">
-              Explore upcoming activity sessions, workshops, and deep dives curated by our team members.
-            </p>
+            <h1 className="sr-only">Learning Hub</h1>
+
+            {/* Sub-Tabs: Learning Experiences (Default) & Common Room */}
+            <div className="inline-flex p-1.5 bg-slate-100/90 border border-slate-200/80 rounded-2xl shadow-inner gap-1.5">
+              <button
+                type="button"
+                onClick={() => setLearningSubTab("experiences")}
+                className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                  learningSubTab === "experiences"
+                    ? "bg-white text-slate-900 shadow-sm border border-slate-200/60"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                }`}
+              >
+                <GraduationCap className={`w-4 h-4 ${learningSubTab === "experiences" ? "text-emerald-600" : "text-slate-500"}`} />
+                <span>Learning Experiences</span>
+                {orderedPlans.length > 0 && (
+                  <span className="ml-0.5 px-2 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800">
+                    {orderedPlans.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLearningSubTab("common-room")}
+                className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+                  learningSubTab === "common-room"
+                    ? "bg-white text-slate-900 shadow-sm border border-slate-200/60"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                }`}
+              >
+                <Radio className={`w-4 h-4 ${learningSubTab === "common-room" ? "text-indigo-600" : "text-slate-500"}`} />
+                <span>Common Room</span>
+                {commonRoomPodcasts.length > 0 && (
+                  <span className="ml-0.5 px-2 py-0.5 rounded-full text-xs font-black bg-indigo-100 text-indigo-800">
+                    {commonRoomPodcasts.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm shrink-0">
             <button
@@ -691,14 +840,15 @@ export default function Learning() {
           </div>
         </div>
 
-        {publishedPlans.length === 0 ? (
+        {learningSubTab === "experiences" ? (
+          orderedPlans.length === 0 ? (
           <div className="text-center py-24 bg-white rounded-3xl border border-slate-200 shadow-sm">
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Check back soon!</h3>
             <p className="text-slate-500">No session plans have been published yet.</p>
           </div>
         ) : (
-          <div className={viewMode === "alternating" ? "space-y-24" : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"}>
-            {publishedPlans.map((plan: any, index: number) => {
+          <div className={viewMode === "alternating" ? "space-y-24" : "grid grid-cols-1 md:grid-cols-2 gap-x-8 lg:gap-x-10 gap-y-12"}>
+            {orderedPlans.map((plan: any, index: number) => {
               const validImages = (plan.imageUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
               const validVideos = (plan.videoUrls || []).filter((u: string) => typeof u === "string" && u.trim().length > 5);
 
@@ -779,6 +929,22 @@ export default function Learning() {
                 const isEven = index % 2 === 0;
                 return (
                   <div key={plan._id} className="flex flex-col">
+                    {upcomingCount > 0 && index === upcomingCount && (
+                      <div className="mb-16 pt-8 border-t border-slate-200">
+                        <div className="flex items-center gap-3">
+                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                          <h2 className="text-2xl md:text-3xl font-display font-black text-slate-900 tracking-tight">
+                            Past Completed Sessions
+                          </h2>
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                            {completedCount} Archived
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Review previous learning sessions, participant cohorts, and completion notes.
+                        </p>
+                      </div>
+                    )}
                     <div className={`flex flex-col ${isEven ? 'md:flex-row' : 'md:flex-row-reverse'} gap-12 items-center`}>
                       <div className="w-full md:w-1/2">
                         <MediaElement />
@@ -841,62 +1007,67 @@ export default function Learning() {
                           {plan.description}
                         </p>
 
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-6 flex-wrap">
-                          {plan.documentationUrl && (
-                            <a href={plan.documentationUrl} target="_blank" rel="noopener noreferrer">
-                              <Button variant="outline" className="rounded-full px-6 py-6 h-auto text-lg w-full sm:w-auto border-slate-300 text-slate-700 hover:bg-slate-50">
-                                Documentation
-                              </Button>
-                            </a>
-                          )}
-                          {isCompleted ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleExpandPlan(plan._id)}
-                              className="bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-900 font-bold rounded-full px-8 py-4 text-base flex items-center justify-center gap-2 shadow-sm transition-all w-full sm:w-auto cursor-pointer"
-                            >
-                              <CheckCircle2 className="w-5 h-5 text-purple-600" />
-                              <span>Session Completed</span>
-                              <span className="text-xs bg-purple-200/80 text-purple-900 px-2.5 py-1 rounded-full font-bold ml-1">
-                                {attendedUsers.length} Attended
-                              </span>
-                              {isExpanded ? <ChevronUp className="w-5 h-5 text-purple-600 ml-1" /> : <ChevronDown className="w-5 h-5 text-purple-600 ml-1" />}
-                            </button>
-                          ) : isRegistered ? (
-                            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                              <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold rounded-full px-8 py-4 text-base flex items-center justify-center gap-2 shadow-sm w-full sm:w-auto">
-                                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                                <span>Joined & Registered</span>
-                              </div>
-                              <Button
+                        <div className="pt-6 space-y-3">
+                          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                            {plan.documentationUrl && (
+                              <a href={plan.documentationUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                                <Button variant="outline" className="rounded-full px-5 py-2.5 h-auto text-sm font-semibold border-slate-300 text-slate-700 hover:bg-slate-50">
+                                  Documentation
+                                </Button>
+                              </a>
+                            )}
+                            {isCompleted ? (
+                              <button
                                 type="button"
-                                variant="outline"
                                 onClick={() => toggleExpandPlan(plan._id)}
-                                className="rounded-full px-6 py-6 h-auto text-base w-full sm:w-auto border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-2 cursor-pointer"
+                                className="bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-900 font-bold rounded-full px-5 py-2.5 text-sm flex items-center gap-2 shadow-xs transition-all shrink-0 cursor-pointer"
                               >
-                                <Users className="w-5 h-5 text-emerald-600" />
-                                <span>{registered.length}/{maxCap} Registered{totalPastAttendees > 0 ? ` • ${totalPastAttendees} Past Attendees` : ''}</span>
-                                {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                              <Button onClick={() => handleJoin(plan._id)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-8 py-6 h-auto text-lg w-full sm:w-auto shadow-md transition-all hover:scale-105">
-                                Join <ArrowRight className="ml-2 w-5 h-5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => toggleExpandPlan(plan._id)}
-                                className="rounded-full px-6 py-6 h-auto text-base w-full sm:w-auto border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-2 cursor-pointer"
-                              >
-                                <Users className="w-5 h-5 text-emerald-600" />
-                                <span>{registered.length}/{maxCap} Registered{totalPastAttendees > 0 ? ` • ${totalPastAttendees} Past Attendees` : ''}</span>
-                                {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                              </Button>
-                            </div>
-                          )}
-                          <div className="text-sm text-slate-500 font-medium sm:ml-auto">
+                                <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                                <span>Session Completed</span>
+                                <span className="text-xs bg-purple-200/80 text-purple-900 px-2 py-0.5 rounded-full font-bold ml-1">
+                                  {attendedUsers.length} Attended
+                                </span>
+                                {isExpanded ? <ChevronUp className="w-4 h-4 text-purple-600 ml-1" /> : <ChevronDown className="w-4 h-4 text-purple-600 ml-1" />}
+                              </button>
+                            ) : isRegistered ? (
+                              <>
+                                <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold rounded-full px-5 py-2.5 text-sm flex items-center gap-1.5 shadow-xs shrink-0">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  <span>Joined & Registered</span>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => toggleExpandPlan(plan._id)}
+                                  className="rounded-full px-4 py-2.5 h-auto text-sm border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-2 shrink-0 cursor-pointer"
+                                >
+                                  <Users className="w-4 h-4 text-emerald-600" />
+                                  <span>{registered.length}/{maxCap} Registered{totalPastAttendees > 0 ? ` • ${totalPastAttendees} Past` : ''}</span>
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  onClick={() => handleJoin(plan._id)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-full px-6 py-2.5 h-auto text-sm font-bold shadow-sm transition-all hover:scale-105 shrink-0 flex items-center gap-1.5"
+                                >
+                                  Join <ArrowRight className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => toggleExpandPlan(plan._id)}
+                                  className="rounded-full px-4 py-2.5 h-auto text-sm border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-2 shrink-0 cursor-pointer"
+                                >
+                                  <Users className="w-4 h-4 text-emerald-600" />
+                                  <span>{registered.length}/{maxCap} Registered{totalPastAttendees > 0 ? ` • ${totalPastAttendees} Past Attendees` : ''}</span>
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500 font-medium">
                             Curated by <span className="text-slate-900 font-bold">{plan.authorName}</span>
                           </div>
                         </div>
@@ -913,115 +1084,150 @@ export default function Learning() {
               } else {
                 // Grid view
                 return (
-                  <div key={plan._id} className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm hover:shadow-lg transition-all flex flex-col h-full group">
-                    <MediaElement />
-                    <div className="pt-6 flex flex-col flex-1">
-                      <div className="flex flex-wrap gap-1.5 mb-3 items-center">
-                        <span className="px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-extrabold rounded-sm">
-                          Ed. {editionNum}
-                        </span>
-                        {completedEditions > 0 && (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold rounded-sm flex items-center gap-0.5">
-                            <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
-                            {completedEditions} ⭐
+                  <div key={plan._id} className="contents">
+                    {upcomingCount > 0 && index === upcomingCount && (
+                      <div className="col-span-full pt-8 pb-2 border-t border-slate-200">
+                        <div className="flex items-center gap-3">
+                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                          <h2 className="text-2xl md:text-3xl font-display font-black text-slate-900 tracking-tight">
+                            Past Completed Sessions
+                          </h2>
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                            {completedCount} Archived
                           </span>
-                        )}
-                        {pastEditions.length > 0 && (
-                          <span className="px-2 py-0.5 bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-extrabold rounded-sm flex items-center gap-0.5">
-                            <History className="w-3 h-3 text-purple-700" />
-                            {totalPastAttendees} Attended
-                          </span>
-                        )}
-                        {plan.tags?.slice(0, 2).map((tag: string) => (
-
-                          <span key={tag} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wider rounded-sm">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-emerald-600 transition-colors">{plan.title}</h3>
-                      {(plan.date || plan.time || plan.location) && (
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium text-slate-500 mb-3">
-                          {plan.date && <span>📅 {plan.date}</span>}
-                          {plan.time && <span>⏰ {plan.time}</span>}
-                          {plan.location && <span>📍 {plan.location}</span>}
-                          <span>👥 Max: {maxCap}</span>
                         </div>
-                      )}
-                      <p className="text-slate-600 text-sm line-clamp-3 mb-6 flex-1">
-                        {plan.description}
-                      </p>
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-auto">
-                        <span className="text-xs font-medium text-slate-500">By {plan.authorName}</span>
-                        <div className="flex items-center gap-2">
-                          {plan.documentationUrl && (
-                            <a href={plan.documentationUrl} target="_blank" rel="noopener noreferrer" className="text-slate-500 font-semibold text-xs hover:text-slate-900 transition-colors mr-1">
-                              Docs
-                            </a>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Review previous learning sessions, participant cohorts, and completion notes.
+                        </p>
+                      </div>
+                    )}
+                    <div className="flex flex-col group">
+                      <div className="w-full">
+                        <MediaElement />
+                      </div>
+                      <div className="pt-3.5 flex flex-col flex-1">
+                        <div className="flex flex-wrap gap-1.5 mb-2.5 items-center">
+                          <span className="px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-extrabold rounded-md">
+                            Ed. {editionNum}
+                          </span>
+                          {completedEditions > 0 && (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold rounded-md flex items-center gap-0.5">
+                              <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                              {completedEditions} ⭐
+                            </span>
                           )}
-                          {isMySubmissionApproved ? (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
-                              className="text-slate-950 font-black text-xs flex items-center bg-amber-400 hover:bg-amber-500 border border-amber-300 px-3 py-1.5 rounded-full shadow-sm transition-colors cursor-pointer"
-                            >
-                              <Star className="w-3.5 h-3.5 mr-1 fill-slate-950 text-slate-950" />
-                              Completed ⭐
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
-                            </button>
-                          ) : isCompleted ? (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
-                              className="text-purple-800 font-bold text-xs flex items-center bg-purple-100 hover:bg-purple-200 border border-purple-300 px-3 py-1.5 rounded-full shadow-sm transition-colors cursor-pointer"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-purple-600" />
-                              Completed
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
-                            </button>
-                          ) : isRegistered ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-emerald-800 font-bold text-xs flex items-center bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full shadow-sm">
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                                Registered
-                              </span>
+                          {pastEditions.length > 0 && (
+                            <span className="px-2 py-0.5 bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-extrabold rounded-md flex items-center gap-0.5">
+                              <History className="w-3 h-3 text-purple-700" />
+                              {totalPastAttendees} Attended
+                            </span>
+                          )}
+                          {plan.tags?.map((tag: string) => (
+                            <span key={tag} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wider rounded-md border border-emerald-200/60">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                        <h3 className="text-xl font-display font-bold text-slate-900 mb-2 group-hover:text-emerald-600 transition-colors leading-snug">
+                          {plan.title}
+                        </h3>
+                        {(plan.date || plan.time || plan.location) && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium text-slate-500 mb-2.5">
+                            {plan.date && <span>📅 {plan.date}</span>}
+                            {plan.time && <span>⏰ {plan.time}</span>}
+                            {plan.location && <span>📍 {plan.location}</span>}
+                            <span>👥 Max: {maxCap}</span>
+                          </div>
+                        )}
+                        <p className="text-slate-600 text-sm line-clamp-3 mb-4 leading-relaxed">
+                          {plan.description}
+                        </p>
+                        <div className="flex items-center justify-between pt-3 border-t border-slate-100 mt-auto">
+                          <span className="text-xs font-medium text-slate-500">
+                            Curated by <span className="text-slate-800 font-semibold">{plan.authorName}</span>
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {plan.documentationUrl && (
+                              <a
+                                href={plan.documentationUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-slate-500 font-semibold text-xs hover:text-slate-900 transition-colors mr-1"
+                              >
+                                Docs
+                              </a>
+                            )}
+                            {isMySubmissionApproved ? (
                               <button
                                 type="button"
                                 onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
-                                className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-full transition-colors cursor-pointer"
-                                title="View Registered Members"
+                                className="text-slate-950 font-black text-xs flex items-center bg-amber-400 hover:bg-amber-500 border border-amber-300 px-3 py-1.5 rounded-full shadow-xs transition-colors cursor-pointer"
                               >
-                                {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <Users className="w-4 h-4 text-emerald-600" />}
+                                <Star className="w-3.5 h-3.5 mr-1 fill-slate-950 text-slate-950" />
+                                Completed ⭐
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
                               </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5">
-                              <button type="button" onClick={(e) => { e.preventDefault(); handleJoin(plan._id); }} className="text-emerald-600 font-semibold text-xs flex items-center hover:underline bg-emerald-50 px-3 py-1.5 rounded-full cursor-pointer">
-                                Join <ArrowRight className="w-3 h-3 ml-1" />
-                              </button>
+                            ) : isCompleted ? (
                               <button
                                 type="button"
                                 onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
-                                className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-full transition-colors cursor-pointer"
-                                title="View Registered Members"
+                                className="text-purple-800 font-bold text-xs flex items-center bg-purple-100 hover:bg-purple-200 border border-purple-300 px-3 py-1.5 rounded-full shadow-xs transition-colors cursor-pointer"
                               >
-                                {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <Users className="w-4 h-4 text-emerald-600" />}
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-purple-600" />
+                                Completed
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
                               </button>
-                            </div>
-                          )}
+                            ) : isRegistered ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-emerald-800 font-bold text-xs flex items-center bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full shadow-xs">
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                                  Registered
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
+                                  className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-full transition-colors cursor-pointer"
+                                  title="View Registered Members"
+                                >
+                                  {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <Users className="w-4 h-4 text-emerald-600" />}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); handleJoin(plan._id); }}
+                                  className="text-white font-bold text-xs flex items-center bg-emerald-600 hover:bg-emerald-700 px-3.5 py-1.5 rounded-full shadow-xs cursor-pointer transition-colors"
+                                >
+                                  Join <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); toggleExpandPlan(plan._id); }}
+                                  className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-full transition-colors cursor-pointer"
+                                  title="View Registered Members"
+                                >
+                                  {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <Users className="w-4 h-4 text-emerald-600" />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Expandable Attendees / Waiting List Panel */}
-                      {isExpanded && (
-                        <PlanParticipantsPanel plan={plan} />
-                      )}
+                        {/* Expandable Attendees / Waiting List Panel */}
+                        {isExpanded && (
+                          <PlanParticipantsPanel plan={plan} />
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               }
             })}
           </div>
+        )
+        ) : (
+          <CommonRoomSection podcasts={commonRoomPodcasts} viewMode={viewMode} />
         )}
       </main>
 

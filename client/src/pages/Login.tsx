@@ -8,6 +8,8 @@ import { motion } from 'framer-motion';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
 import { GOOGLE_CLIENT_ID } from '@/config';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 /**
  * Design: Modern Minimalist - Login Page.
@@ -22,6 +24,7 @@ export default function Login() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const { login } = useAuth();
   const [, navigate] = useLocation();
+  const availableLearningCount = useQuery(api.learningPlans.getAvailableRegistrationPlansCount) || 0;
 
   if (!GOOGLE_CLIENT_ID) {
     return (
@@ -65,8 +68,13 @@ export default function Login() {
               </button>
             </Link>
             <Link href="/learning">
-              <button className="text-sm font-medium tracking-wide text-slate-500 hover:text-slate-900 transition-colors duration-200">
-                Learning
+              <button className="relative inline-flex items-center text-sm font-medium tracking-wide text-slate-500 hover:text-slate-900 transition-colors duration-200">
+                <span>Learning</span>
+                {availableLearningCount > 0 && (
+                  <span className="absolute -top-2.5 -right-3.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-black text-white shadow-xs ring-2 ring-white animate-in zoom-in-50 duration-300">
+                    {availableLearningCount}
+                  </span>
+                )}
               </button>
             </Link>
           </div>

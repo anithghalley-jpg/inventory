@@ -6,11 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw, GraduationCap, Laptop } from 'lucide-react';
+import { Search, Plus, Filter, Trash2, Edit2, CheckCircle, XCircle, Package, Download, BarChart2, Monitor, LogOut, Users as UsersIcon, Camera, Clock, Printer, Scissors, Zap, BookOpen, History, Megaphone, Pin, ChevronDown, ChevronUp, Mail, FolderKanban, RotateCcw, GraduationCap, Laptop, MessagesSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { MachineCard, MachineData } from '@/components/MachineCard';
 import AdminProjectsTab from '@/components/AdminProjectsTab';
 import AdminLearningReportsTab from '@/components/AdminLearningReportsTab';
+import AdminForumTab from '@/components/forum/AdminForumTab';
+import AdminCommonRoomTab from '@/components/admin/AdminCommonRoomTab';
 import MakerStripesRack from '@/components/MakerStripesRack';
 import MakerUserCard from '@/components/MakerUserCard';
 import DeviceUsageTracker from '@/components/admin/DeviceUsageTracker';
@@ -218,7 +220,8 @@ export default function AdminPanel() {
   const [homeItems, setHomeItems] = useState<any[]>([]);
   const [homeForm, setHomeForm] = useState({ id: '', type: 'text_block', heading: '', description: '', contentUrl: '' });
   const [showAddHome, setShowAddHome] = useState(false);
-  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy' | 'fab-interns' | 'home'>('tra-students');
+  const [guestContentTab, setGuestContentTab] = useState<'tra-students' | 'fab-academy' | 'fab-interns' | 'home' | 'common-room'>('tra-students');
+  const [showAddCommonRoom, setShowAddCommonRoom] = useState(false);
   const [aspects, setAspects] = useState<any[]>([]);
   const [aspectForm, setAspectForm] = useState({ id: '', entryId: '', aspect: '', writeUp: '', shortNote: '', images: [''] as string[] });
   const [showAddAspect, setShowAddAspect] = useState(false);
@@ -1468,7 +1471,7 @@ export default function AdminPanel() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs defaultValue="users" className="space-y-20" onValueChange={(tab) => { if (tab === 'settings') fetchSyncStatus(); }}>
-          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-7xl grid-cols-11' : 'max-w-3xl grid-cols-6'} bg-muted`}>
+          <TabsList className={`grid w-full ${user?.role === 'ADMIN' ? 'max-w-7xl grid-cols-12' : 'max-w-3xl grid-cols-6'} bg-muted`}>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <UsersIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Users</span>
@@ -1519,6 +1522,12 @@ export default function AdminPanel() {
               <TabsTrigger value="learning-reports" className="flex items-center gap-2">
                 <GraduationCap className="w-4 h-4 text-emerald-600" />
                 <span className="hidden sm:inline">Learning Reports</span>
+              </TabsTrigger>
+            )}
+            {user?.role === 'ADMIN' && (
+              <TabsTrigger value="forum" className="flex items-center gap-2">
+                <MessagesSquare className="w-4 h-4 text-emerald-500" />
+                <span className="hidden sm:inline">Forum</span>
               </TabsTrigger>
             )}
             {user?.role === 'ADMIN' && (
@@ -2490,6 +2499,13 @@ export default function AdminPanel() {
             </TabsContent>
           )}
 
+          {/* FORUM TAB */}
+          {user?.role === 'ADMIN' && (
+            <TabsContent value="forum" className="space-y-6">
+              <AdminForumTab userEmail={user?.email || 'admin@system.local'} canManage={user?.role === 'ADMIN'} />
+            </TabsContent>
+          )}
+
           {/* TAB 4: LAPTOP MONITOR */}
           <TabsContent value="monitor" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -3410,7 +3426,9 @@ export default function AdminPanel() {
                       size="sm"
                       className="bg-emerald-600 hover:bg-emerald-700"
                       onClick={() => {
-                        if (guestContentTab === 'fab-academy') {
+                        if (guestContentTab === 'common-room') {
+                          setShowAddCommonRoom(true);
+                        } else if (guestContentTab === 'fab-academy') {
                           resetFabAcademyForm();
                           setShowAddFabAcademy(true);
                         } else if (guestContentTab === 'fab-interns') {
@@ -3426,22 +3444,24 @@ export default function AdminPanel() {
                       }}
                     >
                       <Plus className="w-4 h-4 mr-1" /> 
-                      {guestContentTab === 'fab-academy' ? 'Add Fab Academy Entry' : 
+                      {guestContentTab === 'common-room' ? 'Add Podcast / Video' :
+                       guestContentTab === 'fab-academy' ? 'Add Fab Academy Entry' : 
                        guestContentTab === 'fab-interns' ? 'Add Fab Intern Entry' : 
                        guestContentTab === 'home' ? 'Add Aspect' :
                        'Add Block'}
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Manage public community content for Home Aspects, TRA Students, Fab Academy, and Fab Intern showcases.
+                    Manage public community content for Home Aspects, TRA Students, Fab Academy, Fab Interns, and Common Room podcasts.
                   </p>
 
-                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy' | 'fab-interns' | 'home')}>
-                    <TabsList className="grid w-full max-w-2xl grid-cols-4 p-1 bg-slate-200/50 mb-4">
+                  <Tabs value={guestContentTab} onValueChange={(value) => setGuestContentTab(value as 'tra-students' | 'fab-academy' | 'fab-interns' | 'home' | 'common-room')}>
+                    <TabsList className="grid w-full max-w-3xl grid-cols-5 p-1 bg-slate-200/50 mb-4">
                       <TabsTrigger value="home" className="rounded-md font-medium">Home</TabsTrigger>
                       <TabsTrigger value="tra-students" className="rounded-md font-medium">TRA Students</TabsTrigger>
                       <TabsTrigger value="fab-academy" className="rounded-md font-medium">Fab Academy</TabsTrigger>
                       <TabsTrigger value="fab-interns" className="rounded-md font-medium">Fab Interns</TabsTrigger>
+                      <TabsTrigger value="common-room" className="rounded-md font-medium">Common Room</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="home" className="space-y-4">
@@ -3816,6 +3836,13 @@ export default function AdminPanel() {
                           </div>
                         ))}
                       </div>
+                    </TabsContent>
+
+                    <TabsContent value="common-room" className="space-y-4">
+                      <AdminCommonRoomTab
+                        showAddForm={showAddCommonRoom}
+                        setShowAddForm={setShowAddCommonRoom}
+                      />
                     </TabsContent>
                   </Tabs>
                 </Card>

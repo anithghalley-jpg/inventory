@@ -7,18 +7,34 @@ export function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
   if (!dateStr || !dateStr.trim()) return false;
   
   const trimmedDate = dateStr.trim();
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // Adjust for local timezone (UTC+6) when running on UTC server
+  const now = new Date(Date.now() + 6 * 3600 * 1000);
+  const nowYear = now.getUTCFullYear();
+  const nowMonth = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const nowDay = String(now.getUTCDate()).padStart(2, '0');
+  const todayStr = `${nowYear}-${nowMonth}-${nowDay}`;
 
-  if (trimmedDate < todayStr) return true;
-  if (trimmedDate > todayStr) return false;
+  // Standard YYYY-MM-DD check
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    if (trimmedDate < todayStr) return true;
+    if (trimmedDate > todayStr) return false;
+  } else {
+    // Non-standard date format fallback
+    const parsed = Date.parse(trimmedDate);
+    if (!isNaN(parsed)) {
+      const d = new Date(parsed);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (dStr < todayStr) return true;
+      if (dStr > todayStr) return false;
+    }
+  }
 
   // If date is today, check time if provided
   if (!timeStr || !timeStr.trim()) return false;
 
   const trimmedTime = timeStr.trim();
-  const nowHours = today.getHours();
-  const nowMinutes = today.getMinutes();
+  const nowHours = now.getUTCHours();
+  const nowMinutes = now.getUTCMinutes();
 
   // Try parsing 24-hr time like "14:30"
   const match24 = trimmedTime.match(/^(\d{1,2}):(\d{2})$/);
@@ -45,6 +61,54 @@ export function isDateTimeExpired(dateStr?: string, timeStr?: string): boolean {
   }
 
   return false;
+}
+
+export function getPlanTimestamp(plan: { date?: string; time?: string; createdAt?: number; updatedAt?: number }): number {
+  if (!plan.date || !plan.date.trim()) {
+    return plan.createdAt || 0;
+  }
+
+  const trimmedDate = plan.date.trim();
+  let hours = 0;
+  let minutes = 0;
+
+  if (plan.time && plan.time.trim()) {
+    const trimmedTime = plan.time.trim();
+    const match24 = trimmedTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (match24) {
+      hours = parseInt(match24[1], 10);
+      minutes = parseInt(match24[2], 10);
+    } else {
+      const match12 = trimmedTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (match12) {
+        let h = parseInt(match12[1], 10);
+        const m = parseInt(match12[2], 10);
+        const ampm = match12[3].toUpperCase();
+        if (ampm === "PM" && h < 12) h += 12;
+        if (ampm === "AM" && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+  }
+
+  const parts = trimmedDate.split("-");
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const mo = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const dt = new Date(y, mo, d, hours, minutes, 0, 0);
+    if (!isNaN(dt.getTime())) return dt.getTime();
+  }
+
+  const parsed = Date.parse(trimmedDate);
+  if (!isNaN(parsed)) {
+    const dt = new Date(parsed);
+    dt.setHours(hours, minutes, 0, 0);
+    return dt.getTime();
+  }
+
+  return plan.createdAt || 0;
 }
 
 export const createPlan = mutation({
@@ -205,10 +269,48 @@ export const getPublishedPlans = query({
       .query("learningPlans")
       .withIndex("by_status", (q) => q.eq("status", "COMPLETED"))
       .collect();
-      
-    const combined = [...publishedPlans, ...completedPlans];
-    // Sort by createdAt descending
-    return combined.sort((a, b) => b.createdAt - a.createdAt);
+
+    const upcoming: typeof publishedPlans = [];
+    const completed: typeof publishedPlans = [];
+
+    for (const plan of publishedPlans) {
+      if (isDateTimeExpired(plan.date, plan.time)) {
+        completed.push(plan);
+      } else {
+        upcoming.push(plan);
+      }
+    }
+    for (const plan of completedPlans) {
+      completed.push(plan);
+    }
+
+    // Upcoming sessions sorted by date & time ASC (earliest/closest upcoming session first at the top)
+    upcoming.sort((a, b) => {
+      const timeDiff = getPlanTimestamp(a) - getPlanTimestamp(b);
+      if (timeDiff !== 0) return timeDiff;
+      return a.createdAt - b.createdAt;
+    });
+
+    // Completed sessions sorted by date & time DESC (most recently completed session first)
+    completed.sort((a, b) => {
+      const timeDiff = getPlanTimestamp(b) - getPlanTimestamp(a);
+      if (timeDiff !== 0) return timeDiff;
+      return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
+    });
+
+    return [...upcoming, ...completed];
+  },
+});
+
+export const getAvailableRegistrationPlansCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const publishedPlans = await ctx.db
+      .query("learningPlans")
+      .withIndex("by_status", (q) => q.eq("status", "PUBLISHED"))
+      .collect();
+    const upcoming = publishedPlans.filter((p) => !isDateTimeExpired(p.date, p.time));
+    return upcoming.length;
   },
 });
 

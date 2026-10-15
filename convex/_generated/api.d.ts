@@ -9,10 +9,12 @@
  */
 
 import type * as aspects from "../aspects.js";
+import type * as commonRoom from "../commonRoom.js";
 import type * as dashboardUpdates from "../dashboardUpdates.js";
 import type * as devices from "../devices.js";
 import type * as fabAcademy from "../fabAcademy.js";
 import type * as fabInterns from "../fabInterns.js";
+import type * as forums from "../forums.js";
 import type * as home from "../home.js";
 import type * as http from "../http.js";
 import type * as inventory from "../inventory.js";
@@ -33,10 +35,12 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   aspects: typeof aspects;
+  commonRoom: typeof commonRoom;
   dashboardUpdates: typeof dashboardUpdates;
   devices: typeof devices;
   fabAcademy: typeof fabAcademy;
   fabInterns: typeof fabInterns;
+  forums: typeof forums;
   home: typeof home;
   http: typeof http;
   inventory: typeof inventory;

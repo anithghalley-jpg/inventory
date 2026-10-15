@@ -140,6 +140,8 @@ export default function Home() {
     )), []
   );
 
+  const availableLearningCount = useQuery(api.learningPlans.getAvailableRegistrationPlansCount) || 0;
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
@@ -177,8 +179,13 @@ export default function Home() {
               </button>
             </Link>
             <Link href="/learning">
-              <button className={`text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
-                Learning
+              <button className={`relative inline-flex items-center text-sm font-medium tracking-wide transition-colors duration-200 ${isSpaceHovered ? 'text-white/70 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                <span>Learning</span>
+                {availableLearningCount > 0 && (
+                  <span className="absolute -top-2.5 -right-3.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-black text-white shadow-xs ring-2 ring-white animate-in zoom-in-50 duration-300">
+                    {availableLearningCount}
+                  </span>
+                )}
               </button>
             </Link>
           </div>
@@ -233,9 +240,14 @@ export default function Home() {
             <Link href="/learning">
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full rounded-2xl px-4 py-3 text-left text-sm font-medium tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                className="flex items-center justify-between w-full rounded-2xl px-4 py-3 text-left text-sm font-medium tracking-wide text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
               >
-                Learning
+                <span>Learning</span>
+                {availableLearningCount > 0 && (
+                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1.5 text-xs font-bold text-white shadow-xs">
+                    {availableLearningCount}
+                  </span>
+                )}
               </button>
             </Link>
             <div className="mt-2 border-t border-slate-100 pt-3">

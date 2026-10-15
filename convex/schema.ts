@@ -524,4 +524,106 @@ export default defineSchema({
     lastSavedAt: v.string(),
     createdAt: v.string(),
   }).index("by_userEmail", ["userEmail"]),
+
+  forums: defineTable({
+    forumId: v.string(),
+    title: v.string(),
+    edition: v.number(),
+    editionLabel: v.optional(v.string()),
+    date: v.string(),
+    time: v.string(),
+    location: v.optional(v.string()),
+    description: v.optional(v.string()),
+    agenda: v.optional(v.string()),
+    departments: v.optional(v.array(v.string())),
+    roles: v.object({
+      chairperson: v.object({
+        name: v.string(),
+        email: v.optional(v.string()),
+        department: v.optional(v.string()),
+      }),
+      noteTaker: v.object({
+        name: v.string(),
+        email: v.optional(v.string()),
+        department: v.optional(v.string()),
+      }),
+      timeKeeper: v.object({
+        name: v.string(),
+        email: v.optional(v.string()),
+        department: v.optional(v.string()),
+      }),
+      questionMaster: v.object({
+        name: v.string(),
+        email: v.optional(v.string()),
+        department: v.optional(v.string()),
+      }),
+    }),
+    status: v.union(
+      v.literal("UPCOMING"),
+      v.literal("IN_PROGRESS"),
+      v.literal("COMPLETED"),
+      v.literal("CANCELLED"),
+    ),
+    minutesPdfUrl: v.optional(v.string()),
+    minutesPdfName: v.optional(v.string()),
+    coverImageUrl: v.optional(v.string()),
+    eventPhotos: v.optional(v.array(v.string())),
+    driveFolderName: v.optional(v.string()),
+    driveFolderId: v.optional(v.string()),
+    driveFolderUrl: v.optional(v.string()),
+    carriedOverActionItemIds: v.optional(v.array(v.string())),
+    keyTakeaways: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    completedBy: v.optional(v.string()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_forumId", ["forumId"])
+    .index("by_status", ["status"])
+    .index("by_edition", ["edition"])
+    .index("by_date", ["date"]),
+
+  forumActionItems: defineTable({
+    itemId: v.string(),
+    forumId: v.optional(v.string()),
+    forumEdition: v.optional(v.number()),
+    title: v.string(),
+    description: v.optional(v.string()),
+    assignee: v.optional(v.string()),
+    department: v.optional(v.string()),
+    isResolved: v.boolean(),
+    resolvedAt: v.optional(v.number()),
+    resolvedInForumId: v.optional(v.string()),
+    currentForumId: v.optional(v.string()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_itemId", ["itemId"])
+    .index("by_isResolved", ["isResolved"])
+    .index("by_forumId", ["forumId"])
+    .index("by_currentForumId", ["currentForumId"]),
+
+  commonRoom: defineTable({
+    podcastId: v.string(),
+    podcastNumber: v.number(),
+    title: v.string(),
+    videoUrl: v.string(), // Google Drive video link
+    tags: v.array(v.string()), // Tags related to the podcast
+    description: v.string(), // Short description
+    guests: v.array(
+      v.object({
+        name: v.string(),
+        email: v.string(),
+      })
+    ), // Guest names along with their email ID
+    coverImageUrl: v.optional(v.string()),
+    published: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_podcastId", ["podcastId"])
+    .index("by_podcastNumber", ["podcastNumber"])
+    .index("by_createdAt", ["createdAt"]),
 });

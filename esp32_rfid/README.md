@@ -8,7 +8,12 @@ This guide provides instructions to connect an **ESP32 WROOM 32E** to an **MFRC5
 
 The system uses two microcontrollers to separate concerns:
 1. **ESP32**: Handles Wi-Fi, HTTP client, Google Sheets API querying, JSON parsing, LCD display updates, RFID tag reading, and status LED indicator toggles.
+
+- image of the ESP32 used and pinout
+
 2. **Arduino Uno**: Receives serial triggers from the ESP32 and directly controls the lock relay (active-high or active-low).
+
+- image of the Metro Board used and pinout
 
 > [!WARNING]
 > **Logic Level Voltage Difference (Crucial)**:

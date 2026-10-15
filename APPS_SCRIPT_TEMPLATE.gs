@@ -244,9 +244,19 @@ function doPost(e) {
       case 'getUserReportMediaFiles':
         response = handleGetUserReportMediaFiles(data);
         break;
+      case 'createForumFolder':
+        response = handleCreateForumFolder(data);
+        break;
+      case 'uploadForumMedia':
+        response = handleUploadForumMedia(data);
+        break;
+      case 'getForumMediaFiles':
+        response = handleGetForumMediaFiles(data);
+        break;
       case 'deleteDriveFile':
       case 'deleteProjectMediaFile':
       case 'deleteUserReportMedia':
+      case 'deleteForumMediaFile':
         response = handleDeleteDriveFile(data);
         break;
       case 'getCategories':
@@ -1276,6 +1286,241 @@ function handleGetUserReportMediaFiles(data) {
     };
   } catch (err) {
     console.error("❌ Error retrieving user report media files:", err);
+    return {
+      success: false,
+      message: err.toString(),
+      files: []
+    };
+  }
+}
+
+// ===== FORUM GOOGLE DRIVE FOLDERS & MEDIA UPLOADS =====
+
+/**
+ * Gets or creates the root 'forums' folder alongside the Inventory Spreadsheet.
+ */
+function getOrCreateForumsRootFolder() {
+  const parentFolder = getSpreadsheetParentFolder();
+  const folderName = "forums";
+  const existingFolders = parentFolder.getFoldersByName(folderName);
+  let forumsFolder;
+  if (existingFolders.hasNext()) {
+    forumsFolder = existingFolders.next();
+  } else {
+    const capitalized = parentFolder.getFoldersByName("Forums");
+    if (capitalized.hasNext()) {
+      forumsFolder = capitalized.next();
+    } else {
+      forumsFolder = parentFolder.createFolder(folderName);
+      try {
+        forumsFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) {
+        console.warn("Could not set public sharing on forums root folder:", e);
+      }
+    }
+  }
+  return forumsFolder;
+}
+
+/**
+ * Creates or retrieves a forum's subfolder inside the 'forums' directory on Google Drive.
+ * Example folder name: "Forum Edition 1 - 2026-09-22"
+ */
+function handleCreateForumFolder(data) {
+  try {
+    const folderName = (data.folderName || ("Forum Edition " + (data.edition || 1) + " - " + (data.date || new Date().toISOString().slice(0, 10)))).trim();
+    const forumsRoot = getOrCreateForumsRootFolder();
+    const existing = forumsRoot.getFoldersByName(folderName);
+    let forumFolder;
+    if (existing.hasNext()) {
+      forumFolder = existing.next();
+    } else {
+      forumFolder = forumsRoot.createFolder(folderName);
+      try {
+        forumFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (e) {
+        console.warn("Could not set public sharing on forum folder:", e);
+      }
+    }
+
+    const folderId = forumFolder.getId();
+    const folderUrl = forumFolder.getUrl();
+
+    console.log("📁 Forum folder ready: " + folderName + " (" + folderId + ")");
+
+    return {
+      success: true,
+      folderId: folderId,
+      folderUrl: folderUrl,
+      folderName: folderName,
+      rootFolderId: forumsRoot.getId(),
+      message: 'Google Drive forum folder is ready.'
+    };
+  } catch (err) {
+    console.error("❌ Error creating forum folder:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
+/**
+ * Uploads media / minutes PDF / photos directly to the forum's dedicated Google Drive folder.
+ */
+function handleUploadForumMedia(data) {
+  try {
+    const { fileName, fileTitle, mimeType, content, folderId, folderName } = data;
+    if (!content) {
+      return { success: false, message: "Missing file content" };
+    }
+
+    let targetFolder;
+    if (folderId) {
+      try {
+        targetFolder = DriveApp.getFolderById(folderId);
+      } catch (e) {
+        console.warn("Could not open forum folderId directly, resolving via name:", e);
+      }
+    }
+
+    if (!targetFolder) {
+      const nameToUse = (folderName || "General Forum Records").trim();
+      const forumsRoot = getOrCreateForumsRootFolder();
+      const existing = forumsRoot.getFoldersByName(nameToUse);
+      if (existing.hasNext()) {
+        targetFolder = existing.next();
+      } else {
+        targetFolder = forumsRoot.createFolder(nameToUse);
+        try {
+          targetFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        } catch (e) {}
+      }
+    }
+
+    const safeMimeType = mimeType || 'application/pdf';
+    let rawName = (fileName || fileTitle || "").trim();
+    if (!rawName) {
+      rawName = (safeMimeType.includes('pdf') ? "forum_minutes_" : "forum_photo_") + Date.now();
+    }
+    let sanitizedBaseName = rawName.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_');
+
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(content),
+      safeMimeType,
+      sanitizedBaseName
+    );
+
+    const file = targetFolder.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {
+      console.warn("Workspace policy blocked file sharing:", e);
+    }
+
+    const fileId = file.getId();
+    const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+    const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w1000";
+    const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+    const label = sanitizedBaseName.replace(/\.[^/.]+$/, "");
+
+    console.log("📸 Forum file uploaded successfully: " + sanitizedBaseName + " (" + fileId + ")");
+
+    return {
+      success: true,
+      fileId: fileId,
+      fileName: sanitizedBaseName,
+      label: label,
+      mimeType: safeMimeType,
+      viewUrl: viewUrl,
+      imageUrl: directLink,
+      thumbnailUrl: directLink,
+      downloadUrl: downloadUrl,
+      folderId: targetFolder.getId(),
+      folderUrl: targetFolder.getUrl(),
+      folderName: targetFolder.getName(),
+      message: "File uploaded directly to Forum Google Drive folder"
+    };
+  } catch (err) {
+    console.error("❌ Error uploading forum media:", err);
+    return {
+      success: false,
+      message: err.toString()
+    };
+  }
+}
+
+/**
+ * Retrieves all files from a forum's Google Drive folder.
+ */
+function handleGetForumMediaFiles(data) {
+  try {
+    const { folderId, folderName } = data;
+    let targetFolder;
+
+    if (folderId) {
+      try {
+        targetFolder = DriveApp.getFolderById(folderId);
+      } catch (e) {
+        console.warn("Could not open folderId directly:", e);
+      }
+    }
+
+    if (!targetFolder && folderName) {
+      const forumsRoot = getOrCreateForumsRootFolder();
+      const existing = forumsRoot.getFoldersByName(folderName.trim());
+      if (existing.hasNext()) {
+        targetFolder = existing.next();
+      }
+    }
+
+    if (!targetFolder) {
+      return {
+        success: false,
+        message: "Forum folder not found",
+        files: []
+      };
+    }
+
+    const filesList = [];
+    const filesIterator = targetFolder.getFiles();
+
+    while (filesIterator.hasNext()) {
+      const file = filesIterator.next();
+      const mime = file.getMimeType();
+      const fileId = file.getId();
+      const name = file.getName();
+      const directLink = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w800";
+      const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view?usp=sharing";
+      const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+      const cleanLabel = name.replace(/\.[^/.]+$/, "");
+
+      filesList.push({
+        fileId: fileId,
+        fileName: name,
+        label: cleanLabel,
+        mimeType: mime,
+        thumbnailUrl: directLink,
+        viewUrl: viewUrl,
+        downloadUrl: downloadUrl,
+        dateCreated: file.getDateCreated() ? file.getDateCreated().toISOString() : new Date().toISOString(),
+        sizeBytes: file.getSize(),
+      });
+    }
+
+    filesList.sort(function(a, b) {
+      return new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime();
+    });
+
+    return {
+      success: true,
+      folderId: targetFolder.getId(),
+      folderUrl: targetFolder.getUrl(),
+      files: filesList,
+      totalCount: filesList.length
+    };
+  } catch (err) {
+    console.error("❌ Error retrieving forum media files:", err);
     return {
       success: false,
       message: err.toString(),
