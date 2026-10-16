@@ -34,8 +34,12 @@ import {
   ExternalLink,
   Shield,
   RotateCcw,
+  ArrowRight,
+  ChevronRight,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
+import DeviceSidePanel, { SelectedSidePanelData } from "./DeviceSidePanel";
 
 interface DeviceItem {
   _id: string;
@@ -71,6 +75,13 @@ export default function DeviceUsageTracker() {
   const registerDeviceMut = useMutation(api.devices.registerDevice);
   const updateDeviceMut = useMutation(api.devices.updateDevice);
   const deleteDeviceMut = useMutation(api.devices.deleteDevice);
+
+  // View Mode: "daily" (default) | "matrix" | "inventory"
+  const [activeViewMode, setActiveViewMode] = useState<"daily" | "matrix" | "inventory">("daily");
+  const [filterOnlyActiveDays, setFilterOnlyActiveDays] = useState(false);
+
+  // Side Panel State
+  const [selectedSidePanel, setSelectedSidePanel] = useState<SelectedSidePanelData | null>(null);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -222,6 +233,86 @@ export default function DeviceUsageTracker() {
     return map;
   }, [logs]);
 
+  // Daily Usage Breakdown: For each day, find devices used on that day
+  const dailyUsageList = useMemo(() => {
+    // Newest date first (Today -> 29 days ago)
+    const reversedDates = [...dates].reverse();
+
+    return reversedDates.map((d) => {
+      const dateLogs = logs.filter((l) => l.date === d.date);
+
+      // Group logs by deviceId
+      const deviceMap = new Map<string, typeof logs>();
+      dateLogs.forEach((l) => {
+        if (!deviceMap.has(l.deviceId)) {
+          deviceMap.set(l.deviceId, []);
+        }
+        deviceMap.get(l.deviceId)!.push(l);
+      });
+
+      const devicesUsed: Array<{
+        deviceId: string;
+        deviceName: string;
+        deviceDoc?: DeviceItem;
+        brand: string;
+        serialNumber: string;
+        sessions: typeof logs;
+        totalMinutes: number;
+        userNames: string[];
+        isActiveNow: boolean;
+      }> = [];
+
+      deviceMap.forEach((sessions, devId) => {
+        const devDoc = devices.find((dev) => dev.deviceId === devId);
+        const devName = sessions[0]?.deviceName || devDoc?.name || devId;
+        const brand = devDoc?.brand || "Generic";
+        const serialNumber = devDoc?.serialNumber || "-";
+        const totalMinutes = sessions.reduce((acc, s) => acc + (s.durationMinutes || 0), 0);
+        const userNames = Array.from(new Set(sessions.map((s) => s.userName || s.userEmail.split("@")[0])));
+        const isActiveNow = sessions.some((s) => s.isActive);
+
+        devicesUsed.push({
+          deviceId: devId,
+          deviceName: devName,
+          deviceDoc: devDoc,
+          brand,
+          serialNumber,
+          sessions,
+          totalMinutes,
+          userNames,
+          isActiveNow,
+        });
+      });
+
+      // Sort devices by name (e.g. 5-ASC, 6-ASC...)
+      devicesUsed.sort((a, b) =>
+        a.deviceName.localeCompare(b.deviceName, undefined, { numeric: true, sensitivity: "base" })
+      );
+
+      const totalDayMinutes = devicesUsed.reduce((acc, d) => acc + d.totalMinutes, 0);
+
+      return {
+        ...d,
+        devicesUsed,
+        totalDayMinutes,
+        totalDaySessions: dateLogs.length,
+      };
+    });
+  }, [dates, logs, devices]);
+
+  // Lookups for the active side panel
+  const selectedDeviceDoc = useMemo(() => {
+    if (!selectedSidePanel) return undefined;
+    return devices.find((d) => d.deviceId === selectedSidePanel.deviceId);
+  }, [devices, selectedSidePanel]);
+
+  const sessionsForSidePanel = useMemo(() => {
+    if (!selectedSidePanel) return [];
+    return logs.filter(
+      (l) => l.deviceId === selectedSidePanel.deviceId && l.date === selectedSidePanel.date
+    );
+  }, [logs, selectedSidePanel]);
+
   // KPI calculations
   const totalInUseNow = useMemo(() => {
     return devices.filter((d) => d.status === "IN_USE").length;
@@ -262,10 +353,10 @@ export default function DeviceUsageTracker() {
               </div>
               <div>
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                  Device Management & 30-Day Usage Tracker
+                  Device Management & Usage Tracker
                 </h2>
                 <p className="text-xs text-slate-300">
-                  Manage computer inventory and track daily user session records (GMT+6)
+                  Track devices used per day, inspect member timestamps, and manage hardware inventory (GMT+6)
                 </p>
               </div>
             </div>
@@ -294,7 +385,7 @@ export default function DeviceUsageTracker() {
 
             <Button
               onClick={handleOpenAddModal}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-9 shadow-md shadow-emerald-600/20 gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-9 shadow-md shadow-emerald-600/20 gap-1.5 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               <span>Add Device</span>
@@ -341,275 +432,611 @@ export default function DeviceUsageTracker() {
         </div>
       </div>
 
-      {/* ── 2. Filter & Search Controls Bar ── */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by device name, serial number, MAC, or brand..."
-            className="pl-9 text-xs rounded-xl h-9 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <span className="text-xs font-bold text-slate-400 mr-1 flex items-center gap-1">
-            <Filter className="h-3.5 w-3.5" /> Brand:
-          </span>
+      {/* ── 2. View Mode Switcher Bar ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2 sm:p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl">
           <button
             type="button"
-            onClick={() => setSelectedBrandFilter("all")}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
-              selectedBrandFilter === "all"
-                ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+            onClick={() => setActiveViewMode("daily")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeViewMode === "daily"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-black"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            All ({devices.length})
+            <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+            <span>Daily Activity (By Day)</span>
           </button>
-          {["Dell", "Mac", "Lenovo", "HP"].map((b) => (
-            <button
-              key={b}
-              type="button"
-              onClick={() => setSelectedBrandFilter(b)}
-              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
-                selectedBrandFilter.toLowerCase() === b.toLowerCase()
-                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-              }`}
-            >
-              {b}
-            </button>
-          ))}
+
+          <button
+            type="button"
+            onClick={() => setActiveViewMode("matrix")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeViewMode === "matrix"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-black"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5 text-indigo-500" />
+            <span>30-Day Matrix Table</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveViewMode("inventory")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeViewMode === "inventory"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-black"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <Cpu className="h-3.5 w-3.5 text-cyan-500" />
+            <span>Device Inventory ({devices.length})</span>
+          </button>
         </div>
+
+        {activeViewMode === "daily" && (
+          <div className="flex items-center gap-2 px-2">
+            <span className="text-xs text-slate-500 font-medium">Show only days with activity:</span>
+            <Switch
+              checked={filterOnlyActiveDays}
+              onCheckedChange={setFilterOnlyActiveDays}
+              className="data-[state=checked]:bg-emerald-500"
+            />
+          </div>
+        )}
       </div>
 
-      {/* ── 3. 30-Day Device Usage Matrix Table ── */}
-      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
-        <div className="p-4 sm:p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-emerald-600" />
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
-              30-Day Rolling Usage Matrix (GMT+6)
-            </h3>
+      {/* ── 3. VIEW MODE: Daily Activity (By Day) ── */}
+      {activeViewMode === "daily" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              For each day, the active device IDs are shown below. Click any device to open the side panel and inspect all users with timestamps.
+            </p>
+            <span className="text-xs font-bold text-slate-400">
+              Showing past 30 days (Newest first)
+            </span>
           </div>
-          <p className="text-[11px] text-slate-400">
-            Showing last 30 days up to Today (Day 30)
-          </p>
-        </div>
 
-        {/* Scrollable Matrix Table */}
-        <div className="overflow-x-auto max-w-full">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800">
-                {/* Col 1: Device Name / Number (Sticky) */}
-                <th className="p-3.5 pl-5 font-bold text-slate-700 dark:text-slate-300 sticky left-0 z-20 bg-slate-50 dark:bg-slate-950 min-w-[180px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] border-r border-slate-200 dark:border-slate-800">
-                  Device Name / Number
-                </th>
+          <div className="space-y-4">
+            {dailyUsageList
+              .filter((day) => (filterOnlyActiveDays ? day.devicesUsed.length > 0 : true))
+              .map((day) => {
+                const hasDevices = day.devicesUsed.length > 0;
 
-                {/* Col 2: Specs Collection (Sticky) */}
-                <th className="p-3.5 font-bold text-slate-700 dark:text-slate-300 sticky left-[180px] z-20 bg-slate-50 dark:bg-slate-950 min-w-[260px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] border-r border-slate-200 dark:border-slate-800">
-                  Specs [ Serial, MAC, Brand ]
-                </th>
-
-                {/* Columns 3 to 32: 30 Rolling Days */}
-                {dates.map((d) => (
-                  <th
-                    key={d.date}
-                    className={`p-2.5 text-center min-w-[180px] border-r border-slate-100 dark:border-slate-800 ${
-                      d.isToday
-                        ? "bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 font-extrabold"
-                        : "text-slate-600 dark:text-slate-400"
+                return (
+                  <div
+                    key={day.date}
+                    className={`rounded-3xl border transition-all ${
+                      day.isToday
+                        ? "bg-emerald-50/20 dark:bg-emerald-950/10 border-emerald-300 dark:border-emerald-800/80 shadow-xs"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs"
                     }`}
                   >
-                    <div className="flex flex-col items-center">
-                      <span className="text-[9px] uppercase font-bold text-slate-400">
-                        {d.isToday ? "Day 30 (Today)" : `Day ${d.dayIndex}`}
-                      </span>
-                      <span
-                        className={`text-xs font-bold ${
-                          d.isToday ? "text-emerald-700 dark:text-emerald-300 font-black" : ""
-                        }`}
-                      >
-                        {d.displayDate}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        {d.dayOfWeek}
-                      </span>
-                    </div>
-                  </th>
-                ))}
-
-                {/* Actions Column */}
-                <th className="p-3.5 pr-5 text-right font-bold text-slate-700 dark:text-slate-300 sticky right-0 z-20 bg-slate-50 dark:bg-slate-950 min-w-[100px] shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] border-l border-slate-200 dark:border-slate-800">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredDevices.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={dates.length + 3}
-                    className="text-center py-12 text-slate-400 bg-slate-50/30 dark:bg-slate-950/20 space-y-2"
-                  >
-                    <Laptop className="h-8 w-8 text-slate-300 mx-auto" />
-                    <p className="font-bold text-slate-700 dark:text-slate-300">
-                      No devices registered yet
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      Click "Add Device" above to register your first lab computer or workstation.
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredDevices.map((dev) => {
-                  const devLogsByDate = logsByDeviceAndDate.get(dev.deviceId);
-                  const isBusy = dev.status === "IN_USE";
-
-                  return (
-                    <tr
-                      key={dev.deviceId}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors group"
-                    >
-                      {/* Col 1: Device Name (Sticky) */}
-                      <td className="p-3.5 pl-5 sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/90 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0">
-                            <Laptop className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-900 dark:text-slate-100 truncate">
-                              {dev.name}
-                            </p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {isBusy ? (
-                                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] font-bold px-1.5 py-0">
-                                  In Use ({dev.currentUserName || "Member"})
-                                </Badge>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 font-medium">
-                                  Available
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                    {/* Day Header Banner */}
+                    <div className="p-4 sm:p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                            day.isToday
+                              ? "bg-emerald-600 text-white shadow-xs"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                          }`}
+                        >
+                          <Calendar className="h-4 w-4" />
                         </div>
-                      </td>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                              {day.displayDate} ({day.dayOfWeek || "GMT+6"})
+                            </h4>
+                            {day.isToday && (
+                              <Badge className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs">
+                                Today (Day 30)
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                            {day.date}
+                          </p>
+                        </div>
+                      </div>
 
-                      {/* Col 2: Specs Collection (Sticky) */}
-                      <td className="p-3.5 sticky left-[180px] z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/90 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                        <div className="p-2 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[10px] font-bold text-slate-400">Brand:</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs font-bold px-2.5 py-1 ${
+                            hasDevices
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
+                              : "bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-950 dark:text-slate-400"
+                          }`}
+                        >
+                          {day.devicesUsed.length} Device{day.devicesUsed.length === 1 ? "" : "s"} Used
+                        </Badge>
+                        {hasDevices && (
+                          <>
                             <Badge
                               variant="outline"
-                              className={`text-[9px] px-1.5 py-0 font-bold uppercase ${getBrandBadgeClass(
-                                dev.brand
-                              )}`}
+                              className="text-xs font-bold px-2.5 py-1 bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800"
                             >
-                              {dev.brand}
+                              {day.totalDaySessions} Session{day.totalDaySessions === 1 ? "" : "s"}
                             </Badge>
-                          </div>
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[10px] font-bold text-slate-400">SN:</span>
-                            <span className="text-[11px] font-mono text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
-                              {dev.serialNumber || "-"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[10px] font-bold text-slate-400">MAC:</span>
-                            <span className="text-[10px] font-mono text-slate-500 truncate max-w-[150px]">
-                              {dev.macAddress || "-"}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+                            <Badge
+                              variant="outline"
+                              className="text-xs font-bold px-2.5 py-1 bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-800"
+                            >
+                              {Math.floor(day.totalDayMinutes / 60)}h {day.totalDayMinutes % 60}m Total
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                    </div>
 
-                      {/* Columns 3 to 32: Day Cells with stacked user records */}
-                      {dates.map((d) => {
-                        const cellLogs = devLogsByDate?.get(d.date) || [];
-
-                        return (
-                          <td
-                            key={d.date}
-                            className={`p-2.5 align-top border-r border-slate-100 dark:border-slate-800 ${
-                              d.isToday
-                                ? "bg-emerald-50/30 dark:bg-emerald-950/10"
-                                : ""
-                            }`}
-                          >
-                            {cellLogs.length === 0 ? (
-                              <div className="text-center text-slate-300 dark:text-slate-700 py-3 select-none text-[11px]">
-                                —
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {cellLogs.map((log) => (
-                                  <div
-                                    key={log.logId}
-                                    className={`p-1.5 px-2 rounded-xl text-[11px] font-medium border shadow-2xs leading-tight transition-transform hover:scale-[1.02] ${
-                                      log.isActive
-                                        ? "bg-emerald-50 border-emerald-300 text-emerald-950 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-100 font-bold"
-                                        : "bg-slate-50 border-slate-200 text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
-                                    }`}
-                                    title={`Full record: ${log.displayString}`}
-                                  >
-                                    <div className="flex items-center gap-1.5">
-                                      {log.isActive && (
-                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                                      )}
-                                      <span className="truncate">
-                                        <strong className="text-slate-900 dark:text-white">
-                                          {log.userName || log.userEmail.split("@")[0]}
-                                        </strong>{" "}
-                                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                                          ({log.startFormatted} to {log.endFormatted})
-                                        </span>
-                                      </span>
-                                    </div>
+                    {/* Devices Used Grid for this Day */}
+                    <div className="p-4 sm:p-5">
+                      {!hasDevices ? (
+                        <p className="text-xs text-slate-400 italic py-1">
+                          No devices were logged active on this day.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                          {day.devicesUsed.map((dev) => (
+                            <button
+                              key={dev.deviceId}
+                              id={`device-card-${dev.deviceId}`}
+                              type="button"
+                              onClick={() =>
+                                setSelectedSidePanel({
+                                  deviceId: dev.deviceId,
+                                  deviceName: dev.deviceName,
+                                  date: day.date,
+                                  displayDate: day.displayDate,
+                                  dayOfWeek: day.dayOfWeek,
+                                  isToday: day.isToday,
+                                })
+                              }
+                              className="group text-left p-3.5 bg-slate-50/70 hover:bg-white dark:bg-slate-950/50 dark:hover:bg-slate-800/80 border border-slate-200/80 hover:border-emerald-400 dark:border-slate-800 dark:hover:border-emerald-600 rounded-2xl shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-2.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="h-7 w-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                                    <Laptop className="h-3.5 w-3.5" />
                                   </div>
-                                ))}
+                                  <span className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">
+                                    {dev.deviceName}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[9px] px-1.5 py-0 uppercase font-extrabold ${getBrandBadgeClass(
+                                      dev.brand
+                                    )}`}
+                                  >
+                                    {dev.brand}
+                                  </Badge>
+                                  {dev.isActiveNow && (
+                                    <span
+                                      className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                                      title="Live active session"
+                                    />
+                                  )}
+                                </div>
                               </div>
-                            )}
-                          </td>
-                        );
-                      })}
 
-                      {/* Actions (Sticky Right) */}
-                      <td className="p-3.5 pr-5 text-right sticky right-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/90 border-l border-slate-200 dark:border-slate-800 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(dev)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg transition-colors cursor-pointer"
-                            title="Edit Device"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteConfirmDevice(dev)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-lg transition-colors cursor-pointer"
-                            title="Delete Device"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                              <div className="space-y-1">
+                                <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-1">
+                                  <span className="font-bold text-slate-400">Users:</span>{" "}
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {dev.userNames.join(", ")}
+                                  </span>
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate font-mono">
+                                  SN: {dev.serialNumber}
+                                </p>
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                                <span className="text-slate-500 dark:text-slate-400 font-medium">
+                                  {dev.sessions.length} session{dev.sessions.length > 1 ? "s" : ""} •{" "}
+                                  {Math.floor(dev.totalMinutes / 60)}h {dev.totalMinutes % 60}m
+                                </span>
+                                <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                  <span>View Users</span>
+                                  <ArrowRight className="h-3 w-3" />
+                                </span>
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ── 4. Add / Edit Device Modal ── */}
+      {/* ── 4. VIEW MODE: 30-Day Matrix Table ── */}
+      {activeViewMode === "matrix" && (
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+          <div className="p-4 sm:p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-emerald-600" />
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                30-Day Rolling Usage Matrix (GMT+6)
+              </h3>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Click any cell with activity to open the side panel with timestamps
+            </p>
+          </div>
+
+          {/* Scrollable Matrix Table */}
+          <div className="overflow-x-auto max-w-full">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800">
+                  {/* Col 1: Device Name / Number (Sticky) */}
+                  <th className="p-3.5 pl-5 font-bold text-slate-700 dark:text-slate-300 sticky left-0 z-20 bg-slate-50 dark:bg-slate-950 min-w-[180px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] border-r border-slate-200 dark:border-slate-800">
+                    Device Name / Number
+                  </th>
+
+                  {/* Col 2: Specs Collection (Sticky) */}
+                  <th className="p-3.5 font-bold text-slate-700 dark:text-slate-300 sticky left-[180px] z-20 bg-slate-50 dark:bg-slate-950 min-w-[240px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] border-r border-slate-200 dark:border-slate-800">
+                    Specs [ Serial, MAC, Brand ]
+                  </th>
+
+                  {/* Columns 3 to 32: 30 Rolling Days */}
+                  {dates.map((d) => (
+                    <th
+                      key={d.date}
+                      className={`p-2.5 text-center min-w-[180px] border-r border-slate-100 dark:border-slate-800 ${
+                        d.isToday
+                          ? "bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 font-extrabold"
+                          : "text-slate-600 dark:text-slate-400"
+                      }`}
+                    >
+                      <div className="flex flex-col items-center">
+                        <span className="text-[9px] uppercase font-bold text-slate-400">
+                          {d.isToday ? "Day 30 (Today)" : `Day ${d.dayIndex}`}
+                        </span>
+                        <span
+                          className={`text-xs font-bold ${
+                            d.isToday ? "text-emerald-700 dark:text-emerald-300 font-black" : ""
+                          }`}
+                        >
+                          {d.displayDate}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          {d.dayOfWeek}
+                        </span>
+                      </div>
+                    </th>
+                  ))}
+
+                  {/* Actions Column */}
+                  <th className="p-3.5 pr-5 text-right font-bold text-slate-700 dark:text-slate-300 sticky right-0 z-20 bg-slate-50 dark:bg-slate-950 min-w-[100px] shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] border-l border-slate-200 dark:border-slate-800">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredDevices.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={dates.length + 3}
+                      className="text-center py-12 text-slate-400 bg-slate-50/30 dark:bg-slate-950/20 space-y-2"
+                    >
+                      <Laptop className="h-8 w-8 text-slate-300 mx-auto" />
+                      <p className="font-bold text-slate-700 dark:text-slate-300">
+                        No devices registered yet
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Click "Add Device" above to register your first lab computer or workstation.
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDevices.map((dev) => {
+                    const devLogsByDate = logsByDeviceAndDate.get(dev.deviceId);
+                    const isBusy = dev.status === "IN_USE";
+
+                    return (
+                      <tr
+                        key={dev.deviceId}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors group"
+                      >
+                        {/* Col 1: Device Name (Sticky) */}
+                        <td className="p-3.5 pl-5 sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/90 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-8 w-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0">
+                              <Laptop className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                                {dev.name}
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {isBusy ? (
+                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] font-bold px-1.5 py-0">
+                                    In Use ({dev.currentUserName || "Member"})
+                                  </Badge>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    Available
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Col 2: Specs Collection (Sticky) */}
+                        <td className="p-3.5 sticky left-[180px] z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/90 border-r border-slate-200 dark:border-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                          <div className="p-2 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[10px] font-bold text-slate-400">Brand:</span>
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1.5 py-0 font-bold uppercase ${getBrandBadgeClass(
+                                  dev.brand
+                                )}`}
+                              >
+                                {dev.brand}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[10px] font-bold text-slate-400">SN:</span>
+                              <span className="text-[11px] font-mono text-slate-700 dark:text-slate-300 truncate max-w-[140px]">
+                                {dev.serialNumber || "-"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[10px] font-bold text-slate-400">MAC:</span>
+                              <span className="text-[10px] font-mono text-slate-500 truncate max-w-[140px]">
+                                {dev.macAddress || "-"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Columns 3 to 32: Day Cells with clickable badges to open side panel */}
+                        {dates.map((d) => {
+                          const cellLogs = devLogsByDate?.get(d.date) || [];
+
+                          return (
+                            <td
+                              key={d.date}
+                              className={`p-2.5 align-top border-r border-slate-100 dark:border-slate-800 ${
+                                d.isToday
+                                  ? "bg-emerald-50/30 dark:bg-emerald-950/10"
+                                  : ""
+                              }`}
+                            >
+                              {cellLogs.length === 0 ? (
+                                <div className="text-center text-slate-300 dark:text-slate-700 py-3 select-none text-[11px]">
+                                  —
+                                </div>
+                              ) : (
+                                <div
+                                  onClick={() =>
+                                    setSelectedSidePanel({
+                                      deviceId: dev.deviceId,
+                                      deviceName: dev.name,
+                                      date: d.date,
+                                      displayDate: d.displayDate,
+                                      dayOfWeek: d.dayOfWeek,
+                                      isToday: d.isToday,
+                                    })
+                                  }
+                                  className="space-y-1.5 cursor-pointer group/cell"
+                                  title="Click to view all users & timestamps in side panel"
+                                >
+                                  {cellLogs.map((log) => (
+                                    <div
+                                      key={log.logId}
+                                      className={`p-1.5 px-2 rounded-xl text-[11px] font-medium border shadow-2xs leading-tight transition-transform group-hover/cell:scale-[1.02] ${
+                                        log.isActive
+                                          ? "bg-emerald-50 border-emerald-300 text-emerald-950 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-100 font-bold"
+                                          : "bg-slate-50 border-slate-200 text-slate-800 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        {log.isActive && (
+                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                        )}
+                                        <span className="truncate">
+                                          <strong className="text-slate-900 dark:text-white">
+                                            {log.userName || log.userEmail.split("@")[0]}
+                                          </strong>{" "}
+                                          <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                            ({log.startFormatted} to {log.endFormatted})
+                                          </span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        {/* Actions (Sticky Right) */}
+                        <td className="p-3.5 pr-5 text-right sticky right-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/90 border-l border-slate-200 dark:border-slate-800 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(dev)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Device"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmDevice(dev)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Device"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. VIEW MODE: Hardware Inventory ── */}
+      {activeViewMode === "inventory" && (
+        <div className="space-y-4">
+          {/* Filter & Search Bar */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[220px] max-w-md">
+              <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by device name, serial number, MAC, or brand..."
+                className="pl-9 text-xs rounded-xl h-9 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <span className="text-xs font-bold text-slate-400 mr-1 flex items-center gap-1">
+                <Filter className="h-3.5 w-3.5" /> Brand:
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedBrandFilter("all")}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedBrandFilter === "all"
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                All ({devices.length})
+              </button>
+              {["Dell", "Mac", "Lenovo", "HP"].map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => setSelectedBrandFilter(b)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    selectedBrandFilter.toLowerCase() === b.toLowerCase()
+                      ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  }`}
+                >
+                  {b}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredDevices.map((dev) => {
+              const isBusy = dev.status === "IN_USE";
+              return (
+                <div
+                  key={dev.deviceId}
+                  className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3.5 flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 shadow-inner shrink-0">
+                          <Laptop className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
+                            {dev.name}
+                          </h4>
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] px-1.5 py-0 uppercase font-extrabold ${getBrandBadgeClass(
+                              dev.brand
+                            )}`}
+                          >
+                            {dev.brand}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {isBusy ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] font-bold">
+                          In Use
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-[10px]">
+                          Available
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-bold">Serial Number:</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">
+                          {dev.serialNumber || "-"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-bold">MAC Address:</span>
+                        <span className="font-mono text-slate-500">
+                          {dev.macAddress || "-"}
+                        </span>
+                      </div>
+                      {dev.notes && (
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                          <span className="text-slate-400 font-bold">Notes:</span>
+                          <span className="text-slate-600 dark:text-slate-400 truncate max-w-[180px]">
+                            {dev.notes}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenEditModal(dev)}
+                      className="rounded-xl text-xs font-bold h-8 cursor-pointer gap-1"
+                    >
+                      <Edit2 className="h-3 w-3" />
+                      <span>Edit</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDeleteConfirmDevice(dev)}
+                      className="rounded-xl text-xs font-bold h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer gap-1"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Delete</span>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── 6. Add / Edit Device Modal ── */}
       <Dialog open={deviceModalOpen} onOpenChange={setDeviceModalOpen}>
         <DialogContent className="max-w-md w-full p-0 overflow-hidden rounded-3xl border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900">
           <DialogHeader className="p-5 pb-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50">
@@ -631,10 +1058,10 @@ export default function DeviceUsageTracker() {
           <div className="p-5 space-y-3.5">
             <div className="space-y-1">
               <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Device Name / Number <span className="text-rose-500">*</span>
+                Device Name / ID <span className="text-rose-500">*</span>
               </Label>
               <Input
-                placeholder="e.g. LAPTOP-01, MacBook Pro Lab A"
+                placeholder="e.g. 5-ASC, 10-ASC, LAPTOP-01"
                 value={deviceForm.name}
                 onChange={(e) => setDeviceForm({ ...deviceForm, name: e.target.value })}
                 className="h-10 text-xs rounded-xl"
@@ -664,7 +1091,7 @@ export default function DeviceUsageTracker() {
                   Serial Number
                 </Label>
                 <Input
-                  placeholder="e.g. 5CD2391X0K"
+                  placeholder="e.g. FVFSTNKAH3QD"
                   value={deviceForm.serialNumber}
                   onChange={(e) =>
                     setDeviceForm({ ...deviceForm, serialNumber: e.target.value })
@@ -693,7 +1120,7 @@ export default function DeviceUsageTracker() {
                 Notes / Location (Optional)
               </Label>
               <Input
-                placeholder="e.g. Station 4, 3D printing area"
+                placeholder="e.g. Station 4, 3D printing area, UBUNTU OS"
                 value={deviceForm.notes}
                 onChange={(e) => setDeviceForm({ ...deviceForm, notes: e.target.value })}
                 className="h-10 text-xs rounded-xl"
@@ -707,7 +1134,7 @@ export default function DeviceUsageTracker() {
               variant="outline"
               size="sm"
               onClick={() => setDeviceModalOpen(false)}
-              className="rounded-xl text-xs font-bold h-9"
+              className="rounded-xl text-xs font-bold h-9 cursor-pointer"
             >
               Cancel
             </Button>
@@ -715,7 +1142,7 @@ export default function DeviceUsageTracker() {
               type="button"
               size="sm"
               onClick={handleSaveDevice}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold h-9 gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold h-9 gap-1.5 cursor-pointer"
             >
               <Check className="h-3.5 w-3.5" />
               <span>{editingDevice ? "Save Changes" : "Register Device"}</span>
@@ -724,7 +1151,7 @@ export default function DeviceUsageTracker() {
         </DialogContent>
       </Dialog>
 
-      {/* ── 5. Delete Confirm Dialog ── */}
+      {/* ── 7. Delete Confirm Dialog ── */}
       <Dialog
         open={Boolean(deleteConfirmDevice)}
         onOpenChange={(open) => !open && setDeleteConfirmDevice(null)}
@@ -750,7 +1177,7 @@ export default function DeviceUsageTracker() {
               variant="outline"
               size="sm"
               onClick={() => setDeleteConfirmDevice(null)}
-              className="rounded-xl text-xs font-bold h-9"
+              className="rounded-xl text-xs font-bold h-9 cursor-pointer"
             >
               Cancel
             </Button>
@@ -758,13 +1185,22 @@ export default function DeviceUsageTracker() {
               variant="destructive"
               size="sm"
               onClick={handleDeleteDevice}
-              className="rounded-xl text-xs font-bold h-9"
+              className="rounded-xl text-xs font-bold h-9 cursor-pointer"
             >
               Delete
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── 8. Slide-Over Side Panel for Daily Device Sessions ── */}
+      <DeviceSidePanel
+        isOpen={Boolean(selectedSidePanel)}
+        onClose={() => setSelectedSidePanel(null)}
+        data={selectedSidePanel}
+        device={selectedDeviceDoc}
+        sessionsOnDate={sessionsForSidePanel}
+      />
     </div>
   );
 }

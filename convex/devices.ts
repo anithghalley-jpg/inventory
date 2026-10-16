@@ -59,8 +59,39 @@ export const getSettings = query({
       .first();
 
     return {
-      enableDeviceTracking: Boolean(settings?.enableDeviceTracking),
+      enableDeviceTracking: settings?.enableDeviceTracking !== undefined ? Boolean(settings.enableDeviceTracking) : true,
     };
+  },
+});
+
+export const getDeviceHistory = query({
+  args: {
+    deviceId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const logs = await ctx.db
+      .query("deviceLogs")
+      .withIndex("by_deviceId", (q) => q.eq("deviceId", args.deviceId))
+      .collect();
+
+    // Sort newest first
+    logs.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+    return logs.map((log) => ({
+      _id: log._id,
+      logId: log.logId,
+      deviceId: log.deviceId,
+      deviceName: log.deviceName,
+      userEmail: log.userEmail,
+      userName: log.userName,
+      startTime: log.startTime,
+      endTime: log.endTime,
+      durationMinutes: log.durationMinutes,
+      date: log.date,
+      startFormatted: formatGmtPlus6Time(log.startTime),
+      endFormatted: log.endTime ? formatGmtPlus6Time(log.endTime) : "Active",
+      isActive: !log.endTime,
+    }));
   },
 });
 

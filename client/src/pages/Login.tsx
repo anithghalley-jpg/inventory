@@ -177,10 +177,6 @@ export default function Login() {
               />
             </div>
 
-            {/* Info text */}
-            <p className="text-xs text-muted-foreground text-center max-w-[200px]">
-              First-time users will need admin approval to access the system.
-            </p>
           </Card>
 
           {/* Footer */}

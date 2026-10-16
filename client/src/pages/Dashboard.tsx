@@ -614,7 +614,7 @@ export default function Dashboard() {
   };
 
   const handleLaptopToggle = async (checked: boolean) => {
-    if (checked && deviceSettings?.enableDeviceTracking) {
+    if (checked) {
       setDeviceModalOpen(true);
       return;
     }
