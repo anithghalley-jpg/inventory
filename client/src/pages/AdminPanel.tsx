@@ -1951,15 +1951,23 @@ export default function AdminPanel() {
                       />
                     </div>
                     {/* Tags Display */}
-                    {(item as any).tags && (
+                    {Boolean((item as any).tags && (Array.isArray((item as any).tags) ? (item as any).tags.length > 0 : String((item as any).tags).trim().length > 0)) && (
                       <div className="flex flex-wrap gap-1 mb-2">
-                        {(item as any).tags.split(',').map((tag: string, i: number) => (
-                          tag.trim() && (
-                            <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
-                              {tag.trim()}
-                            </span>
-                          )
-                        ))}
+                        {(Array.isArray((item as any).tags)
+                          ? (item as any).tags
+                          : typeof (item as any).tags === 'string'
+                          ? (item as any).tags.split(',')
+                          : []
+                        ).map((tag: string, i: number) => {
+                          const trimmed = typeof tag === 'string' ? tag.trim() : String(tag);
+                          return (
+                            trimmed && (
+                              <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
+                                {trimmed}
+                              </span>
+                            )
+                          );
+                        })}
                       </div>
                     )}
 

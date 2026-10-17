@@ -276,6 +276,15 @@ export const updateForum = mutation({
     carriedOverActionItemIds: v.optional(v.array(v.string())),
     coverImageUrl: v.optional(v.string()),
     keyTakeaways: v.optional(v.string()),
+    minutesPdfUrl: v.optional(v.string()),
+    minutesPdfName: v.optional(v.string()),
+    eventPhotos: v.optional(v.array(v.string())),
+    driveFolderId: v.optional(v.string()),
+    driveFolderUrl: v.optional(v.string()),
+    driveFolderName: v.optional(v.string()),
+    status: v.optional(forumStatusValidator),
+    completedAt: v.optional(v.number()),
+    completedBy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const forum = await ctx.db
@@ -308,6 +317,20 @@ export const updateForum = mutation({
     if (args.roles !== undefined) patch.roles = args.roles;
     if (args.coverImageUrl !== undefined) patch.coverImageUrl = args.coverImageUrl;
     if (args.keyTakeaways !== undefined) patch.keyTakeaways = args.keyTakeaways;
+    if (args.minutesPdfUrl !== undefined) patch.minutesPdfUrl = args.minutesPdfUrl;
+    if (args.minutesPdfName !== undefined) patch.minutesPdfName = args.minutesPdfName;
+    if (args.eventPhotos !== undefined) patch.eventPhotos = args.eventPhotos;
+    if (args.driveFolderId !== undefined) patch.driveFolderId = args.driveFolderId;
+    if (args.driveFolderUrl !== undefined) patch.driveFolderUrl = args.driveFolderUrl;
+    if (args.driveFolderName !== undefined) patch.driveFolderName = args.driveFolderName;
+    if (args.status !== undefined) {
+      patch.status = args.status;
+      if (args.status === "COMPLETED" && !forum.completedAt) {
+        patch.completedAt = now;
+      }
+    }
+    if (args.completedAt !== undefined) patch.completedAt = args.completedAt;
+    if (args.completedBy !== undefined) patch.completedBy = args.completedBy;
     if (args.carriedOverActionItemIds !== undefined) {
       patch.carriedOverActionItemIds = args.carriedOverActionItemIds;
     }

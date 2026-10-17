@@ -30,12 +30,14 @@ interface ScheduleForumModalProps {
   isOpen: boolean;
   onClose: () => void;
   userEmail: string;
+  forumToEdit?: any;
 }
 
 export default function ScheduleForumModal({
   isOpen,
   onClose,
   userEmail,
+  forumToEdit,
 }: ScheduleForumModalProps) {
   // Query next edition number and unresolved action items
   const nextEdition = useQuery(api.forums.getNextEditionNumber) ?? 1;
@@ -43,6 +45,7 @@ export default function ScheduleForumModal({
   const registeredUsers = useQuery(api.users.getAll) ?? [];
 
   const scheduleForumMut = useMutation(api.forums.scheduleForum);
+  const updateForumMut = useMutation(api.forums.updateForum);
   const createActionItemMut = useMutation(api.forums.createActionItem);
 
   // Form State
@@ -52,7 +55,7 @@ export default function ScheduleForumModal({
   const [time, setTime] = useState('14:30');
   const [location, setLocation] = useState('FabLab Main Collaborative Hub');
   const [agenda, setAgenda] = useState('');
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([
+  const [selectedDepartments] = useState<string[]>([
     'Technology',
     'FabLab',
     'Astronomy',
@@ -73,26 +76,53 @@ export default function ScheduleForumModal({
   const [quickItemTitle, setQuickItemTitle] = useState('');
   const [quickItemDept, setQuickItemDept] = useState('Technology');
 
-  // Initialize edition and default date on open
+  // Initialize edition and default date on open or populate with forumToEdit
   useEffect(() => {
     if (isOpen) {
-      setEdition(nextEdition);
-      // Default to today or tomorrow
-      const today = new Date().toISOString().slice(0, 10);
-      setDate(today);
-      setTitle(`Multi-Disciplinary Forum (Edition #${nextEdition})`);
-    }
-  }, [isOpen, nextEdition]);
-
-  const toggleDepartment = (dept: string) => {
-    if (selectedDepartments.includes(dept)) {
-      if (selectedDepartments.length > 1) {
-        setSelectedDepartments(selectedDepartments.filter((d) => d !== dept));
+      if (forumToEdit) {
+        setTitle(forumToEdit.title || '');
+        setEdition(forumToEdit.edition || 1);
+        setDate(forumToEdit.date || '');
+        setTime(forumToEdit.time || '14:30');
+        setLocation(forumToEdit.location || 'FabLab Main Collaborative Hub');
+        setAgenda(forumToEdit.agenda || '');
+        setChairperson({
+          name: forumToEdit.roles?.chairperson?.name || '',
+          email: forumToEdit.roles?.chairperson?.email || '',
+          department: forumToEdit.roles?.chairperson?.department || 'Technology',
+        });
+        setNoteTaker({
+          name: forumToEdit.roles?.noteTaker?.name || '',
+          email: forumToEdit.roles?.noteTaker?.email || '',
+          department: forumToEdit.roles?.noteTaker?.department || 'FabLab',
+        });
+        setTimeKeeper({
+          name: forumToEdit.roles?.timeKeeper?.name || '',
+          email: forumToEdit.roles?.timeKeeper?.email || '',
+          department: forumToEdit.roles?.timeKeeper?.department || 'Astronomy',
+        });
+        setQuestionMaster({
+          name: forumToEdit.roles?.questionMaster?.name || '',
+          email: forumToEdit.roles?.questionMaster?.email || '',
+          department: forumToEdit.roles?.questionMaster?.department || 'Technology',
+        });
+        setSelectedActionItemIds(forumToEdit.carriedOverActionItemIds || []);
+      } else {
+        setEdition(nextEdition);
+        const today = new Date().toISOString().slice(0, 10);
+        setDate(today);
+        setTime('14:30');
+        setLocation('FabLab Main Collaborative Hub');
+        setAgenda('');
+        setTitle(`Multi-Disciplinary Forum (Edition #${nextEdition})`);
+        setChairperson({ name: '', email: '', department: 'Technology' });
+        setNoteTaker({ name: '', email: '', department: 'FabLab' });
+        setTimeKeeper({ name: '', email: '', department: 'Astronomy' });
+        setQuestionMaster({ name: '', email: '', department: 'Technology' });
+        setSelectedActionItemIds([]);
       }
-    } else {
-      setSelectedDepartments([...selectedDepartments, dept]);
     }
-  };
+  }, [isOpen, forumToEdit, nextEdition]);
 
   const toggleActionItemSelection = (itemId: string) => {
     if (selectedActionItemIds.includes(itemId)) {
@@ -163,45 +193,83 @@ export default function ScheduleForumModal({
 
     setIsSubmitting(true);
     try {
-      await scheduleForumMut({
-        title: title.trim(),
-        edition: Number(edition) || 1,
-        editionLabel: `Edition #${edition}`,
-        date,
-        time,
-        location: location.trim(),
-        agenda: agenda.trim(),
-        departments: selectedDepartments,
-        roles: {
-          chairperson: {
-            name: chairperson.name.trim(),
-            email: chairperson.email?.trim() || undefined,
-            department: chairperson.department,
+      if (forumToEdit) {
+        await updateForumMut({
+          forumId: forumToEdit.forumId,
+          title: title.trim(),
+          edition: Number(edition) || 1,
+          editionLabel: `Edition #${edition}`,
+          date,
+          time,
+          location: location.trim(),
+          agenda: agenda.trim(),
+          roles: {
+            chairperson: {
+              name: chairperson.name.trim(),
+              email: chairperson.email?.trim() || undefined,
+              department: chairperson.department,
+            },
+            noteTaker: {
+              name: noteTaker.name.trim() || 'TBD',
+              email: noteTaker.email?.trim() || undefined,
+              department: noteTaker.department,
+            },
+            timeKeeper: {
+              name: timeKeeper.name.trim() || 'TBD',
+              email: timeKeeper.email?.trim() || undefined,
+              department: timeKeeper.department,
+            },
+            questionMaster: {
+              name: questionMaster.name.trim() || 'TBD',
+              email: questionMaster.email?.trim() || undefined,
+              department: questionMaster.department,
+            },
           },
-          noteTaker: {
-            name: noteTaker.name.trim() || 'TBD',
-            email: noteTaker.email?.trim() || undefined,
-            department: noteTaker.department,
-          },
-          timeKeeper: {
-            name: timeKeeper.name.trim() || 'TBD',
-            email: timeKeeper.email?.trim() || undefined,
-            department: timeKeeper.department,
-          },
-          questionMaster: {
-            name: questionMaster.name.trim() || 'TBD',
-            email: questionMaster.email?.trim() || undefined,
-            department: questionMaster.department,
-          },
-        },
-        carriedOverActionItemIds: selectedActionItemIds,
-        userEmail,
-      });
+          carriedOverActionItemIds: selectedActionItemIds,
+        });
 
-      toast.success(`Forum Edition #${edition} scheduled successfully!`);
+        toast.success(`Forum Edition #${edition} updated successfully!`);
+      } else {
+        await scheduleForumMut({
+          title: title.trim(),
+          edition: Number(edition) || 1,
+          editionLabel: `Edition #${edition}`,
+          date,
+          time,
+          location: location.trim(),
+          agenda: agenda.trim(),
+          departments: selectedDepartments,
+          roles: {
+            chairperson: {
+              name: chairperson.name.trim(),
+              email: chairperson.email?.trim() || undefined,
+              department: chairperson.department,
+            },
+            noteTaker: {
+              name: noteTaker.name.trim() || 'TBD',
+              email: noteTaker.email?.trim() || undefined,
+              department: noteTaker.department,
+            },
+            timeKeeper: {
+              name: timeKeeper.name.trim() || 'TBD',
+              email: timeKeeper.email?.trim() || undefined,
+              department: timeKeeper.department,
+            },
+            questionMaster: {
+              name: questionMaster.name.trim() || 'TBD',
+              email: questionMaster.email?.trim() || undefined,
+              department: questionMaster.department,
+            },
+          },
+          carriedOverActionItemIds: selectedActionItemIds,
+          userEmail,
+        });
+
+        toast.success(`Forum Edition #${edition} scheduled successfully!`);
+      }
       onClose();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to schedule forum');
+      toast.error(err.message || 'Failed to save forum');
     } finally {
       setIsSubmitting(false);
     }
@@ -218,10 +286,12 @@ export default function ScheduleForumModal({
             </div>
             <div>
               <DialogTitle className="text-xl font-bold">
-                Schedule New Collaborative Forum
+                {forumToEdit ? `Edit Forum Edition #${edition}` : 'Schedule New Collaborative Forum'}
               </DialogTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Connecting students from Technology, FabLab, and Astronomy for interactive presentations & Q&A.
+                {forumToEdit
+                  ? 'Update session schedule, location, agenda, moderator assignments, and action items.'
+                  : 'Configure session date, moderator assignments, discussion agenda, and action items.'}
               </p>
             </div>
           </div>
@@ -313,37 +383,7 @@ export default function ScheduleForumModal({
               </div>
             </div>
 
-            {/* Participating Disciplines */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-foreground block">
-                Disciplines Involved
-              </label>
-              <div className="flex flex-wrap gap-2.5">
-                {[
-                  { key: 'Technology', label: 'Technology', icon: <Cpu className="w-3.5 h-3.5" />, color: 'cyan' },
-                  { key: 'FabLab', label: 'FabLab & Making', icon: <Compass className="w-3.5 h-3.5" />, color: 'amber' },
-                  { key: 'Astronomy', label: 'Astronomy & Optics', icon: <Telescope className="w-3.5 h-3.5" />, color: 'indigo' },
-                ].map((dept) => {
-                  const isSelected = selectedDepartments.includes(dept.key);
-                  return (
-                    <button
-                      type="button"
-                      key={dept.key}
-                      onClick={() => toggleDepartment(dept.key)}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                        isSelected
-                          ? 'bg-emerald-600/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 shadow-sm'
-                          : 'bg-muted/40 text-muted-foreground border-border hover:border-muted-foreground/30'
-                      }`}
-                    >
-                      {dept.icon}
-                      {dept.label}
-                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+
 
             {/* Agenda / Topics */}
             <div className="space-y-1.5">
@@ -672,10 +712,15 @@ export default function ScheduleForumModal({
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow font-semibold"
             >
               {isSubmitting ? (
-                <>Scheduling Forum...</>
+                <>Saving Forum...</>
+              ) : forumToEdit ? (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Save Changes
+                </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />

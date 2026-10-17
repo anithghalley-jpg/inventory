@@ -415,7 +415,7 @@ export default function TeamDashboard() {
                 imageUrl: doc.imageUrl || '',
                 remarks: doc.remarks || '',
                 links: doc.links || '',
-                tags: doc.tags || [],
+                tags: Array.isArray(doc.tags) ? doc.tags.join(',') : (doc.tags || ''),
                 scriptUrl: SCRIPT_URL
             })) as unknown as InventoryItem[];
             setInventory(items);
@@ -2419,18 +2419,48 @@ export default function TeamDashboard() {
                             )}
 
                             {/* Tags */}
-                            {viewItem?.tags && (
+                            {viewItem && viewItem.tags && (
                                 <div className="space-y-2">
                                     <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Tags</h4>
                                     <div className="flex flex-wrap gap-2">
-                                        {viewItem.tags.split(',').map(tag => (
-                                            <span key={tag} className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded border border-slate-200">
-                                                {tag.trim()}
-                                            </span>
-                                        ))}
+                                        {(Array.isArray(viewItem.tags)
+                                            ? (viewItem.tags as string[])
+                                            : typeof viewItem.tags === 'string'
+                                            ? (viewItem.tags as string).split(',')
+                                            : []
+                                        ).map((tag, idx) => {
+                                            const trimmed = typeof tag === 'string' ? tag.trim() : String(tag);
+                                            if (!trimmed) return null;
+                                            return (
+                                                <span key={idx} className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded border border-slate-200">
+                                                    {trimmed}
+                                                </span>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="pt-6 mt-6 border-t border-slate-100 flex gap-3">
+                            <Button
+                                variant="outline"
+                                className="flex-1 border-slate-200"
+                                onClick={() => setViewItem(null)}
+                            >
+                                Close
+                            </Button>
+                            <Button
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => {
+                                    const target = viewItem;
+                                    setViewItem(null);
+                                    setSelectedItem(target);
+                                }}
+                            >
+                                Request Item
+                            </Button>
                         </div>
                     </div>
                 </DialogContent>

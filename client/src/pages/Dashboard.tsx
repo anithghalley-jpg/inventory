@@ -1390,15 +1390,23 @@ export default function Dashboard() {
                             <h3 className="font-bold text-lg leading-tight">{item.name}</h3>
                             <p className="text-xs text-muted-foreground">{item.company}</p>
                             {/* Tags Display */}
-                            {item.tags && (
+                            {Boolean(item.tags && (Array.isArray(item.tags) ? item.tags.length > 0 : String(item.tags).trim().length > 0)) && (
                               <div className="flex flex-wrap gap-1 mt-2">
-                                {item.tags.split(',').map((tag: string, i: number) => (
-                                  tag.trim() && (
-                                    <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
-                                      {tag.trim()}
-                                    </span>
-                                  )
-                                ))}
+                                {(Array.isArray(item.tags)
+                                  ? item.tags
+                                  : typeof item.tags === 'string'
+                                  ? item.tags.split(',')
+                                  : []
+                                ).map((tag: string, i: number) => {
+                                  const trimmed = typeof tag === 'string' ? tag.trim() : String(tag);
+                                  return (
+                                    trimmed && (
+                                      <span key={i} className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-sm bg-gray-100 text-gray-600 border border-gray-200">
+                                        {trimmed}
+                                      </span>
+                                    )
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -1848,15 +1856,23 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {viewItem.tags && (
+                  {Boolean(viewItem.tags && (Array.isArray(viewItem.tags) ? viewItem.tags.length > 0 : String(viewItem.tags).trim().length > 0)) && (
                     <div>
                       <p className="text-sm font-medium mb-2">Tags</p>
                       <div className="flex flex-wrap gap-2">
-                        {viewItem.tags.split(',').map((tag, i) => (
-                          <span key={i} className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full font-medium border border-emerald-200">
-                            {tag.trim()}
-                          </span>
-                        ))}
+                        {(Array.isArray(viewItem.tags)
+                          ? viewItem.tags
+                          : typeof viewItem.tags === 'string'
+                          ? viewItem.tags.split(',')
+                          : []
+                        ).map((tag, i) => {
+                          const trimmed = typeof tag === 'string' ? tag.trim() : String(tag);
+                          return (
+                            <span key={i} className="px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full font-medium border border-emerald-200">
+                              {trimmed}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

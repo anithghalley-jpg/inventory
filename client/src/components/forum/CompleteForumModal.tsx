@@ -36,9 +36,15 @@ interface CompleteForumModalProps {
     editionLabel?: string;
     date: string;
     time?: string;
+    status?: 'UPCOMING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+    minutesPdfUrl?: string;
+    minutesPdfName?: string;
+    coverImageUrl?: string;
+    eventPhotos?: string[];
     driveFolderName?: string;
     driveFolderId?: string;
     driveFolderUrl?: string;
+    keyTakeaways?: string;
     carriedOverActionItemIds?: string[];
     roles?: {
       chairperson?: { name: string };
@@ -58,6 +64,7 @@ export default function CompleteForumModal({
 
   // Convex mutations & queries
   const completeForumMut = useMutation(api.forums.completeForum);
+  const updateForumMut = useMutation(api.forums.updateForum);
   const actionItems = useQuery(api.forums.getAllActionItems, {}) || [];
 
   // Associated action items for this forum
@@ -69,17 +76,19 @@ export default function CompleteForumModal({
   );
 
   // Form State
-  const [keyTakeaways, setKeyTakeaways] = useState('');
+  const [keyTakeaways, setKeyTakeaways] = useState(forum.keyTakeaways || '');
   
   // PDF Minutes State
-  const [minutesPdfUrl, setMinutesPdfUrl] = useState('');
-  const [minutesPdfName, setMinutesPdfName] = useState(`Minutes - Forum Edition ${forum.edition}.pdf`);
+  const [minutesPdfUrl, setMinutesPdfUrl] = useState(forum.minutesPdfUrl || '');
+  const [minutesPdfName, setMinutesPdfName] = useState(
+    forum.minutesPdfName || `Minutes - Forum Edition ${forum.edition}.pdf`
+  );
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   // Photos State
-  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
-  const [coverPhotoUrl, setCoverPhotoUrl] = useState('');
+  const [photoUrls, setPhotoUrls] = useState<string[]>(forum.eventPhotos || []);
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState(forum.coverImageUrl || '');
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +109,23 @@ export default function CompleteForumModal({
   const [newActionAssignee, setNewActionAssignee] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync state whenever the opened forum changes
+  React.useEffect(() => {
+    if (isOpen && forum) {
+      setKeyTakeaways(forum.keyTakeaways || '');
+      setMinutesPdfUrl(forum.minutesPdfUrl || '');
+      setMinutesPdfName(forum.minutesPdfName || `Minutes - Forum Edition ${forum.edition}.pdf`);
+      setPhotoUrls(forum.eventPhotos || []);
+      setCoverPhotoUrl(forum.coverImageUrl || (forum.eventPhotos && forum.eventPhotos[0]) || '');
+      setDriveFolderId(forum.driveFolderId || '');
+      setDriveFolderUrl(
+        forum.driveFolderUrl || (forum.driveFolderId ? `https://drive.google.com/drive/folders/${forum.driveFolderId}` : '')
+      );
+      setResolvedItemIds([]);
+      setNewActionItems([]);
+    }
+  }, [isOpen, forum]);
 
   // Helper to convert File to Base64
   const fileToBase64 = (file: File): Promise<string> => {
@@ -259,11 +285,37 @@ export default function CompleteForumModal({
     setNewActionItems(newActionItems.filter((_, i) => i !== index));
   };
 
+  // Save Media & Minutes without altering status to COMPLETED
+  const handleSaveMediaOnly = async () => {
+    setIsSubmitting(true);
+    try {
+      await updateForumMut({
+        forumId: forum.forumId,
+        minutesPdfUrl: minutesPdfUrl || undefined,
+        minutesPdfName: minutesPdfName || undefined,
+        coverImageUrl: coverPhotoUrl || photoUrls[0] || undefined,
+        eventPhotos: photoUrls,
+        driveFolderId: driveFolderId || undefined,
+        driveFolderUrl: driveFolderUrl || (driveFolderId ? `https://drive.google.com/drive/folders/${driveFolderId}` : undefined),
+        driveFolderName: targetFolderName,
+        keyTakeaways: keyTakeaways.trim() || undefined,
+      });
+
+      toast.success(`Forum Edition #${forum.edition} media & minutes updated!`);
+      onClose();
+    } catch (err: any) {
+      console.error('Error saving media:', err);
+      toast.error(err.message || 'Failed to save media & minutes');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!minutesPdfUrl) {
-      toast.error('Please upload the Meeting Minutes (PDF) to complete this session.');
+      toast.error('Please upload or attach the Meeting Minutes (PDF) to complete this session.');
       return;
     }
 
@@ -316,11 +368,10 @@ export default function CompleteForumModal({
                 </span>
               </div>
               <DialogTitle className="text-xl font-bold">
-                Complete Session: {forum.title}
+                {forum.status === 'COMPLETED' ? 'Update Media & Minutes' : 'Manage Media, Minutes & Completion'}: {forum.title}
               </DialogTitle>
               <p className="text-xs text-muted-foreground">
-                Upload official meeting minutes (PDF) and event photos to finalize records into Google Drive folder{' '}
-                <span className="font-semibold text-foreground">"{targetFolderName}"</span>.
+                Update official meeting minutes (PDF), event photos, and takeaways as needed. Save at any time or mark session complete.
               </p>
             </div>
           </div>
@@ -652,27 +703,43 @@ export default function CompleteForumModal({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting} className="text-xs">
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving & Completing...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  Complete Session & Finalize Records
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSaveMediaOnly}
+                disabled={isSubmitting}
+                className="gap-2 text-xs border-border hover:bg-muted font-medium"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <UploadCloud className="w-3.5 h-3.5 text-sky-500" />
+                )}
+                Save Media & Minutes
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="gap-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    {forum.status === 'COMPLETED' ? 'Update & Save Complete' : 'Mark as Complete'}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>
