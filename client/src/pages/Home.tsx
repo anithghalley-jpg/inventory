@@ -305,13 +305,6 @@ export default function Home() {
             >
               <div className="w-full h-full rounded-full bg-white/30 blur-md absolute inset-0" />
             </motion.div>
-
-            <motion.p
-              animate={{ opacity: isSpaceHovered ? 0 : 1, y: isSpaceHovered ? 20 : 0 }}
-              className="mt-8 text-muted-foreground font-medium text-sm md:text-lg max-w-[320px] text-center z-20 bg-white/80 px-4 py-1 rounded-full border border-border backdrop-blur-md pointer-events-none transition-all"
-            >
-              .Hover the sun to reveal deep space.
-            </motion.p>
           </div>
 
           {/* 3D Isometric Orbit System */}

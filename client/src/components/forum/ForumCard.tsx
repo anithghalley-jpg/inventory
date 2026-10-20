@@ -21,7 +21,6 @@ import {
   Trash2,
   Edit2,
   CheckCircle2,
-  Play,
   UploadCloud,
   Check,
 } from 'lucide-react';
@@ -32,6 +31,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
+import { normalizeForumImageUrl, getDriveThumbnailFallbackUrl } from './forumUtils';
 
 export interface ForumCardProps {
   forum: {
@@ -52,10 +53,12 @@ export interface ForumCardProps {
       questionMaster: { name: string; email?: string; department?: string };
     };
     status: 'UPCOMING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+    minutesMarkdown?: string;
     minutesPdfUrl?: string;
     minutesPdfName?: string;
     coverImageUrl?: string;
     eventPhotos?: string[];
+    mediaDriveUrl?: string;
     driveFolderName?: string;
     driveFolderId?: string;
     driveFolderUrl?: string;
@@ -64,7 +67,6 @@ export interface ForumCardProps {
   };
   onViewMinutes: (forum: any) => void;
   onUpdateMedia?: (forum: any) => void;
-  onStartSession?: (forumId: string) => void;
   onMarkComplete?: (forum: any) => void;
   onEdit?: (forum: any) => void;
   onDelete?: (forumId: string) => void;
@@ -76,7 +78,6 @@ export default function ForumCard({
   forum,
   onViewMinutes,
   onUpdateMedia,
-  onStartSession,
   onMarkComplete,
   onEdit,
   onDelete,
@@ -84,16 +85,23 @@ export default function ForumCard({
   canManage = false,
 }: ForumCardProps) {
   const isCompleted = forum.status === 'COMPLETED';
-  const isInProgress = forum.status === 'IN_PROGRESS';
-  const isUpcoming = forum.status === 'UPCOMING';
 
-  const coverImage = forum.coverImageUrl || (forum.eventPhotos && forum.eventPhotos[0]) || '';
+  // Reliable cover image: use coverImageUrl or fallback to the first eventPhoto
+  const rawCoverImage =
+    (forum.coverImageUrl && forum.coverImageUrl.trim() !== '')
+      ? forum.coverImageUrl.trim()
+      : (forum.eventPhotos && forum.eventPhotos.length > 0 ? forum.eventPhotos[0] : '');
+  const coverImage = normalizeForumImageUrl(rawCoverImage);
+
   const photosCount = forum.eventPhotos?.length || 0;
 
-  // Default Drive URL if folder ID exists or direct URL
+  // Default Drive URL if mediaDriveUrl, direct folder URL or folder ID exists
   const driveUrl =
+    forum.mediaDriveUrl ||
     forum.driveFolderUrl ||
     (forum.driveFolderId ? `https://drive.google.com/drive/folders/${forum.driveFolderId}` : null);
+
+  const hasMinutes = Boolean(forum.minutesMarkdown?.trim() || forum.minutesPdfUrl);
 
   const getDeptIcon = (dept: string) => {
     switch (dept) {
@@ -110,12 +118,19 @@ export default function ForumCard({
 
   return (
     <Card
-      className={`overflow-hidden border bg-card hover:shadow-xl transition-all duration-200 flex flex-col group rounded-2xl ${
-        isInProgress
-          ? 'border-rose-500/50 shadow-md ring-1 ring-rose-500/20'
-          : isCompleted
-          ? 'border-border/80 hover:border-emerald-500/40'
-          : 'border-border/80 hover:border-sky-500/40'
+      onClick={() => onViewMinutes(forum)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onViewMinutes(forum);
+        }
+      }}
+      className={`overflow-hidden border bg-card hover:shadow-xl transition-all duration-200 flex flex-col group rounded-2xl cursor-pointer hover:scale-[1.01] ${
+        isCompleted
+          ? 'border-border/80 hover:border-emerald-500/50'
+          : 'border-border/80 hover:border-sky-500/50'
       }`}
     >
       {/* Top Banner / Cover Photo */}
@@ -124,6 +139,14 @@ export default function ForumCard({
           <img
             src={coverImage}
             alt={forum.title}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            onError={(e) => {
+              const fallback = getDriveThumbnailFallbackUrl(rawCoverImage);
+              if (fallback && e.currentTarget.src !== fallback) {
+                e.currentTarget.src = fallback;
+              }
+            }}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
@@ -146,21 +169,12 @@ export default function ForumCard({
             {forum.editionLabel || `Edition #${forum.edition}`}
           </span>
 
-          {isInProgress && (
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500 text-white shadow-sm flex items-center gap-1.5 animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-              Live In-Progress
-            </span>
-          )}
-
-          {isCompleted && (
+          {isCompleted ? (
             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-600 text-white shadow-sm flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
               Completed
             </span>
-          )}
-
-          {isUpcoming && (
+          ) : (
             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-600/90 text-white shadow-sm flex items-center gap-1">
               <Clock className="w-3 h-3" />
               Scheduled
@@ -173,7 +187,10 @@ export default function ForumCard({
           {photosCount > 0 && onOpenPhotos && (
             <button
               type="button"
-              onClick={() => onOpenPhotos(forum.eventPhotos || [], forum.title)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenPhotos(forum.eventPhotos || [], forum.title);
+              }}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-colors"
             >
               <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
@@ -187,39 +204,45 @@ export default function ForumCard({
                 <Button
                   variant="ghost"
                   size="icon"
+                  onClick={(e) => e.stopPropagation()}
                   className="h-7 w-7 rounded-full bg-black/60 hover:bg-black/80 text-white shadow"
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
                 {onUpdateMedia && (
-                  <DropdownMenuItem onClick={() => onUpdateMedia(forum)} className="text-xs gap-2">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateMedia(forum);
+                    }}
+                    className="text-xs gap-2"
+                  >
                     <UploadCloud className="w-3.5 h-3.5 text-sky-500" />
                     Media & Minutes
                   </DropdownMenuItem>
                 )}
 
                 {onEdit && (
-                  <DropdownMenuItem onClick={() => onEdit(forum)} className="text-xs gap-2">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(forum);
+                    }}
+                    className="text-xs gap-2"
+                  >
                     <Edit2 className="w-3.5 h-3.5 text-amber-500" />
                     Edit Details
                   </DropdownMenuItem>
                 )}
 
-                {isUpcoming && onStartSession && (
-                  <DropdownMenuItem
-                    onClick={() => onStartSession(forum.forumId)}
-                    className="text-xs gap-2 text-rose-600 dark:text-rose-400"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    Start Session
-                  </DropdownMenuItem>
-                )}
-
                 {!isCompleted && onMarkComplete && (
                   <DropdownMenuItem
-                    onClick={() => onMarkComplete(forum)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMarkComplete(forum);
+                    }}
                     className="text-xs gap-2 text-emerald-600 dark:text-emerald-400"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -231,7 +254,10 @@ export default function ForumCard({
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onClick={() => onDelete(forum.forumId)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(forum.forumId);
+                      }}
                       className="text-xs gap-2 text-destructive focus:text-destructive"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -273,12 +299,12 @@ export default function ForumCard({
       {/* Card Body */}
       <div className="p-4 flex-1 flex flex-col justify-between space-y-3.5">
         {/* Status Indicators Pill Row */}
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            {forum.minutesPdfUrl ? (
+        <div className="flex items-center justify-between text-xs gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {hasMinutes ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <FileText className="w-3 h-3" />
-                Minutes Attached
+                {forum.minutesMarkdown ? 'Minutes Documented' : 'PDF Minutes'}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border">
@@ -286,12 +312,24 @@ export default function ForumCard({
               </span>
             )}
 
-            {photosCount > 0 && (
+            {driveUrl ? (
+              <a
+                href={driveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
+                title="Open Google Drive link with photos/files"
+              >
+                <Folder className="w-3 h-3 text-sky-500" />
+                Drive Media
+              </a>
+            ) : photosCount > 0 ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
                 <ImageIcon className="w-3 h-3" />
                 {photosCount} Photos
               </span>
-            )}
+            ) : null}
           </div>
 
           {driveUrl && (
@@ -299,10 +337,11 @@ export default function ForumCard({
               href={driveUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
+              onClick={(e) => e.stopPropagation()}
+              className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 shrink-0 font-medium"
               title="Open Google Drive folder"
             >
-              <Folder className="w-3 h-3 text-sky-500" />
+              <ExternalLink className="w-3 h-3 text-sky-500" />
               Drive
             </a>
           )}
@@ -375,9 +414,12 @@ export default function ForumCard({
         {/* Action Buttons */}
         <div className="pt-3 border-t border-border flex flex-wrap items-center gap-2">
           {/* Minutes View Button */}
-          {forum.minutesPdfUrl ? (
+          {hasMinutes ? (
             <Button
-              onClick={() => onViewMinutes(forum)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewMinutes(forum);
+              }}
               size="sm"
               className="flex-1 min-w-[110px] gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs"
             >
@@ -386,7 +428,10 @@ export default function ForumCard({
             </Button>
           ) : (
             <Button
-              onClick={() => onViewMinutes(forum)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewMinutes(forum);
+              }}
               variant="outline"
               size="sm"
               className="flex-1 min-w-[110px] gap-1.5 text-xs text-muted-foreground"
@@ -399,7 +444,10 @@ export default function ForumCard({
           {/* Update Media & Minutes Button */}
           {canManage && onUpdateMedia && (
             <Button
-              onClick={() => onUpdateMedia(forum)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdateMedia(forum);
+              }}
               variant="outline"
               size="sm"
               className="gap-1.5 text-xs border-border hover:bg-muted font-medium"
@@ -410,30 +458,19 @@ export default function ForumCard({
             </Button>
           )}
 
-          {/* Quick Mark Complete Button for active/scheduled */}
+          {/* Quick Mark Complete Button for scheduled */}
           {canManage && !isCompleted && onMarkComplete && (
             <Button
-              onClick={() => onMarkComplete(forum)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkComplete(forum);
+              }}
               size="sm"
               className="gap-1.5 text-xs bg-emerald-600/10 hover:bg-emerald-600 text-emerald-700 hover:text-white dark:text-emerald-400 dark:hover:text-white border border-emerald-500/30 font-semibold"
               title="Mark Complete"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Complete</span>
-            </Button>
-          )}
-
-          {/* If In-Progress, option to complete */}
-          {canManage && isUpcoming && onStartSession && (
-            <Button
-              onClick={() => onStartSession(forum.forumId)}
-              size="sm"
-              variant="outline"
-              className="gap-1 text-xs border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
-              title="Start Session (Mark In Progress)"
-            >
-              <Play className="w-3 h-3 fill-current" />
-              <span>Start</span>
             </Button>
           )}
         </div>

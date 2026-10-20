@@ -35,6 +35,39 @@ const forumStatusValidator = v.union(
 );
 
 /**
+ * Normalizes any Google Drive image URL into direct streaming CDN image URL
+ */
+function normalizeDriveImageUrl(url?: string): string {
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  const match =
+    trimmed.match(/drive\.google\.com\/file\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/drive\.google\.com\/(?:uc|open)\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/drive\.google\.com\/thumbnail\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/docs\.google\.com\/(?:uc|open|file)\?(?:.*&)?id=([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/docs\.google\.com\/file\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/i);
+
+  if (match && match[1]) {
+    return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  }
+  return trimmed;
+}
+
+function normalizeForumRecord(forum: any) {
+  if (!forum) return forum;
+  const eventPhotos = (forum.eventPhotos || []).map((p: string) => normalizeDriveImageUrl(p));
+  const coverImageUrl =
+    normalizeDriveImageUrl(forum.coverImageUrl) ||
+    (eventPhotos.length > 0 ? eventPhotos[0] : "");
+  return {
+    ...forum,
+    coverImageUrl,
+    eventPhotos,
+  };
+}
+
+/**
  * Get all forums (bounded)
  */
 export const getAll = query({
@@ -45,7 +78,9 @@ export const getAll = query({
       .order("desc")
       .take(MAX_FORUMS);
 
-    return forums.sort((a, b) => b.edition - a.edition);
+    return forums
+      .sort((a, b) => b.edition - a.edition)
+      .map(normalizeForumRecord);
   },
 });
 
@@ -60,7 +95,7 @@ export const getUpcoming = query({
       .withIndex("by_status", (q) => q.eq("status", "IN_PROGRESS"))
       .first();
 
-    if (inProgress) return inProgress;
+    if (inProgress) return normalizeForumRecord(inProgress);
 
     const upcomingList = await ctx.db
       .query("forums")
@@ -70,11 +105,13 @@ export const getUpcoming = query({
     if (upcomingList.length === 0) return null;
 
     // Sort by earliest date and time
-    return upcomingList.sort((a, b) => {
+    const sorted = upcomingList.sort((a, b) => {
       const dateA = new Date(`${a.date}T${a.time || "00:00"}`).getTime();
       const dateB = new Date(`${b.date}T${b.time || "00:00"}`).getTime();
       return dateA - dateB;
-    })[0];
+    });
+
+    return normalizeForumRecord(sorted[0]);
   },
 });
 
@@ -89,7 +126,9 @@ export const getHistory = query({
       .withIndex("by_status", (q) => q.eq("status", "COMPLETED"))
       .take(MAX_FORUMS);
 
-    return completedList.sort((a, b) => b.edition - a.edition);
+    return completedList
+      .sort((a, b) => b.edition - a.edition)
+      .map(normalizeForumRecord);
   },
 });
 
@@ -122,8 +161,10 @@ export const getForumById = query({
       itemMap.set(item.itemId, item);
     });
 
+    const normalizedForum = normalizeForumRecord(forum);
+
     return {
-      ...forum,
+      ...normalizedForum,
       actionItems: Array.from(itemMap.values()),
     };
   },
@@ -276,6 +317,8 @@ export const updateForum = mutation({
     carriedOverActionItemIds: v.optional(v.array(v.string())),
     coverImageUrl: v.optional(v.string()),
     keyTakeaways: v.optional(v.string()),
+    minutesMarkdown: v.optional(v.string()),
+    mediaDriveUrl: v.optional(v.string()),
     minutesPdfUrl: v.optional(v.string()),
     minutesPdfName: v.optional(v.string()),
     eventPhotos: v.optional(v.array(v.string())),
@@ -315,11 +358,30 @@ export const updateForum = mutation({
     if (args.agenda !== undefined) patch.agenda = args.agenda.trim();
     if (args.departments !== undefined) patch.departments = args.departments;
     if (args.roles !== undefined) patch.roles = args.roles;
-    if (args.coverImageUrl !== undefined) patch.coverImageUrl = args.coverImageUrl;
+    if (args.eventPhotos !== undefined) {
+      const normalizedPhotos = args.eventPhotos.map((p) => normalizeDriveImageUrl(p));
+      patch.eventPhotos = normalizedPhotos;
+      // Auto-set cover image to the first photo if not provided or empty
+      if (!args.coverImageUrl && normalizedPhotos.length > 0) {
+        patch.coverImageUrl = normalizedPhotos[0];
+      }
+    }
+    if (args.coverImageUrl !== undefined) {
+      const normalizedCover = normalizeDriveImageUrl(args.coverImageUrl);
+      patch.coverImageUrl =
+        normalizedCover ||
+        (patch.eventPhotos && patch.eventPhotos[0]) ||
+        (forum.eventPhotos && forum.eventPhotos[0]) ||
+        '';
+    }
     if (args.keyTakeaways !== undefined) patch.keyTakeaways = args.keyTakeaways;
+    if (args.minutesMarkdown !== undefined) patch.minutesMarkdown = args.minutesMarkdown;
+    if (args.mediaDriveUrl !== undefined) {
+      patch.mediaDriveUrl = args.mediaDriveUrl;
+      if (!args.driveFolderUrl) patch.driveFolderUrl = args.mediaDriveUrl;
+    }
     if (args.minutesPdfUrl !== undefined) patch.minutesPdfUrl = args.minutesPdfUrl;
     if (args.minutesPdfName !== undefined) patch.minutesPdfName = args.minutesPdfName;
-    if (args.eventPhotos !== undefined) patch.eventPhotos = args.eventPhotos;
     if (args.driveFolderId !== undefined) patch.driveFolderId = args.driveFolderId;
     if (args.driveFolderUrl !== undefined) patch.driveFolderUrl = args.driveFolderUrl;
     if (args.driveFolderName !== undefined) patch.driveFolderName = args.driveFolderName;
@@ -371,14 +433,16 @@ export const updateForumStatus = mutation({
 export const completeForum = mutation({
   args: {
     forumId: v.string(),
-    minutesPdfUrl: v.string(),
+    minutesMarkdown: v.optional(v.string()),
+    mediaDriveUrl: v.optional(v.string()),
+    minutesPdfUrl: v.optional(v.string()),
     minutesPdfName: v.optional(v.string()),
     coverImageUrl: v.optional(v.string()),
     eventPhotos: v.optional(v.array(v.string())),
     driveFolderId: v.optional(v.string()),
     driveFolderUrl: v.optional(v.string()),
     driveFolderName: v.optional(v.string()),
-    keyTakeaways: v.string(),
+    keyTakeaways: v.optional(v.string()),
     resolvedActionItemIds: v.optional(v.array(v.string())),
     newActionItems: v.optional(
       v.array(
@@ -404,16 +468,27 @@ export const completeForum = mutation({
     const now = Date.now();
 
     // 1. Mark forum complete with records
+    const eventPhotos = args.eventPhotos
+      ? args.eventPhotos.map((p) => normalizeDriveImageUrl(p))
+      : forum.eventPhotos || [];
+    const coverImageUrl =
+      normalizeDriveImageUrl(args.coverImageUrl) ||
+      (eventPhotos.length > 0 ? eventPhotos[0] : "") ||
+      forum.coverImageUrl ||
+      "";
+
     await ctx.db.patch(forum._id, {
       status: "COMPLETED",
-      minutesPdfUrl: args.minutesPdfUrl,
-      minutesPdfName: args.minutesPdfName || `Minutes - Forum Edition ${forum.edition}.pdf`,
-      coverImageUrl: args.coverImageUrl || (args.eventPhotos && args.eventPhotos[0]) || forum.coverImageUrl || "",
-      eventPhotos: args.eventPhotos || forum.eventPhotos || [],
+      minutesMarkdown: args.minutesMarkdown ?? forum.minutesMarkdown,
+      mediaDriveUrl: args.mediaDriveUrl ?? forum.mediaDriveUrl,
+      minutesPdfUrl: args.minutesPdfUrl ?? forum.minutesPdfUrl,
+      minutesPdfName: args.minutesPdfName ?? forum.minutesPdfName,
+      coverImageUrl,
+      eventPhotos,
       driveFolderId: args.driveFolderId || forum.driveFolderId,
-      driveFolderUrl: args.driveFolderUrl || forum.driveFolderUrl,
+      driveFolderUrl: args.driveFolderUrl || args.mediaDriveUrl || forum.driveFolderUrl,
       driveFolderName: args.driveFolderName || forum.driveFolderName || `Forum Edition ${forum.edition} - ${forum.date}`,
-      keyTakeaways: args.keyTakeaways.trim(),
+      keyTakeaways: (args.keyTakeaways ?? forum.keyTakeaways ?? "").trim(),
       completedAt: now,
       completedBy: args.userEmail,
       updatedAt: now,

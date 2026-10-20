@@ -481,8 +481,44 @@
 .timeline-markdown,
 .report-markdown,
 .markdown-preview {
+  width: 100%;
+  max-width: 100%;
   word-break: break-word;
   line-height: 1.65;
+}
+
+.dark .timeline-markdown h1,
+.dark .report-markdown h1,
+.dark .markdown-preview h1,
+.dark .timeline-markdown h2,
+.dark .report-markdown h2,
+.dark .markdown-preview h2,
+.dark .timeline-markdown h3,
+.dark .report-markdown h3,
+.dark .markdown-preview h3,
+.dark .timeline-markdown h4,
+.dark .report-markdown h4,
+.dark .markdown-preview h4 {
+  color: var(--foreground);
+}
+
+.dark .timeline-markdown table,
+.dark .report-markdown table,
+.dark .markdown-preview table,
+.dark .timeline-markdown th,
+.dark .timeline-markdown td,
+.dark .report-markdown th,
+.dark .report-markdown td,
+.dark .markdown-preview th,
+.dark .markdown-preview td {
+  border-color: var(--border);
+}
+
+.dark .timeline-markdown th,
+.dark .report-markdown th,
+.dark .markdown-preview th {
+  background-color: var(--muted);
+  color: var(--foreground);
 }
 
 .timeline-markdown h1,

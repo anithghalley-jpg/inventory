@@ -158,6 +158,7 @@ export default function AdminPanel() {
   const convexProjectAssignments = useQuery(api.projects.getAssignmentsOverview);
   const convexSettings = useQuery(api.settings.getAdmin);
   const convexMachines = useQuery(api.machines.getAll);
+  const convexForums = useQuery(api.forums.getAll);
   const userApprovedStripes = useQuery(api.learningPlans.getUserApprovedStripes, {
     userEmail: user?.email || "",
   }) || [];
